@@ -1,4 +1,4 @@
-import { type FlowDirection, type Level, type Position, type Room, TileType } from "../types/game";
+import { type FlowDirection, type Level, type Position, type Room, TileType, type WorldElement, WorldElement as WE } from "../types/game";
 
 export interface GeneratorConfig {
 	minWidth: number;
@@ -23,7 +23,7 @@ const DEFAULT_CONFIG: GeneratorConfig = {
 	maxRectangles: 3,
 	brambleChance: 0.12,
 	stoneChance: 0.08,
-	riverChance: 0.06,
+	riverChance: 0.15,
 	riverMinLength: 2,
 	riverMaxLength: 4,
 };
@@ -428,11 +428,6 @@ function generateRivers(
 
 	// Don't generate rivers if chance is 0
 	if (config.riverChance <= 0) {
-		return { grass: remainingGrass, stones: newStones, water, waterFlow };
-	}
-
-	// 50% chance to skip river generation entirely (allows for river-free levels)
-	if (Math.random() > 0.5) {
 		return { grass: remainingGrass, stones: newStones, water, waterFlow };
 	}
 
@@ -892,8 +887,17 @@ function verifyLevel(level: Level): boolean {
 // Main function with retry logic
 export function generateLevel(
 	config: Partial<GeneratorConfig> = {},
+	elements: WorldElement[] = [],
 ): Level | null {
-	const fullConfig = { ...DEFAULT_CONFIG, ...config };
+	// Apply element-based config overrides
+	const elementConfig = { ...config };
+
+	// Rivers only generate if the RIVERS element is active
+	if (!elements.includes(WE.RIVERS)) {
+		elementConfig.riverChance = 0;
+	}
+
+	const fullConfig = { ...DEFAULT_CONFIG, ...elementConfig };
 	const maxRetries = 100;
 
 	for (let attempt = 0; attempt < maxRetries; attempt++) {

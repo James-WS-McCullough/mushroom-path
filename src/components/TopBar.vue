@@ -1,6 +1,10 @@
 <script setup lang="ts">
+import type { WorldElement } from "../types/game";
+import { WorldElement as WE } from "../types/game";
+
 defineProps<{
 	levelName: string;
+	elements: WorldElement[];
 }>();
 
 const emit = defineEmits<{
@@ -16,7 +20,19 @@ const emit = defineEmits<{
         <span class="info-icon">i</span>
       </button>
       <h2 class="level-name">{{ levelName }}</h2>
-      <div class="spacer"></div>
+      <div class="elements-display">
+        <div
+          v-for="element in elements"
+          :key="element"
+          class="element-icon"
+          :title="element === WE.RIVERS ? 'Rivers' : element"
+        >
+          <!-- Water droplet icon for rivers -->
+          <svg v-if="element === WE.RIVERS" viewBox="0 0 24 24" class="element-svg">
+            <path d="M12 2c-5.33 8-8 12-8 15a8 8 0 1 0 16 0c0-3-2.67-7-8-15z" fill="currentColor"/>
+          </svg>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -138,7 +154,31 @@ const emit = defineEmits<{
   letter-spacing: 2px;
 }
 
-.spacer {
-  width: 40px;
+.elements-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 40px;
+  justify-content: flex-end;
+}
+
+.element-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(180deg, rgba(255, 248, 230, 0.9) 0%, rgba(240, 230, 210, 0.9) 100%);
+  border-radius: 50%;
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.element-svg {
+  width: 20px;
+  height: 20px;
+  color: #4a90d9;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.2));
 }
 </style>

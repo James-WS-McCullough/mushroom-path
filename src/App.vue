@@ -7,7 +7,8 @@ import TopBar from "./components/TopBar.vue";
 import TutorialModal from "./components/TutorialModal.vue";
 import WelcomeSign from "./components/WelcomeSign.vue";
 import { level1 } from "./data/levels";
-import type { Level } from "./types/game";
+import type { Level, WorldElement } from "./types/game";
+import { WorldElement as WE } from "./types/game";
 import { generateLevel } from "./utils/levelGenerator";
 
 const LEVELS_PER_WORLD = 10;
@@ -42,6 +43,28 @@ const isBlack = ref(false);
 // World and level tracking
 const currentWorldIndex = ref(0);
 const currentLevelNumber = ref(1);
+const currentWorldElements = ref<WorldElement[]>([]);
+
+// All available world elements
+const allElements: WorldElement[] = [WE.RIVERS];
+
+function generateWorldElements(): WorldElement[] {
+	const elements: WorldElement[] = [];
+
+	// 50% chance for a "classic" world with no elements
+	if (Math.random() < 0.5) {
+		return elements;
+	}
+
+	// Otherwise, randomly select elements
+	for (const element of allElements) {
+		if (Math.random() < 0.6) { // 60% chance for each element
+			elements.push(element);
+		}
+	}
+
+	return elements;
+}
 
 const currentWorldName = computed(() => {
 	return (
@@ -54,7 +77,7 @@ const displayName = computed(() => {
 });
 
 function getNewLevel(): Level {
-	const newLevel = generateLevel();
+	const newLevel = generateLevel({}, currentWorldElements.value);
 	return newLevel ?? level1;
 }
 
@@ -64,6 +87,7 @@ function advanceLevel(): boolean {
 		// Move to next world
 		currentWorldIndex.value++;
 		currentLevelNumber.value = 1;
+		currentWorldElements.value = generateWorldElements();
 		return true; // Entered new world
 	}
 	return false; // Same world
@@ -146,6 +170,9 @@ function handleRestart() {
 }
 
 function handleBegin() {
+	// Generate elements for first world
+	currentWorldElements.value = generateWorldElements();
+
 	// Generate first level when game starts
 	currentLevel.value = getNewLevel();
 	gameStarted.value = true;
@@ -180,6 +207,7 @@ function closeWelcomeSign() {
   <div v-else class="layout">
     <TopBar
       :level-name="displayName"
+      :elements="currentWorldElements"
       @show-tutorial="showTutorial = true"
     />
 

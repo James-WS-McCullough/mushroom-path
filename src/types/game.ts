@@ -45,3 +45,10 @@ export interface GameState {
 }
 
 export type Direction = "up" | "down" | "left" | "right";
+
+// World elements that modify level generation
+export const WorldElement = {
+	RIVERS: "rivers",
+} as const;
+
+export type WorldElement = (typeof WorldElement)[keyof typeof WorldElement];
