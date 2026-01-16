@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from "vue";
+import { playNewWorld } from "../composables/useSound";
 
 defineProps<{
 	worldName: string;
@@ -19,6 +20,7 @@ function startClose() {
 }
 
 onMounted(() => {
+	playNewWorld();
 	timeout = setTimeout(startClose, 3000);
 });
 

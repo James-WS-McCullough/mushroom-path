@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useGame } from "../composables/useGame";
+import { playUndo } from "../composables/useSound";
 import type { Direction, Level, Position } from "../types/game";
 import GameCharacter from "./GameCharacter.vue";
 import GameTile from "./GameTile.vue";
@@ -8,6 +9,7 @@ import GameTile from "./GameTile.vue";
 const TILE_SIZE = 64;
 const GAP_SIZE = 3;
 const ROOM_PADDING = 10;
+const CELL_SIZE = TILE_SIZE + GAP_SIZE;
 
 const props = defineProps<{
 	level: Level;
@@ -18,6 +20,50 @@ const emit = defineEmits<{
 }>();
 
 const game = useGame(props.level);
+
+// Camera system for tall maps
+const viewportRef = ref<HTMLElement | null>(null);
+const viewportHeight = ref(0);
+let resizeObserver: ResizeObserver | null = null;
+
+// Calculate board dimensions (including wrapper padding and extra breathing room)
+const WRAPPER_PADDING = 12;
+const CAMERA_PADDING = 48; // Padding above and below the board when panning
+
+const boardHeight = computed(() => {
+	const innerPadding = hasRooms.value ? 0 : 6; // 3px padding on each side
+	return game.levelHeight * CELL_SIZE - GAP_SIZE + innerPadding + (WRAPPER_PADDING * 2) + (CAMERA_PADDING * 2);
+});
+
+// Check if camera panning is needed
+const needsPanning = computed(() => {
+	return boardHeight.value > viewportHeight.value && viewportHeight.value > 0;
+});
+
+// Calculate camera offset to follow player
+const cameraOffset = computed(() => {
+	if (!needsPanning.value) return { x: 0, y: 0 };
+
+	const playerY = game.playerPosition.value.y;
+	const playerPixelY = playerY * CELL_SIZE + TILE_SIZE / 2 + WRAPPER_PADDING + CAMERA_PADDING;
+
+	// Keep player centered vertically in viewport
+	const targetOffset = playerPixelY - viewportHeight.value / 2;
+
+	// Clamp to valid range
+	const maxOffset = boardHeight.value - viewportHeight.value;
+	const clampedOffset = Math.max(0, Math.min(targetOffset, maxOffset));
+
+	return { x: 0, y: -clampedOffset };
+});
+
+const boardTransform = computed(() => {
+	if (!needsPanning.value) return {};
+	// Add top padding as base offset so board doesn't start flush with viewport
+	return {
+		transform: `translateY(${cameraOffset.value.y + CAMERA_PADDING}px)`,
+	};
+});
 
 // Watch for win condition and emit to parent
 watch(
@@ -220,7 +266,10 @@ function handleKeydown(event: KeyboardEvent) {
 	// Undo with Z
 	if (event.key === "z" || event.key === "Z") {
 		event.preventDefault();
-		game.undo();
+		if (game.canUndo.value) {
+			playUndo();
+			game.undo();
+		}
 		return;
 	}
 
@@ -232,22 +281,44 @@ function handleKeydown(event: KeyboardEvent) {
 }
 
 function handleRestart() {
+	playUndo();
 	game.initializeGame();
 }
 
 onMounted(() => {
 	window.addEventListener("keydown", handleKeydown);
+
+	// Set up ResizeObserver to track viewport height
+	if (viewportRef.value) {
+		resizeObserver = new ResizeObserver((entries) => {
+			for (const entry of entries) {
+				viewportHeight.value = entry.contentRect.height;
+			}
+		});
+		resizeObserver.observe(viewportRef.value);
+	}
 });
 
 onUnmounted(() => {
 	window.removeEventListener("keydown", handleKeydown);
+	if (resizeObserver) {
+		resizeObserver.disconnect();
+		resizeObserver = null;
+	}
 });
 </script>
 
 <template>
   <div class="game-container">
-    <div :class="['board-wrapper', { 'board-wrapper--no-bg': hasRooms }]">
-      <div class="board" :style="boardStyle">
+    <div
+      ref="viewportRef"
+      :class="['camera-viewport', { 'camera-viewport--active': needsPanning }]"
+    >
+      <div
+        :class="['board-wrapper', { 'board-wrapper--no-bg': hasRooms }]"
+        :style="boardTransform"
+      >
+        <div class="board" :style="boardStyle">
         <template v-for="(row, y) in game.tiles.value" :key="y">
           <GameTile
             v-for="(tile, x) in row"
@@ -319,11 +390,7 @@ onUnmounted(() => {
           :board-padding="hasRooms ? 0 : 3"
         />
       </div>
-    </div>
-
-    <div class="controls-hint">
-      <p>Use <kbd>WASD</kbd> or <kbd>Arrow Keys</kbd> to move</p>
-      <p><kbd>Z</kbd> Undo · <kbd>R</kbd> Reset</p>
+      </div>
     </div>
   </div>
 </template>
@@ -334,6 +401,27 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   gap: 16px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.camera-viewport {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+.camera-viewport--active {
+  overflow: hidden;
+  align-items: flex-start;
+}
+
+.camera-viewport--active .board-wrapper {
+  transition: transform 0.3s ease-out;
 }
 
 .board-wrapper {
@@ -371,26 +459,5 @@ onUnmounted(() => {
   pointer-events: none;
   z-index: -1;
   overflow: visible;
-}
-
-.controls-hint {
-  text-align: center;
-  color: #c8d4b8;
-  font-size: 13px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-}
-
-.controls-hint p {
-  margin: 3px 0;
-}
-
-.controls-hint kbd {
-  background: rgba(255, 248, 230, 0.9);
-  color: #5a4a3a;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-family: inherit;
-  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.2);
-  font-size: 12px;
 }
 </style>

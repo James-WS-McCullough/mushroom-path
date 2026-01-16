@@ -41,24 +41,24 @@ function handleBegin() {
       <button class="begin-button" @click="handleBegin">
         <span class="begin-text">Begin</span>
       </button>
+    </div>
 
-      <!-- Ground decoration -->
-      <div class="ground">
-        <div class="grass-tuft">
-          <div class="grass-blade"></div>
-          <div class="grass-blade"></div>
-          <div class="grass-blade"></div>
-        </div>
-        <div class="grass-tuft">
-          <div class="grass-blade"></div>
-          <div class="grass-blade"></div>
-          <div class="grass-blade"></div>
-        </div>
-        <div class="grass-tuft">
-          <div class="grass-blade"></div>
-          <div class="grass-blade"></div>
-          <div class="grass-blade"></div>
-        </div>
+    <!-- Ground decoration (outside animated content, fixed at bottom) -->
+    <div class="ground">
+      <div class="grass-tuft">
+        <div class="grass-blade"></div>
+        <div class="grass-blade"></div>
+        <div class="grass-blade"></div>
+      </div>
+      <div class="grass-tuft">
+        <div class="grass-blade"></div>
+        <div class="grass-blade"></div>
+        <div class="grass-blade"></div>
+      </div>
+      <div class="grass-tuft">
+        <div class="grass-blade"></div>
+        <div class="grass-blade"></div>
+        <div class="grass-blade"></div>
       </div>
     </div>
   </div>

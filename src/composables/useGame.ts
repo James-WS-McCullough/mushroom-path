@@ -1,6 +1,7 @@
 import { computed, ref } from "vue";
 import type { Direction, FlowDirection, Level, Position, Tile } from "../types/game";
 import { TileType } from "../types/game";
+import { playJump, playLand, playRandomDirt, playRandomPop, playStone, playWater } from "./useSound";
 
 interface MoveHistory {
 	playerPosition: Position;
@@ -162,6 +163,7 @@ export function useGame(level: Level) {
 		if (tile.type === TileType.GRASS) {
 			// Grass becomes mushroom
 			cell.type = TileType.MUSHROOM;
+			playRandomPop();
 			lastPlantedPosition.value = { ...position };
 			// Clear after animation completes
 			setTimeout(() => {
@@ -210,6 +212,11 @@ export function useGame(level: Level) {
 		const newPosition = tryMove(direction);
 		if (!newPosition) return;
 
+		// Check if this is a jump (moving 2 tiles)
+		const dx = Math.abs(newPosition.x - playerPosition.value.x);
+		const dy = Math.abs(newPosition.y - playerPosition.value.y);
+		const isJump = dx === 2 || dy === 2;
+
 		// Save history before moving
 		const currentPos = { ...playerPosition.value };
 		moveHistory.value.push({
@@ -219,6 +226,11 @@ export function useGame(level: Level) {
 
 		isHopping.value = true;
 		plantMushroom(playerPosition.value);
+
+		// Play jump sound if jumping
+		if (isJump) {
+			playJump();
+		}
 
 		// Check if landing on water - need to slide
 		const landingTile = getTile(newPosition);
@@ -230,6 +242,7 @@ export function useGame(level: Level) {
 			// Start sliding animation after hop completes
 			setTimeout(() => {
 				isHopping.value = false;
+				playWater();
 				isSliding.value = true;
 
 				// Animate through slide path
@@ -253,9 +266,16 @@ export function useGame(level: Level) {
 		} else {
 			playerPosition.value = newPosition;
 
-			// Reset hop animation
+			// Reset hop animation and play landing sound based on tile type
 			setTimeout(() => {
 				isHopping.value = false;
+				if (landingTile?.type === TileType.GRASS) {
+					playLand();
+				} else if (landingTile?.type === TileType.DIRT) {
+					playRandomDirt();
+				} else if (landingTile?.type === TileType.STONE) {
+					playStone();
+				}
 			}, 200);
 
 			if (checkWinCondition()) {
@@ -297,6 +317,11 @@ export function useGame(level: Level) {
 		if (isHopping.value && currentTile?.type === TileType.WATER) return;
 		if (!canReachByClick(target)) return;
 
+		// Check if this is a jump (moving 2 tiles)
+		const dx = Math.abs(target.x - playerPosition.value.x);
+		const dy = Math.abs(target.y - playerPosition.value.y);
+		const isJump = dx === 2 || dy === 2;
+
 		// Save history before moving
 		const currentPos = { ...playerPosition.value };
 		moveHistory.value.push({
@@ -306,6 +331,11 @@ export function useGame(level: Level) {
 
 		isHopping.value = true;
 		plantMushroom(playerPosition.value);
+
+		// Play jump sound if jumping
+		if (isJump) {
+			playJump();
+		}
 
 		// Check if landing on water - need to slide
 		const landingTile = getTile(target);
@@ -317,6 +347,7 @@ export function useGame(level: Level) {
 			// Start sliding animation after hop completes
 			setTimeout(() => {
 				isHopping.value = false;
+				playWater();
 				isSliding.value = true;
 
 				// Animate through slide path
@@ -340,9 +371,16 @@ export function useGame(level: Level) {
 		} else {
 			playerPosition.value = target;
 
-			// Reset hop animation
+			// Reset hop animation and play landing sound based on tile type
 			setTimeout(() => {
 				isHopping.value = false;
+				if (landingTile?.type === TileType.GRASS) {
+					playLand();
+				} else if (landingTile?.type === TileType.DIRT) {
+					playRandomDirt();
+				} else if (landingTile?.type === TileType.STONE) {
+					playStone();
+				}
 			}, 200);
 
 			if (checkWinCondition()) {

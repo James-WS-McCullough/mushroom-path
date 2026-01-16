@@ -47,6 +47,12 @@ const mushroomVariant = computed(() => {
 	return hash % 5;
 });
 
+// Deterministic bramble variant based on position (0-2)
+const brambleVariant = computed(() => {
+	const hash = props.tile.position.x * 11 + props.tile.position.y * 17;
+	return hash % 3;
+});
+
 function handleClick() {
 	if (props.isReachable && !props.isPlayerHere) {
 		emit("click");
@@ -114,9 +120,10 @@ function handleClick() {
       </div>
     </div>
 
-    <!-- Bramble sprite -->
-    <div v-if="tile.type === TileType.BRAMBLE" class="bramble">
+    <!-- Bramble sprite - variants -->
+    <div v-if="tile.type === TileType.BRAMBLE" :class="['bramble', `bramble--variant-${brambleVariant}`]">
       <div class="thorns">
+        <div class="thorn"></div>
         <div class="thorn"></div>
         <div class="thorn"></div>
         <div class="thorn"></div>
@@ -125,6 +132,12 @@ function handleClick() {
       <div class="vines">
         <div class="vine"></div>
         <div class="vine"></div>
+        <div class="vine"></div>
+      </div>
+      <div class="berries">
+        <div class="berry"></div>
+        <div class="berry"></div>
+        <div class="berry"></div>
       </div>
     </div>
 
@@ -231,17 +244,12 @@ function handleClick() {
   pointer-events: none;
 }
 
-/* Bramble tile */
+/* Bramble tile - purple thorny bushes */
 .tile--bramble {
   background:
-    repeating-linear-gradient(
-      45deg,
-      #5c4a3d 0px,
-      #5c4a3d 4px,
-      #4a3c32 4px,
-      #4a3c32 8px
-    ),
-    linear-gradient(135deg, #6b5344 0%, #4a3830 100%);
+    radial-gradient(circle at 30% 40%, rgba(90, 60, 100, 0.4) 0%, transparent 40%),
+    radial-gradient(circle at 70% 60%, rgba(70, 45, 85, 0.3) 0%, transparent 35%),
+    linear-gradient(135deg, #5a4868 0%, #463858 50%, #3a2d48 100%);
   cursor: not-allowed;
 }
 
@@ -262,7 +270,7 @@ function handleClick() {
   height: 0;
   border-left: 4px solid transparent;
   border-right: 4px solid transparent;
-  border-bottom: 10px solid #3d2f26;
+  border-bottom: 10px solid #2d2038;
 }
 
 .thorn:nth-child(1) {
@@ -272,21 +280,27 @@ function handleClick() {
 }
 
 .thorn:nth-child(2) {
-  top: 14px;
+  top: 12px;
   right: 14px;
   transform: rotate(25deg);
 }
 
 .thorn:nth-child(3) {
-  bottom: 12px;
-  left: 20px;
+  bottom: 14px;
+  left: 18px;
   transform: rotate(-15deg);
 }
 
 .thorn:nth-child(4) {
-  bottom: 8px;
-  right: 18px;
+  bottom: 10px;
+  right: 16px;
   transform: rotate(40deg);
+}
+
+.thorn:nth-child(5) {
+  top: 28px;
+  left: 32px;
+  transform: rotate(10deg);
 }
 
 .vines {
@@ -296,23 +310,112 @@ function handleClick() {
 
 .vine {
   position: absolute;
-  width: 40px;
-  height: 40px;
-  border: 3px solid #6d5a4a;
+  width: 36px;
+  height: 36px;
+  border: 3px solid #6a5878;
   border-radius: 50%;
-  border-color: #6d5a4a transparent transparent transparent;
+  border-color: #6a5878 transparent transparent transparent;
 }
 
 .vine:nth-child(1) {
-  top: -10px;
-  left: 5px;
-  transform: rotate(45deg);
+  top: -8px;
+  left: 6px;
+  transform: rotate(50deg);
 }
 
 .vine:nth-child(2) {
-  bottom: -15px;
-  right: 0;
-  transform: rotate(-135deg);
+  bottom: -12px;
+  right: 2px;
+  transform: rotate(-130deg);
+}
+
+.vine:nth-child(3) {
+  top: 10px;
+  right: -8px;
+  width: 28px;
+  height: 28px;
+  transform: rotate(-40deg);
+}
+
+/* Berries add visual interest */
+.berries {
+  position: absolute;
+  inset: 0;
+}
+
+.berry {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  background: radial-gradient(circle at 30% 30%, #9a6aaa 0%, #7a4a8a 100%);
+  border-radius: 50%;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+}
+
+.berry:nth-child(1) {
+  top: 16px;
+  left: 24px;
+}
+
+.berry:nth-child(2) {
+  bottom: 20px;
+  right: 22px;
+  width: 5px;
+  height: 5px;
+}
+
+.berry:nth-child(3) {
+  top: 32px;
+  right: 28px;
+  width: 4px;
+  height: 4px;
+}
+
+/* Bramble variants */
+.bramble--variant-1 .thorn:nth-child(1) {
+  top: 10px;
+  left: 8px;
+}
+
+.bramble--variant-1 .thorn:nth-child(3) {
+  bottom: 10px;
+  left: 26px;
+}
+
+.bramble--variant-1 .berry:nth-child(1) {
+  top: 20px;
+  left: 18px;
+}
+
+.bramble--variant-1 .berry:nth-child(2) {
+  bottom: 16px;
+  right: 18px;
+}
+
+.bramble--variant-2 .thorn:nth-child(2) {
+  top: 18px;
+  right: 10px;
+}
+
+.bramble--variant-2 .thorn:nth-child(4) {
+  bottom: 16px;
+  right: 24px;
+}
+
+.bramble--variant-2 .vine:nth-child(1) {
+  top: -6px;
+  left: 12px;
+  transform: rotate(35deg);
+}
+
+.bramble--variant-2 .berry:nth-child(1) {
+  top: 14px;
+  left: 30px;
+}
+
+.bramble--variant-2 .berry:nth-child(3) {
+  top: 26px;
+  right: 20px;
 }
 
 /* Stone tile */

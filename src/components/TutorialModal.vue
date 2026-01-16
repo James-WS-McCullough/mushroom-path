@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { playTutorialAppears, playVoiceTutorial } from "../composables/useSound";
 
 const emit = defineEmits<{
 	close: [];
@@ -20,7 +21,7 @@ const pages = [
 	},
 	{
 		title: "Movement",
-		text: "Move with WASD or Arrow Keys. Click tiles to hop there.",
+		text: "Use WASD or Arrow Keys to move. You can also click or tap tiles to hop there.",
 		grid: [
 			["G", "G", "G"],
 			["G", "G", "G"],
@@ -63,6 +64,16 @@ const pages = [
 			["B", "G", "B"],
 		],
 		playerPos: { x: 0, y: 0 },
+	},
+	{
+		title: "Undo & Reset",
+		text: "Made a mistake? Press Z to undo or R to restart the level.",
+		grid: [
+			["M", "M", "G"],
+			["G", "M", "G"],
+			["G", "G", "G"],
+		],
+		playerPos: { x: 2, y: 0 },
 	},
 	{
 		title: "Goal",
@@ -110,6 +121,24 @@ function isHighlighted(x: number, y: number): boolean {
 	if (!page.value.highlight) return false;
 	return page.value.highlight.some((h) => h.x === x && h.y === y);
 }
+
+// Play voice lines for specific tutorial pages
+watch(currentPage, (pageIndex) => {
+	if (pageIndex === 2) {
+		// Planting section
+		playVoiceTutorial(1);
+	} else if (pageIndex === 3) {
+		// Jumping section
+		playVoiceTutorial(2);
+	} else if (pageIndex === 4) {
+		// Brambles section
+		playVoiceTutorial(3);
+	}
+});
+
+onMounted(() => {
+	playTutorialAppears();
+});
 </script>
 
 <template>
@@ -289,7 +318,7 @@ function isHighlighted(x: number, y: number): boolean {
 }
 
 .mini-tile--bramble {
-  background: linear-gradient(135deg, #6b5344 0%, #4a3830 100%);
+  background: linear-gradient(135deg, #5a4868 0%, #3a2d48 100%);
 }
 
 .mini-tile--highlight {
@@ -353,7 +382,7 @@ function isHighlighted(x: number, y: number): boolean {
   height: 0;
   border-left: 4px solid transparent;
   border-right: 4px solid transparent;
-  border-bottom: 8px solid #3d2f26;
+  border-bottom: 8px solid #2d2038;
 }
 
 .mini-bramble::before {

@@ -6,6 +6,7 @@ import StartScreen from "./components/StartScreen.vue";
 import TopBar from "./components/TopBar.vue";
 import TutorialModal from "./components/TutorialModal.vue";
 import WelcomeSign from "./components/WelcomeSign.vue";
+import { playSuccess, playUndo, playVoiceSuccess, startBackgroundMusic } from "./composables/useSound";
 import { level1 } from "./data/levels";
 import type { Level, WorldElement } from "./types/game";
 import { WorldElement as WE } from "./types/game";
@@ -96,6 +97,11 @@ function advanceLevel(): boolean {
 const pendingNewWorld = ref(false);
 
 function handleWin() {
+	playSuccess();
+	// 20% chance to play a voice line
+	if (Math.random() < 0.2) {
+		playVoiceSuccess();
+	}
 	skipModalText.value = "Garden Complete!";
 	randomizeWinMushrooms();
 	showWinModal.value = true;
@@ -165,11 +171,14 @@ function handleSkip() {
 
 function handleRestart() {
 	if (isFading.value) return;
+	playUndo();
 	// Trigger restart in the GameBoard component
 	levelKey.value++;
 }
 
 function handleBegin() {
+	startBackgroundMusic();
+
 	// Generate elements for first world
 	currentWorldElements.value = generateWorldElements();
 
@@ -272,17 +281,18 @@ function closeWelcomeSign() {
 .layout {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
-  min-height: 100dvh;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
 }
 
 .app {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 16px;
   position: relative;
   overflow: hidden;
   width: 100%;

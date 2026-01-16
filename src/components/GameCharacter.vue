@@ -1,13 +1,138 @@
 <script setup lang="ts">
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { playVoiceStuck, playVoiceWave } from "../composables/useSound";
 import type { Position } from "../types/game";
 
-defineProps<{
+const props = defineProps<{
 	position: Position;
 	isHopping: boolean;
 	isSliding: boolean;
 	isStuck: boolean;
 	boardPadding?: number;
 }>();
+
+// Blinking state
+const isBlinking = ref(false);
+let blinkInterval: ReturnType<typeof setInterval> | null = null;
+
+// Idle attention state
+const isWaving = ref(false);
+const waveJumpCount = ref(0);
+let idleTimer: ReturnType<typeof setTimeout> | null = null;
+let waveInterval: ReturnType<typeof setInterval> | null = null;
+
+function startBlinking() {
+	// Blink every 2-4 seconds
+	const scheduleBlink = () => {
+		const delay = 2000 + Math.random() * 2000;
+		blinkInterval = setTimeout(() => {
+			if (!props.isStuck && !props.isHopping && !props.isSliding && !isWaving.value) {
+				isBlinking.value = true;
+				setTimeout(() => {
+					isBlinking.value = false;
+				}, 150);
+			}
+			scheduleBlink();
+		}, delay);
+	};
+	scheduleBlink();
+}
+
+function stopBlinking() {
+	if (blinkInterval) {
+		clearTimeout(blinkInterval);
+		blinkInterval = null;
+	}
+}
+
+function resetIdleTimer() {
+	// Clear existing timers
+	if (idleTimer) {
+		clearTimeout(idleTimer);
+		idleTimer = null;
+	}
+	if (waveInterval) {
+		clearInterval(waveInterval);
+		waveInterval = null;
+	}
+	isWaving.value = false;
+	waveJumpCount.value = 0;
+
+	// Start new idle timer (10-20 seconds)
+	const idleDelay = 10000 + Math.random() * 10000;
+	idleTimer = setTimeout(() => {
+		if (!props.isStuck && !props.isHopping && !props.isSliding) {
+			startWaveAnimation();
+		}
+	}, idleDelay);
+}
+
+function startWaveAnimation() {
+	const jumpCount = 2 + Math.floor(Math.random() * 2); // 2 or 3 jumps
+	waveJumpCount.value = 0;
+	isWaving.value = true;
+	playVoiceWave(0.6);
+
+	waveInterval = setInterval(() => {
+		waveJumpCount.value++;
+		if (waveJumpCount.value >= jumpCount) {
+			if (waveInterval) {
+				clearInterval(waveInterval);
+				waveInterval = null;
+			}
+			isWaving.value = false;
+			// Reset idle timer for next attention grab
+			resetIdleTimer();
+		}
+	}, 400);
+}
+
+// Watch for position changes to reset idle timer
+watch(() => props.position, () => {
+	resetIdleTimer();
+}, { deep: true });
+
+// Watch for movement states
+watch([() => props.isHopping, () => props.isSliding], () => {
+	if (props.isHopping || props.isSliding) {
+		isBlinking.value = false;
+		isWaving.value = false;
+	}
+});
+
+// Watch for stuck state and play voice line
+watch(() => props.isStuck, (stuck) => {
+	if (stuck) {
+		playVoiceStuck();
+	}
+});
+
+onMounted(() => {
+	startBlinking();
+	resetIdleTimer();
+});
+
+onUnmounted(() => {
+	stopBlinking();
+	if (idleTimer) clearTimeout(idleTimer);
+	if (waveInterval) clearInterval(waveInterval);
+});
+
+const spriteUrl = computed(() => {
+	if (props.isStuck) {
+		return "/art/MushroomGirl-Stuck.webp";
+	}
+	if (props.isHopping || props.isSliding) {
+		return "/art/MushroomGirl-Jump.webp";
+	}
+	if (isWaving.value) {
+		return "/art/MushroomGirl-Wave.webp";
+	}
+	if (isBlinking.value) {
+		return "/art/MushroomGirl-blink.webp";
+	}
+	return "/art/MushroomGirl.webp";
+});
 </script>
 
 <template>
@@ -18,28 +143,8 @@ defineProps<{
       top: `${(boardPadding ?? 0) + position.y * 67}px`,
     }"
   >
-    <div :class="['character__sprite', { 'character__sprite--hopping': isHopping, 'character__sprite--sliding': isSliding, 'character__sprite--stuck': isStuck }]">
-      <!-- Mushroom cap (hat) -->
-      <div class="mushroom-cap"></div>
-      <!-- Face -->
-      <div class="face">
-        <div :class="['eyes', { 'eyes--crying': isStuck }]">
-          <div class="eye left"></div>
-          <div class="eye right"></div>
-        </div>
-        <!-- Tears when stuck -->
-        <div v-if="isStuck" class="tears">
-          <div class="tear left"></div>
-          <div class="tear right"></div>
-        </div>
-        <div class="cheeks">
-          <div class="cheek left"></div>
-          <div class="cheek right"></div>
-        </div>
-        <div :class="['mouth', { 'mouth--sad': isStuck }]"></div>
-      </div>
-      <!-- Body -->
-      <div class="body"></div>
+    <div :class="['character__sprite', { 'character__sprite--hopping': isHopping, 'character__sprite--stuck': isStuck, 'character__sprite--waving': isWaving }]">
+      <img :src="spriteUrl" alt="Mushroom Girl" class="sprite-img" />
     </div>
   </div>
 </template>
@@ -49,20 +154,25 @@ defineProps<{
   position: absolute;
   width: 64px;
   height: 64px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   transition: left 0.15s ease-out, top 0.15s ease-out;
   z-index: 10;
   pointer-events: none;
 }
 
 .character__sprite {
-  position: relative;
-  width: 48px;
-  height: 56px;
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 99px;
+  height: 115px;
   filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.25));
-  animation: idleBounce 0.8s ease-in-out infinite;
+}
+
+.sprite-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .character__sprite--hopping {
@@ -71,214 +181,50 @@ defineProps<{
 
 @keyframes hop {
   0% {
-    transform: translateY(0) scale(1, 1);
+    transform: translateX(-50%) translateY(0) scale(1, 1);
   }
   30% {
-    transform: translateY(-18px) scale(0.95, 1.05);
+    transform: translateX(-50%) translateY(-18px) scale(0.95, 1.05);
   }
   50% {
-    transform: translateY(-20px) scale(0.95, 1.05);
+    transform: translateX(-50%) translateY(-20px) scale(0.95, 1.05);
   }
   80% {
-    transform: translateY(-5px) scale(1.05, 0.95);
+    transform: translateX(-50%) translateY(-5px) scale(1.05, 0.95);
   }
   100% {
-    transform: translateY(0) scale(1, 1);
+    transform: translateX(-50%) translateY(0) scale(1, 1);
   }
 }
 
-/* Sliding animation - smooth surfing motion */
-.character__sprite--sliding {
-  animation: slide 0.15s linear infinite;
+/* Waving/attention animation - bouncy jumps */
+.character__sprite--waving {
+  animation: wave-bounce 0.4s ease-in-out infinite;
 }
 
-@keyframes slide {
-  0% {
-    transform: translateY(-2px) rotate(-3deg);
-  }
-  50% {
-    transform: translateY(0px) rotate(3deg);
-  }
-  100% {
-    transform: translateY(-2px) rotate(-3deg);
-  }
-}
-
-/* Mushroom cap - red with white spots */
-.mushroom-cap {
-  position: absolute;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 44px;
-  height: 24px;
-  background: linear-gradient(135deg, #e85d5d 0%, #c94444 50%, #b33a3a 100%);
-  border-radius: 22px 22px 8px 8px;
-  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.15);
-}
-
-.mushroom-cap::before,
-.mushroom-cap::after {
-  content: "";
-  position: absolute;
-  background: #fff8e7;
-  border-radius: 50%;
-}
-
-.mushroom-cap::before {
-  width: 8px;
-  height: 6px;
-  top: 6px;
-  left: 8px;
-}
-
-.mushroom-cap::after {
-  width: 6px;
-  height: 5px;
-  top: 10px;
-  right: 10px;
-}
-
-/* Face */
-.face {
-  position: absolute;
-  top: 18px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 28px;
-  height: 22px;
-  background: linear-gradient(180deg, #ffe8d6 0%, #fdd9c4 100%);
-  border-radius: 14px 14px 12px 12px;
-}
-
-.eyes {
-  position: absolute;
-  top: 6px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 8px;
-}
-
-.eye {
-  width: 5px;
-  height: 6px;
-  background: #4a3728;
-  border-radius: 50%;
-}
-
-.cheeks {
-  position: absolute;
-  top: 11px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 14px;
-}
-
-.cheek {
-  width: 5px;
-  height: 3px;
-  background: #ffb5a0;
-  border-radius: 50%;
-  opacity: 0.7;
-}
-
-.mouth {
-  position: absolute;
-  bottom: 4px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 4px;
-  height: 2px;
-  background: #c9877a;
-  border-radius: 0 0 4px 4px;
-}
-
-/* Body - simple dress */
-.body {
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 20px;
-  height: 16px;
-  background: linear-gradient(180deg, #a8d5a2 0%, #8bc485 100%);
-  border-radius: 4px 4px 10px 10px;
-  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.1);
-}
-
-@keyframes idleBounce {
+@keyframes wave-bounce {
   0%, 100% {
-    transform: translateY(0);
+    transform: translateX(-50%) translateY(0);
   }
   50% {
-    transform: translateY(-3px);
+    transform: translateX(-50%) translateY(-12px);
   }
 }
 
-/* Stuck/crying state */
+/* Stuck/crying state - nervous side-to-side shaking */
 .character__sprite--stuck {
-  animation: sadBounce 1.2s ease-in-out infinite;
+  animation: nervousShake 0.8s ease-in-out infinite;
 }
 
-@keyframes sadBounce {
+@keyframes nervousShake {
   0%, 100% {
-    transform: translateY(0);
+    transform: translateX(-50%);
   }
-  50% {
-    transform: translateY(-2px);
+  25% {
+    transform: translateX(calc(-50% - 3px));
   }
-}
-
-.eyes--crying .eye {
-  height: 4px;
-  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
-  transform: scaleY(0.8);
-}
-
-.tears {
-  position: absolute;
-  top: 8px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 12px;
-}
-
-.tear {
-  width: 3px;
-  height: 6px;
-  background: linear-gradient(180deg, rgba(135, 206, 250, 0.8) 0%, rgba(100, 180, 255, 0.9) 100%);
-  border-radius: 50% 50% 50% 50% / 30% 30% 70% 70%;
-  animation: tearDrop 1s ease-in infinite;
-}
-
-.tear.right {
-  animation-delay: 0.5s;
-}
-
-@keyframes tearDrop {
-  0% {
-    opacity: 0;
-    transform: translateY(0) scale(0.5);
+  75% {
+    transform: translateX(calc(-50% + 3px));
   }
-  20% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-  100% {
-    opacity: 0;
-    transform: translateY(8px) scale(0.8);
-  }
-}
-
-.mouth--sad {
-  width: 6px;
-  height: 3px;
-  background: #c9877a;
-  border-radius: 0 0 6px 6px;
-  transform: translateX(-50%) rotate(180deg);
-  bottom: 3px;
 }
 </style>

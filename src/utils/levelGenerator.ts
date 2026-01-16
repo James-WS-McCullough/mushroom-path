@@ -22,7 +22,7 @@ const DEFAULT_CONFIG: GeneratorConfig = {
 	maxHeight: 12,
 	minRectangles: 2,
 	maxRectangles: 3,
-	brambleChance: 0.12,
+	brambleChance: 0.18,
 	stoneChance: 0.08,
 	riverChance: 0.15,
 	riverMinLength: 2,
