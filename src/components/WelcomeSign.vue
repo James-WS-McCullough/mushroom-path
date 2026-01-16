@@ -119,14 +119,17 @@ onUnmounted(() => {
 }
 
 .post {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
   width: 20px;
-  height: 100px;
+  height: 100vh;
   background: linear-gradient(90deg, #6d5243 0%, #8b6b52 50%, #6d5243 100%);
-  border-radius: 4px;
+  border-radius: 4px 4px 0 0;
   box-shadow:
     inset -3px 0 0 rgba(0, 0, 0, 0.2),
     3px 6px 12px rgba(0, 0, 0, 0.3);
-  position: relative;
   z-index: 1;
 }
 

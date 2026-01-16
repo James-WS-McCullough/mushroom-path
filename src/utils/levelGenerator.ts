@@ -12,6 +12,7 @@ export interface GeneratorConfig {
 	riverChance: number;
 	riverMinLength: number;
 	riverMaxLength: number;
+	dirtChance: number;
 }
 
 const DEFAULT_CONFIG: GeneratorConfig = {
@@ -26,6 +27,7 @@ const DEFAULT_CONFIG: GeneratorConfig = {
 	riverChance: 0.15,
 	riverMinLength: 2,
 	riverMaxLength: 4,
+	dirtChance: 0.08,
 };
 
 interface Rectangle {
@@ -638,52 +640,128 @@ function computeSlideDestination(
 // Includes iteration limit to prevent freezing on complex configurations
 // Stone tiles are walkable bridges that don't need to be in the path
 // Water tiles force sliding to their endpoint (stone)
+// Dirt tiles need to be visited TWICE (first visit: dirt->grass, second visit: grass->mushroom)
 function findHamiltonianPath(
 	grassTiles: Position[],
 	obstacleTiles: Set<string>,
 	stoneTiles: Set<string> = new Set(),
 	waterTiles: Set<string> = new Set(),
 	waterFlow: Record<string, FlowDirection> = {},
+	dirtTiles: Set<string> = new Set(),
 ): Position[] | null {
 	const grassSet = new Set(grassTiles.map((t) => posKey(t.x, t.y)));
 
+	// Total visits needed: each grass tile once, each dirt tile twice
+	// But grassTiles already includes dirt tiles, so we need:
+	// grassTiles.length (first visit to all) + dirtTiles.size (second visit to dirt)
+	const totalVisitsNeeded = grassTiles.length + dirtTiles.size;
+
 	// Limit iterations to prevent freezing - scales with grid size
-	const maxIterations = Math.min(50000, grassTiles.length * 5000);
+	const maxIterations = Math.min(50000, totalVisitsNeeded * 5000);
 	let iterations = 0;
 
-	function dfs(current: Position, visitedGrass: Set<string>): Position[] | null {
+	// State tracking:
+	// - visitedOnce: tiles visited at least once (grass becomes mushroom, dirt becomes grass)
+	// - visitedTwice: dirt tiles visited twice (now mushroom)
+	// A tile is "complete" when: grass visited once, OR dirt visited twice
+
+	function dfs(
+		current: Position,
+		visitedOnce: Set<string>,
+		visitedTwice: Set<string>,
+	): Position[] | null {
 		iterations++;
 		if (iterations > maxIterations) {
-			return null; // Abort search if taking too long
+			return null;
 		}
 
 		const key = posKey(current.x, current.y);
-		visitedGrass.add(key);
+		const isDirt = dirtTiles.has(key);
+		const wasVisitedOnce = visitedOnce.has(key);
 
-		if (visitedGrass.size === grassTiles.length) {
+		// Update visit tracking
+		if (isDirt && wasVisitedOnce) {
+			// Second visit to dirt tile
+			visitedTwice.add(key);
+		} else {
+			// First visit (grass or dirt)
+			visitedOnce.add(key);
+		}
+
+		// Count completed tiles
+		// Grass tiles: completed after 1 visit
+		// Dirt tiles: completed after 2 visits
+		const completedGrass = [...visitedOnce].filter(k => !dirtTiles.has(k)).length;
+		const completedDirt = visitedTwice.size;
+
+		// Check if path is complete
+		const grassOnlyCount = grassTiles.length - dirtTiles.size;
+		if (completedGrass === grassOnlyCount && completedDirt === dirtTiles.size) {
 			return [current];
 		}
 
-		// Walkable tiles: unvisited grass + stone tiles (NOT water - water forces sliding)
-		const walkableTiles = new Set([
-			...[...grassSet].filter((k) => !visitedGrass.has(k) || k === key),
-			...stoneTiles,
-		]);
+		// Determine walkable tiles
+		// - Unvisited grass/dirt tiles
+		// - Dirt tiles visited once (now grass, can be visited again)
+		// - Stone tiles (always walkable)
+		const walkableTiles = new Set<string>();
 
-		// Obstacles: brambles + visited grass (they become mushrooms)
-		const currentObstacles = new Set([
-			...obstacleTiles,
-			...[...visitedGrass].filter((k) => k !== key),
-		]);
+		for (const k of grassSet) {
+			const isCurrentTile = k === key;
+			const isVisitedOnce = visitedOnce.has(k);
+			const isVisitedTwice = visitedTwice.has(k);
+			const isTileDirt = dirtTiles.has(k);
 
-		// Get standard neighbors (grass and stone)
+			if (isCurrentTile) {
+				walkableTiles.add(k);
+			} else if (!isVisitedOnce) {
+				// Never visited - walkable
+				walkableTiles.add(k);
+			} else if (isTileDirt && !isVisitedTwice) {
+				// Dirt visited once (now grass), can visit again
+				walkableTiles.add(k);
+			}
+			// Otherwise: grass visited once = mushroom (obstacle), or dirt visited twice = mushroom (obstacle)
+		}
+
+		for (const k of stoneTiles) {
+			walkableTiles.add(k);
+		}
+
+		// Obstacles: brambles + completed tiles (mushrooms)
+		const currentObstacles = new Set<string>([...obstacleTiles]);
+		for (const k of visitedOnce) {
+			if (k === key) continue;
+			const isTileDirt = dirtTiles.has(k);
+			const isVisitedTwice = visitedTwice.has(k);
+
+			// Grass visited once = mushroom (obstacle)
+			// Dirt visited twice = mushroom (obstacle)
+			// Dirt visited once = grass (NOT obstacle, still walkable)
+			if (!isTileDirt || isVisitedTwice) {
+				currentObstacles.add(k);
+			}
+		}
+
+		// Get neighbors
 		const standardNeighbors = getReachableNeighbors(current, walkableTiles, currentObstacles)
 			.filter((n) => {
 				const nKey = posKey(n.x, n.y);
-				return !visitedGrass.has(nKey) || stoneTiles.has(nKey);
+				if (stoneTiles.has(nKey)) return true;
+
+				const nVisitedOnce = visitedOnce.has(nKey);
+				const nVisitedTwice = visitedTwice.has(nKey);
+				const nIsDirt = dirtTiles.has(nKey);
+
+				// Can visit if:
+				// - Not visited at all
+				// - Dirt visited once (needs second visit)
+				if (!nVisitedOnce) return true;
+				if (nIsDirt && !nVisitedTwice) return true;
+				return false;
 			});
 
-		// Also check for water tile entries - if adjacent to water, compute slide destination
+		// Water slide destinations
 		const waterSlideDestinations: { waterEntry: Position; destination: Position }[] = [];
 		const deltas = [
 			{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 },
@@ -694,18 +772,17 @@ function findHamiltonianPath(
 			if (waterTiles.has(adjacentKey)) {
 				const slideEnd = computeSlideDestination(adjacentPos, waterTiles, waterFlow);
 				const slideEndKey = posKey(slideEnd.x, slideEnd.y);
-				// Slide destination should be a stone tile
 				if (stoneTiles.has(slideEndKey)) {
 					waterSlideDestinations.push({ waterEntry: adjacentPos, destination: slideEnd });
 				}
 			}
 		}
 
-		// Shuffle all options
+		// Shuffle options
 		const allNeighbors = shuffleArray([...standardNeighbors]);
 		const shuffledWaterSlides = shuffleArray(waterSlideDestinations);
 
-		// Try standard neighbors first
+		// Try standard neighbors
 		for (const neighbor of allNeighbors) {
 			const neighborKey = posKey(neighbor.x, neighbor.y);
 
@@ -715,48 +792,67 @@ function findHamiltonianPath(
 					neighbor,
 					walkableTiles,
 					currentObstacles,
-				).filter((n) => !visitedGrass.has(posKey(n.x, n.y)));
+				).filter((n) => {
+					const snKey = posKey(n.x, n.y);
+					if (!grassSet.has(snKey)) return false;
+
+					const snVisitedOnce = visitedOnce.has(snKey);
+					const snVisitedTwice = visitedTwice.has(snKey);
+					const snIsDirt = dirtTiles.has(snKey);
+
+					if (!snVisitedOnce) return true;
+					if (snIsDirt && !snVisitedTwice) return true;
+					return false;
+				});
 
 				for (const stoneNeighbor of shuffleArray(stoneNeighbors)) {
-					const snKey = posKey(stoneNeighbor.x, stoneNeighbor.y);
-					if (grassSet.has(snKey) && !visitedGrass.has(snKey)) {
-						const result = dfs(stoneNeighbor, visitedGrass);
-						if (result) {
-							return [current, neighbor, ...result];
-						}
+					const result = dfs(stoneNeighbor, visitedOnce, visitedTwice);
+					if (result) {
+						return [current, neighbor, ...result];
 					}
 				}
 			} else {
-				// Regular grass tile
-				const result = dfs(neighbor, visitedGrass);
+				// Regular tile (grass or dirt needing revisit)
+				const result = dfs(neighbor, visitedOnce, visitedTwice);
 				if (result) {
 					return [current, ...result];
 				}
 			}
 		}
 
-		// Try water slides - stepping on water slides you to a stone
+		// Try water slides
 		for (const { destination } of shuffledWaterSlides) {
-			// After sliding to stone, need to find a grass tile to continue
 			const stoneNeighbors = getReachableNeighbors(
 				destination,
 				walkableTiles,
 				currentObstacles,
-			).filter((n) => !visitedGrass.has(posKey(n.x, n.y)));
+			).filter((n) => {
+				const snKey = posKey(n.x, n.y);
+				if (!grassSet.has(snKey)) return false;
+
+				const snVisitedOnce = visitedOnce.has(snKey);
+				const snVisitedTwice = visitedTwice.has(snKey);
+				const snIsDirt = dirtTiles.has(snKey);
+
+				if (!snVisitedOnce) return true;
+				if (snIsDirt && !snVisitedTwice) return true;
+				return false;
+			});
 
 			for (const stoneNeighbor of shuffleArray(stoneNeighbors)) {
-				const snKey = posKey(stoneNeighbor.x, stoneNeighbor.y);
-				if (grassSet.has(snKey) && !visitedGrass.has(snKey)) {
-					const result = dfs(stoneNeighbor, visitedGrass);
-					if (result) {
-						// Include the slide destination (stone) in the path
-						return [current, destination, ...result];
-					}
+				const result = dfs(stoneNeighbor, visitedOnce, visitedTwice);
+				if (result) {
+					return [current, destination, ...result];
 				}
 			}
 		}
 
-		visitedGrass.delete(key);
+		// Backtrack
+		if (isDirt && wasVisitedOnce) {
+			visitedTwice.delete(key);
+		} else {
+			visitedOnce.delete(key);
+		}
 		return null;
 	}
 
@@ -764,15 +860,42 @@ function findHamiltonianPath(
 
 	for (const startTile of startTiles) {
 		if (iterations > maxIterations) {
-			break; // Stop trying more start tiles if limit reached
+			break;
 		}
-		const path = dfs(startTile, new Set());
+		const path = dfs(startTile, new Set(), new Set());
 		if (path) {
 			return path;
 		}
 	}
 
 	return null;
+}
+
+// Select dirt candidates BEFORE path finding
+// Dirt tiles can be anywhere - the path finder will ensure they can be visited twice
+function selectDirtCandidates(
+	grass: Set<string>,
+	_stones: Set<string>,
+	chance: number,
+): Set<string> {
+	const dirt = new Set<string>();
+	if (chance <= 0) return dirt;
+
+	// Any grass tile can potentially be dirt
+	const candidates = Array.from(grass);
+
+	// Select some candidates as dirt
+	const shuffled = shuffleArray(candidates);
+	const targetDirt = Math.max(1, Math.floor(grass.size * chance));
+
+	for (let i = 0; i < Math.min(targetDirt, shuffled.length); i++) {
+		const key = shuffled[i];
+		if (key) {
+			dirt.add(key);
+		}
+	}
+
+	return dirt;
 }
 
 // Build level from path
@@ -782,6 +905,7 @@ function buildLevelFromPath(
 	brambles: Set<string>,
 	stones: Set<string>,
 	water: Set<string>,
+	dirt: Set<string>,
 	waterFlowInput: Record<string, FlowDirection>,
 	rooms: Rectangle[],
 ): Level {
@@ -812,6 +936,8 @@ function buildLevelFromPath(
 				row.push(TileType.STONE);
 			} else if (water.has(key)) {
 				row.push(TileType.WATER);
+			} else if (dirt.has(key)) {
+				row.push(TileType.DIRT);
 			} else if (allShapeTiles.has(key)) {
 				row.push(TileType.GRASS);
 			} else {
@@ -872,11 +998,12 @@ function verifyLevel(level: Level): boolean {
 		return false;
 	}
 
-	// Count grass tiles - should be at least 8
+	// Count grass and dirt tiles - should be at least 8
+	// Dirt counts as 1 tile (even though it needs 2 visits)
 	let grassCount = 0;
 	for (const row of level.grid) {
 		for (const tile of row) {
-			if (tile === TileType.GRASS) {
+			if (tile === TileType.GRASS || tile === TileType.DIRT) {
 				grassCount++;
 			}
 		}
@@ -895,6 +1022,12 @@ export function generateLevel(
 	// Rivers only generate if the RIVERS element is active
 	if (!elements.includes(WE.RIVERS)) {
 		elementConfig.riverChance = 0;
+	}
+
+	// Dirt element increases dirt chance by 4x
+	if (elements.includes(WE.DIRT)) {
+		const baseDirtChance = config.dirtChance ?? DEFAULT_CONFIG.dirtChance;
+		elementConfig.dirtChance = baseDirtChance * 4;
 	}
 
 	const fullConfig = { ...DEFAULT_CONFIG, ...elementConfig };
@@ -935,11 +1068,15 @@ export function generateLevel(
 
 		if (grassTiles.length < 8) continue;
 
-		// Find path - water tiles force sliding to stone endpoints
-		const path = findHamiltonianPath(grassTiles, brambles, finalStones, water, waterFlow);
+		// Select dirt candidates BEFORE path finding
+		// Dirt tiles need to be adjacent to stones so the path can revisit them
+		const dirt = selectDirtCandidates(grass, finalStones, fullConfig.dirtChance);
+
+		// Find path - path finder will visit dirt tiles twice
+		const path = findHamiltonianPath(grassTiles, brambles, finalStones, water, waterFlow, dirt);
 
 		if (path) {
-			const level = buildLevelFromPath(path, shape, brambles, finalStones, water, waterFlow, rooms);
+			const level = buildLevelFromPath(path, shape, brambles, finalStones, water, dirt, waterFlow, rooms);
 			if (verifyLevel(level)) {
 				return level;
 			}

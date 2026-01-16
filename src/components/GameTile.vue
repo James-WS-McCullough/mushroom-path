@@ -24,6 +24,7 @@ const tileClass = computed(() => {
 		"tile--void": props.tile.type === TileType.VOID,
 		"tile--stone": props.tile.type === TileType.STONE,
 		"tile--water": props.tile.type === TileType.WATER,
+		"tile--dirt": props.tile.type === TileType.DIRT,
 		"tile--reachable": props.isReachable && !props.isPlayerHere,
 		"tile--has-player": props.isPlayerHere,
 	};
@@ -134,6 +135,15 @@ function handleClick() {
       <div class="pebble pebble--1"></div>
       <div class="pebble pebble--2"></div>
       <div class="pebble pebble--3"></div>
+    </div>
+
+    <!-- Dirt tile details -->
+    <div v-if="tile.type === TileType.DIRT" class="dirt-detail">
+      <div class="dirt-clump dirt-clump--1"></div>
+      <div class="dirt-clump dirt-clump--2"></div>
+      <div class="dirt-clump dirt-clump--3"></div>
+      <div class="dirt-rock dirt-rock--1"></div>
+      <div class="dirt-rock dirt-rock--2"></div>
     </div>
 
     <!-- Water tile with ripples, flow lines, and chevrons -->
@@ -367,6 +377,72 @@ function handleClick() {
   height: 4px;
   top: 12px;
   right: 12px;
+}
+
+/* Dirt tile */
+.tile--dirt {
+  background:
+    radial-gradient(circle at 25% 35%, rgba(120, 90, 60, 0.4) 0%, transparent 35%),
+    radial-gradient(circle at 75% 65%, rgba(90, 65, 40, 0.3) 0%, transparent 30%),
+    linear-gradient(135deg, #8b6b4a 0%, #6d5238 50%, #5a4530 100%);
+}
+
+.dirt-detail {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.dirt-clump {
+  position: absolute;
+  background: linear-gradient(135deg, #7a5c40 0%, #5a4230 100%);
+  border-radius: 50% 50% 40% 40%;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.15);
+}
+
+.dirt-clump--1 {
+  width: 14px;
+  height: 10px;
+  top: 12px;
+  left: 10px;
+  transform: rotate(-10deg);
+}
+
+.dirt-clump--2 {
+  width: 12px;
+  height: 8px;
+  bottom: 14px;
+  right: 12px;
+  transform: rotate(15deg);
+}
+
+.dirt-clump--3 {
+  width: 10px;
+  height: 7px;
+  bottom: 18px;
+  left: 22px;
+  transform: rotate(-5deg);
+}
+
+.dirt-rock {
+  position: absolute;
+  background: linear-gradient(135deg, #9a8878 0%, #7a6858 100%);
+  border-radius: 40% 50% 45% 55%;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+}
+
+.dirt-rock--1 {
+  width: 8px;
+  height: 6px;
+  top: 18px;
+  right: 16px;
+}
+
+.dirt-rock--2 {
+  width: 6px;
+  height: 5px;
+  bottom: 12px;
+  left: 14px;
 }
 
 /* Water tile */

@@ -17,6 +17,7 @@ function createTestLevel(
 		V: TileType.VOID,
 		S: TileType.STONE,
 		W: TileType.WATER,
+		D: TileType.DIRT,
 	};
 
 	const parsedGrid = grid.map((row) =>
@@ -822,6 +823,140 @@ describe("useGame", () => {
 
 			expect(game.getWaterFlow({ x: 1, y: 0 })).toBe("right");
 			expect(game.getWaterFlow({ x: 0, y: 0 })).toBeNull();
+		});
+	});
+
+	describe("dirt tiles", () => {
+		it("should allow movement onto dirt tiles", () => {
+			const level = createTestLevel(["GDG"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+
+			expect(game.playerPosition.value).toEqual({ x: 1, y: 0 });
+		});
+
+		it("should convert dirt to grass when leaving (not mushroom)", () => {
+			const level = createTestLevel(["GDG"], 0, 0);
+			const game = useGame(level);
+
+			// Move to dirt
+			game.movePlayer("right");
+			expect(game.tiles.value[0][0].type).toBe(TileType.MUSHROOM);
+
+			// Move from dirt to grass - dirt should become grass
+			game.movePlayer("right");
+			expect(game.tiles.value[0][1].type).toBe(TileType.GRASS);
+		});
+
+		it("should plant mushroom when leaving converted grass (formerly dirt)", () => {
+			// Layout: G D S G - use stone to allow returning to converted dirt
+			const level = createTestLevel(["GDSG"], 0, 0);
+			const game = useGame(level);
+
+			// Move to dirt
+			game.movePlayer("right");
+			expect(game.tiles.value[0][1].type).toBe(TileType.DIRT);
+
+			// Move from dirt to stone - dirt becomes grass
+			game.movePlayer("right");
+			expect(game.tiles.value[0][1].type).toBe(TileType.GRASS);
+
+			// Move back to the converted grass tile (from stone)
+			game.movePlayer("left");
+			expect(game.playerPosition.value).toEqual({ x: 1, y: 0 });
+
+			// Move to stone again - now the converted grass should become mushroom
+			game.movePlayer("right");
+			expect(game.tiles.value[0][1].type).toBe(TileType.MUSHROOM);
+		});
+
+		it("should count dirt tiles as 2 in grassTilesRemaining", () => {
+			// 2 grass + 1 dirt = 2 + 2 = 4
+			const level = createTestLevel(["GDG"], 0, 0);
+			const game = useGame(level);
+
+			expect(game.grassTilesRemaining.value).toBe(4);
+		});
+
+		it("should not win if dirt tiles remain", () => {
+			// 1 grass + 1 dirt, need to visit dirt twice
+			const level = createTestLevel(["GD"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+
+			// Dirt became grass, so we're on grass but there's another grass (converted)
+			// Actually we're on the dirt tile (which is still dirt type)
+			// The original grass became mushroom
+			expect(game.hasWon.value).toBe(false);
+		});
+
+		it("should update grassTilesRemaining when dirt becomes grass", () => {
+			const level = createTestLevel(["GDG"], 0, 0);
+			const game = useGame(level);
+
+			// Initial: 2 grass + 1 dirt (counts as 2) = 4
+			expect(game.grassTilesRemaining.value).toBe(4);
+
+			// Move to dirt - grass becomes mushroom, dirt becomes grass
+			game.movePlayer("right");
+			// Now: 2 grass (original + converted) + 0 dirt = 2 (minus mushroom) = 2
+			// Actually: original grass is mushroom, we're on dirt (turns to grass when we leave)
+			// Remaining: 1 grass + 1 dirt = 1 + 2 = 3
+			expect(game.grassTilesRemaining.value).toBe(3);
+
+			// Move to next grass - dirt becomes grass
+			game.movePlayer("right");
+			// Now: 2 grass tiles remain (converted dirt + current)
+			expect(game.grassTilesRemaining.value).toBe(2);
+		});
+
+		it("should handle undo with dirt tiles", () => {
+			const level = createTestLevel(["GDG"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+			expect(game.tiles.value[0][0].type).toBe(TileType.MUSHROOM);
+
+			game.undo();
+			expect(game.tiles.value[0][0].type).toBe(TileType.GRASS);
+			expect(game.tiles.value[0][1].type).toBe(TileType.DIRT);
+		});
+
+		it("should handle undo from dirt that became grass", () => {
+			const level = createTestLevel(["GDG"], 0, 0);
+			const game = useGame(level);
+
+			// Move to dirt
+			game.movePlayer("right");
+			// Move from dirt to grass (dirt becomes grass)
+			game.movePlayer("right");
+			expect(game.tiles.value[0][1].type).toBe(TileType.GRASS);
+
+			// Undo - should restore to dirt
+			game.undo();
+			expect(game.tiles.value[0][1].type).toBe(TileType.DIRT);
+			expect(game.playerPosition.value).toEqual({ x: 1, y: 0 });
+		});
+
+		it("should allow jumping over bramble to dirt", () => {
+			const level = createTestLevel(["GBD"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+
+			expect(game.playerPosition.value).toEqual({ x: 2, y: 0 });
+		});
+
+		it("should detect stuck when surrounded after visiting dirt", () => {
+			// After moving to dirt, player gets stuck
+			const level = createTestLevel(["GDB", "BBB"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+			// Now on dirt, surrounded by brambles on other sides
+			expect(game.isStuck.value).toBe(true);
 		});
 	});
 

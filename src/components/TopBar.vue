@@ -25,11 +25,19 @@ const emit = defineEmits<{
           v-for="element in elements"
           :key="element"
           class="element-icon"
-          :title="element === WE.RIVERS ? 'Rivers' : element"
+          :class="{ 'element-icon--dirt': element === WE.DIRT }"
+          :title="element === WE.RIVERS ? 'Rivers' : element === WE.DIRT ? 'Dirt Patches' : element"
         >
           <!-- Water droplet icon for rivers -->
-          <svg v-if="element === WE.RIVERS" viewBox="0 0 24 24" class="element-svg">
+          <svg v-if="element === WE.RIVERS" viewBox="0 0 24 24" class="element-svg element-svg--water">
             <path d="M12 2c-5.33 8-8 12-8 15a8 8 0 1 0 16 0c0-3-2.67-7-8-15z" fill="currentColor"/>
+          </svg>
+          <!-- Dirt/soil mound icon -->
+          <svg v-else-if="element === WE.DIRT" viewBox="0 0 24 24" class="element-svg element-svg--dirt">
+            <ellipse cx="12" cy="18" rx="10" ry="4" fill="currentColor"/>
+            <ellipse cx="12" cy="15" rx="7" ry="3" fill="currentColor" opacity="0.8"/>
+            <circle cx="8" cy="16" r="1.5" fill="#4a3a2a"/>
+            <circle cx="15" cy="17" r="1" fill="#4a3a2a"/>
           </svg>
         </div>
       </div>
@@ -178,7 +186,14 @@ const emit = defineEmits<{
 .element-svg {
   width: 20px;
   height: 20px;
-  color: #4a90d9;
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.2));
+}
+
+.element-svg--water {
+  color: #4a90d9;
+}
+
+.element-svg--dirt {
+  color: #8b6b4a;
 }
 </style>

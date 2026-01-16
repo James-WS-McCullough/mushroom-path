@@ -51,8 +51,8 @@ export function useGame(level: Level) {
 	function canLandOn(position: Position): boolean {
 		const tile = getTile(position);
 		if (!tile) return false;
-		// Can land on grass, stone, or water tiles
-		return tile.type === TileType.GRASS || tile.type === TileType.STONE || tile.type === TileType.WATER;
+		// Can land on grass, stone, water, or dirt tiles
+		return tile.type === TileType.GRASS || tile.type === TileType.STONE || tile.type === TileType.WATER || tile.type === TileType.DIRT;
 	}
 
 	function isObstacle(position: Position): boolean {
@@ -153,23 +153,30 @@ export function useGame(level: Level) {
 
 	function plantMushroom(position: Position) {
 		const tile = getTile(position);
-		if (tile && tile.type === TileType.GRASS) {
-			const row = tiles.value[position.y];
-			const cell = row?.[position.x];
-			if (cell) {
-				cell.type = TileType.MUSHROOM;
-			}
+		if (!tile) return;
+
+		const row = tiles.value[position.y];
+		const cell = row?.[position.x];
+		if (!cell) return;
+
+		if (tile.type === TileType.GRASS) {
+			// Grass becomes mushroom
+			cell.type = TileType.MUSHROOM;
 			lastPlantedPosition.value = { ...position };
 			// Clear after animation completes
 			setTimeout(() => {
 				lastPlantedPosition.value = null;
 			}, 400);
+		} else if (tile.type === TileType.DIRT) {
+			// Dirt becomes grass (needs to be stepped on again)
+			cell.type = TileType.GRASS;
 		}
 	}
 
 	function checkWinCondition(): boolean {
-		// Win when standing on the only remaining grass tile
+		// Win when standing on the only remaining grass tile and no dirt tiles remain
 		let grassCount = 0;
+		let dirtCount = 0;
 		let lastGrassPos: Position | null = null;
 
 		for (const row of tiles.value) {
@@ -177,12 +184,14 @@ export function useGame(level: Level) {
 				if (tile.type === TileType.GRASS) {
 					grassCount++;
 					lastGrassPos = tile.position;
+				} else if (tile.type === TileType.DIRT) {
+					dirtCount++;
 				}
 			}
 		}
 
-		// Win if there's exactly one grass tile and player is on it
-		if (grassCount === 1 && lastGrassPos) {
+		// Win if there's exactly one grass tile, no dirt tiles, and player is on the grass
+		if (grassCount === 1 && dirtCount === 0 && lastGrassPos) {
 			return (
 				lastGrassPos.x === playerPosition.value.x &&
 				lastGrassPos.y === playerPosition.value.y
@@ -346,8 +355,11 @@ export function useGame(level: Level) {
 		let count = 0;
 		for (const row of tiles.value) {
 			for (const tile of row) {
+				// Count grass and dirt tiles (dirt counts as 2 since it needs two visits)
 				if (tile.type === TileType.GRASS) {
 					count++;
+				} else if (tile.type === TileType.DIRT) {
+					count += 2; // Dirt needs two steps: dirt->grass->mushroom
 				}
 			}
 		}

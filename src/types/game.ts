@@ -5,6 +5,7 @@ export const TileType = {
 	VOID: "void",
 	STONE: "stone",
 	WATER: "water",
+	DIRT: "dirt",
 } as const;
 
 export type TileType = (typeof TileType)[keyof typeof TileType];
@@ -49,6 +50,7 @@ export type Direction = "up" | "down" | "left" | "right";
 // World elements that modify level generation
 export const WorldElement = {
 	RIVERS: "rivers",
+	DIRT: "dirt",
 } as const;
 
 export type WorldElement = (typeof WorldElement)[keyof typeof WorldElement];
