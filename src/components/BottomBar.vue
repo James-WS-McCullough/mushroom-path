@@ -1,0 +1,150 @@
+<script setup lang="ts">
+defineProps<{
+	disabled: boolean;
+}>();
+
+const emit = defineEmits<{
+	restart: [];
+	skip: [];
+}>();
+</script>
+
+<template>
+  <div class="bottom-bar">
+    <div class="wood-texture"></div>
+    <div class="bar-content">
+      <button class="bar-btn" @click="emit('restart')" :disabled="disabled">
+        <span class="btn-icon">↺</span>
+        Restart
+      </button>
+      <div class="bar-divider"></div>
+      <button class="bar-btn" @click="emit('skip')" :disabled="disabled">
+        Skip
+        <span class="btn-icon">→</span>
+      </button>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.bottom-bar {
+  position: relative;
+  width: 100%;
+  height: 56px;
+  border-radius: 0;
+  overflow: hidden;
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.wood-texture {
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      transparent 0px,
+      transparent 20px,
+      rgba(0, 0, 0, 0.03) 20px,
+      rgba(0, 0, 0, 0.03) 21px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0px,
+      transparent 60px,
+      rgba(0, 0, 0, 0.05) 60px,
+      rgba(0, 0, 0, 0.05) 62px
+    ),
+    linear-gradient(
+      180deg,
+      #a08060 0%,
+      #8b6b4a 20%,
+      #7a5c3d 50%,
+      #8b6b4a 80%,
+      #6d4c35 100%
+    );
+}
+
+.wood-texture::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 30px 8px at 30% 30%, rgba(139, 107, 74, 0.4) 0%, transparent 100%),
+    radial-gradient(ellipse 25px 6px at 70% 60%, rgba(139, 107, 74, 0.3) 0%, transparent 100%);
+}
+
+.wood-texture::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-top: 3px solid rgba(93, 65, 40, 0.6);
+  border-bottom: 3px solid rgba(93, 65, 40, 0.6);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.bar-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 0 16px;
+  gap: 8px;
+}
+
+.bar-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(180deg, rgba(255, 248, 230, 0.95) 0%, rgba(240, 230, 210, 0.95) 100%);
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 15px;
+  color: #5a4a3a;
+  cursor: pointer;
+  font-family: 'Georgia', serif;
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  transition: all 0.15s ease;
+  text-shadow: none;
+  font-weight: 500;
+}
+
+.bar-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow:
+    0 3px 6px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  background: linear-gradient(180deg, rgba(255, 255, 240, 0.98) 0%, rgba(250, 240, 220, 0.98) 100%);
+}
+
+.bar-btn:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.bar-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.bar-divider {
+  width: 2px;
+  height: 28px;
+  background: linear-gradient(180deg, rgba(93, 65, 40, 0.3) 0%, rgba(93, 65, 40, 0.6) 50%, rgba(93, 65, 40, 0.3) 100%);
+  border-radius: 1px;
+  margin: 0 8px;
+}
+</style>
