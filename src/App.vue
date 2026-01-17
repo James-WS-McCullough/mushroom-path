@@ -3,6 +3,7 @@ import { computed, ref, watch } from "vue";
 import BottomBar from "./components/BottomBar.vue";
 import CustomWorldModal from "./components/CustomWorldModal.vue";
 import GameBoard from "./components/GameBoard.vue";
+import MusicPlayer from "./components/MusicPlayer.vue";
 import StartScreen from "./components/StartScreen.vue";
 import TopBar from "./components/TopBar.vue";
 import TutorialModal from "./components/TutorialModal.vue";
@@ -92,6 +93,7 @@ const showTutorial = ref(false);
 const isInitialTutorial = ref(false);
 const showWelcomeSign = ref(false);
 const showCustomWorldModal = ref(false);
+const showMusicPlayer = ref(false);
 const isFading = ref(false);
 const isBlack = ref(false);
 
@@ -353,7 +355,10 @@ function startCustomWorld(elements: WorldElement[]) {
 
 <template>
   <!-- Start Screen -->
-  <StartScreen v-if="!gameStarted" @begin="handleBegin" />
+  <StartScreen v-if="!gameStarted && !showMusicPlayer" @begin="handleBegin" @open-music-player="showMusicPlayer = true" />
+
+  <!-- Music Player -->
+  <MusicPlayer v-if="showMusicPlayer" @close="showMusicPlayer = false" />
 
   <!-- Loading Overlay (shown during initial load) -->
   <div v-if="isLoading" class="loading-overlay">
@@ -364,7 +369,7 @@ function startCustomWorld(elements: WorldElement[]) {
   </div>
 
   <!-- Game -->
-  <div v-else class="layout">
+  <div v-if="gameStarted" class="layout">
     <TopBar
       :level-name="displayName"
       :elements="currentWorldElements"

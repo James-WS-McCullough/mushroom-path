@@ -3,6 +3,7 @@ import { ref } from "vue";
 
 const emit = defineEmits<{
 	begin: [];
+	openMusicPlayer: [];
 }>();
 
 const isLeaving = ref(false);
@@ -40,6 +41,11 @@ function handleBegin() {
 
       <button class="begin-button" @click="handleBegin">
         <span class="begin-text">Begin</span>
+      </button>
+
+      <button class="music-button" @click="emit('openMusicPlayer')">
+        <span class="music-icon">♪</span>
+        <span class="music-text">Music Player</span>
       </button>
     </div>
 
@@ -310,6 +316,36 @@ function handleBegin() {
   color: #fff8e7;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
   letter-spacing: 2px;
+}
+
+.music-button {
+  margin-top: 16px;
+  padding: 10px 24px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.music-button:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.music-icon {
+  font-size: 16px;
+  color: #c8d4b8;
+}
+
+.music-text {
+  font-family: 'Georgia', serif;
+  font-size: 14px;
+  color: #c8d4b8;
+  letter-spacing: 1px;
 }
 
 .ground {
