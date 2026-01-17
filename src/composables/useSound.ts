@@ -119,6 +119,33 @@ export function playStone(volume = 0.35) {
 	playSound("/sfx/hit-stone.mp3", volume);
 }
 
+// Ice slide loop state
+let iceSlideAudio: HTMLAudioElement | null = null;
+
+export function startIceSlide(volume = 0.4) {
+	if (isSfxMuted.value) return;
+	if (iceSlideAudio) {
+		stopIceSlide();
+	}
+	iceSlideAudio = new Audio("/sfx/ice-slide-loop.mp3");
+	iceSlideAudio.loop = true;
+	iceSlideAudio.volume = volume;
+	iceSlideAudio.play().catch(() => {});
+}
+
+export function stopIceSlide() {
+	if (iceSlideAudio) {
+		iceSlideAudio.pause();
+		iceSlideAudio.currentTime = 0;
+		iceSlideAudio = null;
+	}
+}
+
+export function playIce(volume = 0.4) {
+	// For non-looping ice sound (e.g., landing on ice)
+	playSound("/sfx/ice-slide.mp3", volume);
+}
+
 // Voice lines
 export function playVoiceStuck(volume = 0.7) {
 	const num = Math.floor(Math.random() * 2) + 1;

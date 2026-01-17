@@ -6,6 +6,7 @@ export const TileType = {
 	STONE: "stone",
 	WATER: "water",
 	DIRT: "dirt",
+	ICE: "ice",
 } as const;
 
 export type TileType = (typeof TileType)[keyof typeof TileType];
@@ -51,6 +52,7 @@ export type Direction = "up" | "down" | "left" | "right";
 export const WorldElement = {
 	RIVERS: "rivers",
 	DIRT: "dirt",
+	ICE: "ice",
 } as const;
 
 export type WorldElement = (typeof WorldElement)[keyof typeof WorldElement];

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type Level, TileType } from "../types/game";
+import { type Level, TileType, WorldElement } from "../types/game";
 import { generateLevel } from "./levelGenerator";
 
 // Helper to count tiles of a specific type
@@ -35,11 +35,12 @@ function getAdjacent(x: number, y: number): Array<{ x: number; y: number }> {
 	];
 }
 
-// Helper to check if grass/dirt tiles are connected (via walking, jumping, stone, or water bridges)
+// Helper to check if grass/dirt tiles are connected (via walking, jumping, stone, water, or ice bridges)
 function isGrassConnected(level: Level): boolean {
 	const grassTiles: Array<{ x: number; y: number }> = [];
 	const stoneTiles: Array<{ x: number; y: number }> = [];
 	const waterTiles: Array<{ x: number; y: number }> = [];
+	const iceTiles: Array<{ x: number; y: number }> = [];
 
 	for (let y = 0; y < level.height; y++) {
 		for (let x = 0; x < level.width; x++) {
@@ -51,6 +52,8 @@ function isGrassConnected(level: Level): boolean {
 				stoneTiles.push({ x, y });
 			} else if (tile === TileType.WATER) {
 				waterTiles.push({ x, y });
+			} else if (tile === TileType.ICE) {
+				iceTiles.push({ x, y });
 			}
 		}
 	}
@@ -66,7 +69,8 @@ function isGrassConnected(level: Level): boolean {
 	const grassSet = new Set(grassTiles.map((t) => posKey(t.x, t.y)));
 	const stoneSet = new Set(stoneTiles.map((t) => posKey(t.x, t.y)));
 	const waterSet = new Set(waterTiles.map((t) => posKey(t.x, t.y)));
-	const walkableSet = new Set([...grassSet, ...stoneSet, ...waterSet]);
+	const iceSet = new Set(iceTiles.map((t) => posKey(t.x, t.y)));
+	const walkableSet = new Set([...grassSet, ...stoneSet, ...waterSet, ...iceSet]);
 	const brambleSet = new Set<string>();
 
 	for (let y = 0; y < level.height; y++) {
@@ -181,7 +185,7 @@ describe("levelGenerator", () => {
 			expect(level).not.toBeNull();
 			if (!level) return;
 
-			const validTypes = [TileType.GRASS, TileType.BRAMBLE, TileType.VOID, TileType.MUSHROOM, TileType.STONE, TileType.WATER, TileType.DIRT];
+			const validTypes = [TileType.GRASS, TileType.BRAMBLE, TileType.VOID, TileType.MUSHROOM, TileType.STONE, TileType.WATER, TileType.DIRT, TileType.ICE];
 			for (const row of level.grid) {
 				for (const tile of row) {
 					expect(validTypes).toContain(tile);
@@ -603,5 +607,112 @@ describe("levelGenerator", () => {
 			const mushroomCount = countTiles(level, TileType.MUSHROOM);
 			expect(mushroomCount).toBe(0);
 		});
+	});
+
+	describe("ice tiles", () => {
+		it("should generate ice tiles when ICE element is active", () => {
+			// Generate multiple levels with ICE element
+			let hasIce = false;
+			for (let i = 0; i < 20; i++) {
+				const level = generateLevel({}, [WorldElement.ICE]);
+				if (level && countTiles(level, TileType.ICE) > 0) {
+					hasIce = true;
+					break;
+				}
+			}
+			expect(hasIce).toBe(true);
+		});
+
+		it("should not generate ice tiles without ICE element", () => {
+			// Generate multiple levels without ICE element
+			for (let i = 0; i < 5; i++) {
+				const level = generateLevel({}, []);
+				if (!level) continue;
+
+				const iceCount = countTiles(level, TileType.ICE);
+				expect(iceCount).toBe(0);
+			}
+		}, 15000);
+
+		it("should not generate ice tiles when iceChance is 0", () => {
+			const level = generateLevel({ iceChance: 0 }, [WorldElement.ICE]);
+			if (!level) return;
+
+			const iceCount = countTiles(level, TileType.ICE);
+			expect(iceCount).toBe(0);
+		});
+
+		it("should maintain grass connectivity when ice is present", () => {
+			for (let i = 0; i < 5; i++) {
+				const level = generateLevel({ iceChance: 0.15 }, [WorldElement.ICE]);
+				if (!level) continue;
+
+				expect(isGrassConnected(level)).toBe(true);
+			}
+		}, 15000);
+
+		it("should generate ice in clusters", () => {
+			// Generate levels with ice and check that ice tiles tend to be adjacent
+			let foundCluster = false;
+			for (let i = 0; i < 20; i++) {
+				const level = generateLevel({ iceChance: 0.15, iceClusterSize: 4 }, [WorldElement.ICE]);
+				if (!level) continue;
+
+				const iceCount = countTiles(level, TileType.ICE);
+				if (iceCount < 2) continue;
+
+				// Check if at least some ice tiles are adjacent to other ice tiles
+				let adjacentIceCount = 0;
+				for (let y = 0; y < level.height; y++) {
+					for (let x = 0; x < level.width; x++) {
+						if (getTile(level, x, y) !== TileType.ICE) continue;
+
+						const adjacent = getAdjacent(x, y);
+						for (const adj of adjacent) {
+							if (isInBounds(level, adj.x, adj.y) && getTile(level, adj.x, adj.y) === TileType.ICE) {
+								adjacentIceCount++;
+								break;
+							}
+						}
+					}
+				}
+
+				if (adjacentIceCount > 0) {
+					foundCluster = true;
+					break;
+				}
+			}
+			expect(foundCluster).toBe(true);
+		});
+
+		it("should maintain at least 8 grass+dirt tiles with ice", () => {
+			const level = generateLevel({ iceChance: 0.2 }, [WorldElement.ICE]);
+			expect(level).not.toBeNull();
+			if (!level) return;
+
+			const grassCount = countTiles(level, TileType.GRASS);
+			const dirtCount = countTiles(level, TileType.DIRT);
+			expect(grassCount + dirtCount).toBeGreaterThanOrEqual(8);
+		});
+
+		it("should keep start position on grass, not ice", () => {
+			for (let i = 0; i < 5; i++) {
+				const level = generateLevel({ iceChance: 0.15 }, [WorldElement.ICE]);
+				if (!level) continue;
+
+				const startTile = getTile(level, level.startPosition.x, level.startPosition.y);
+				expect(startTile).toBe(TileType.GRASS);
+			}
+		}, 10000);
+
+		it("should generate solvable levels with ice tiles", () => {
+			for (let i = 0; i < 5; i++) {
+				const level = generateLevel({ iceChance: 0.15 }, [WorldElement.ICE]);
+				if (!level) continue;
+
+				expect(isGrassConnected(level)).toBe(true);
+				expect(getTile(level, level.startPosition.x, level.startPosition.y)).toBe(TileType.GRASS);
+			}
+		}, 15000);
 	});
 });

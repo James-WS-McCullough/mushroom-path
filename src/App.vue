@@ -47,7 +47,7 @@ const currentLevelNumber = ref(1);
 const currentWorldElements = ref<WorldElement[]>([]);
 
 // All available world elements
-const allElements: WorldElement[] = [WE.RIVERS, WE.DIRT];
+const allElements: WorldElement[] = [WE.RIVERS, WE.DIRT, WE.ICE];
 
 function generateWorldElements(): WorldElement[] {
 	const elements: WorldElement[] = [];

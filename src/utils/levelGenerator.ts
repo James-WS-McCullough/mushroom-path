@@ -13,6 +13,8 @@ export interface GeneratorConfig {
 	riverMinLength: number;
 	riverMaxLength: number;
 	dirtChance: number;
+	iceChance: number;
+	iceClusterSize: number;
 }
 
 const DEFAULT_CONFIG: GeneratorConfig = {
@@ -28,6 +30,8 @@ const DEFAULT_CONFIG: GeneratorConfig = {
 	riverMinLength: 2,
 	riverMaxLength: 4,
 	dirtChance: 0.08,
+	iceChance: 0.12,
+	iceClusterSize: 4,
 };
 
 interface Rectangle {
@@ -641,6 +645,7 @@ function computeSlideDestination(
 // Stone tiles are walkable bridges that don't need to be in the path
 // Water tiles force sliding to their endpoint (stone)
 // Dirt tiles need to be visited TWICE (first visit: dirt->grass, second visit: grass->mushroom)
+// Ice tiles are slippery - entering from a direction causes sliding until leaving ice
 function findHamiltonianPath(
 	grassTiles: Position[],
 	obstacleTiles: Set<string>,
@@ -648,6 +653,8 @@ function findHamiltonianPath(
 	waterTiles: Set<string> = new Set(),
 	waterFlow: Record<string, FlowDirection> = {},
 	dirtTiles: Set<string> = new Set(),
+	iceTiles: Set<string> = new Set(),
+	allShapeTiles: Set<string> = new Set(),
 ): Position[] | null {
 	const grassSet = new Set(grassTiles.map((t) => posKey(t.x, t.y)));
 
@@ -766,7 +773,10 @@ function findHamiltonianPath(
 		const deltas = [
 			{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 },
 		];
-		for (const d of deltas) {
+		const directionNames: FlowDirection[] = ["right", "left", "down", "up"];
+		for (let i = 0; i < deltas.length; i++) {
+			const d = deltas[i];
+			if (!d) continue;
 			const adjacentPos = { x: current.x + d.x, y: current.y + d.y };
 			const adjacentKey = posKey(adjacentPos.x, adjacentPos.y);
 			if (waterTiles.has(adjacentKey)) {
@@ -778,9 +788,47 @@ function findHamiltonianPath(
 			}
 		}
 
+		// Ice slide destinations
+		const iceSlideDestinations: { iceEntry: Position; destination: Position; direction: FlowDirection }[] = [];
+		for (let i = 0; i < deltas.length; i++) {
+			const d = deltas[i];
+			const dir = directionNames[i];
+			if (!d || !dir) continue;
+			const adjacentPos = { x: current.x + d.x, y: current.y + d.y };
+			const adjacentKey = posKey(adjacentPos.x, adjacentPos.y);
+			if (iceTiles.has(adjacentKey)) {
+				// Compute where we'd slide to from this entry direction
+				const slideEnd = computeIceSlideDestination(
+					adjacentPos,
+					dir,
+					iceTiles,
+					currentObstacles,
+					allShapeTiles,
+				);
+				const slideEndKey = posKey(slideEnd.x, slideEnd.y);
+				// Check if the landing tile is valid (grass, dirt, or stone - not ice)
+				if (!iceTiles.has(slideEndKey)) {
+					const isValidLanding = grassSet.has(slideEndKey) || stoneTiles.has(slideEndKey);
+					if (isValidLanding) {
+						// Check if it's a grass/dirt tile we can visit
+						const landVisitedOnce = visitedOnce.has(slideEndKey);
+						const landVisitedTwice = visitedTwice.has(slideEndKey);
+						const landIsDirt = dirtTiles.has(slideEndKey);
+						const landIsStone = stoneTiles.has(slideEndKey);
+
+						// Can land if: stone, unvisited grass/dirt, or dirt visited once
+						if (landIsStone || !landVisitedOnce || (landIsDirt && !landVisitedTwice)) {
+							iceSlideDestinations.push({ iceEntry: adjacentPos, destination: slideEnd, direction: dir });
+						}
+					}
+				}
+			}
+		}
+
 		// Shuffle options
 		const allNeighbors = shuffleArray([...standardNeighbors]);
 		const shuffledWaterSlides = shuffleArray(waterSlideDestinations);
+		const shuffledIceSlides = shuffleArray(iceSlideDestinations);
 
 		// Try standard neighbors
 		for (const neighbor of allNeighbors) {
@@ -847,6 +895,44 @@ function findHamiltonianPath(
 			}
 		}
 
+		// Try ice slides
+		for (const { destination } of shuffledIceSlides) {
+			const destKey = posKey(destination.x, destination.y);
+
+			if (stoneTiles.has(destKey)) {
+				// Landed on stone - need to step off to grass/dirt
+				const stoneNeighbors = getReachableNeighbors(
+					destination,
+					walkableTiles,
+					currentObstacles,
+				).filter((n) => {
+					const snKey = posKey(n.x, n.y);
+					if (!grassSet.has(snKey)) return false;
+
+					const snVisitedOnce = visitedOnce.has(snKey);
+					const snVisitedTwice = visitedTwice.has(snKey);
+					const snIsDirt = dirtTiles.has(snKey);
+
+					if (!snVisitedOnce) return true;
+					if (snIsDirt && !snVisitedTwice) return true;
+					return false;
+				});
+
+				for (const stoneNeighbor of shuffleArray(stoneNeighbors)) {
+					const result = dfs(stoneNeighbor, visitedOnce, visitedTwice);
+					if (result) {
+						return [current, destination, ...result];
+					}
+				}
+			} else {
+				// Landed on grass/dirt - continue path from there
+				const result = dfs(destination, visitedOnce, visitedTwice);
+				if (result) {
+					return [current, ...result];
+				}
+			}
+		}
+
 		// Backtrack
 		if (isDirt && wasVisitedOnce) {
 			visitedTwice.delete(key);
@@ -898,6 +984,125 @@ function selectDirtCandidates(
 	return dirt;
 }
 
+// Add ice tiles in clusters - ice acts as walkable bridge that causes sliding
+function addIceClusters(
+	grass: Set<string>,
+	brambles: Set<string>,
+	stones: Set<string>,
+	water: Set<string>,
+	chance: number,
+	clusterSize: number,
+): { grass: Set<string>; ice: Set<string> } {
+	const remainingGrass = new Set(grass);
+	const ice = new Set<string>();
+
+	if (chance <= 0) {
+		return { grass: remainingGrass, ice };
+	}
+
+	// Target number of ice tiles based on grass count
+	const targetIce = Math.floor(grass.size * chance);
+	if (targetIce === 0) {
+		return { grass: remainingGrass, ice };
+	}
+
+	// Determine number of clusters (each roughly clusterSize tiles)
+	const numClusters = Math.max(1, Math.ceil(targetIce / clusterSize));
+
+	// Start positions for clusters - spread across the grass tiles
+	const clusterStarts = shuffleArray(Array.from(remainingGrass)).slice(0, numClusters);
+
+	for (const startKey of clusterStarts) {
+		if (!remainingGrass.has(startKey)) continue;
+
+		// Grow a cluster from this starting point
+		const cluster = new Set<string>();
+		const queue = [startKey];
+		const visited = new Set<string>();
+
+		while (queue.length > 0 && cluster.size < clusterSize) {
+			const current = queue.shift();
+			if (!current || visited.has(current)) continue;
+			visited.add(current);
+
+			// Check if this tile can become ice
+			if (!remainingGrass.has(current)) continue;
+
+			// Add to cluster
+			cluster.add(current);
+
+			// Add neighbors to queue for potential cluster growth
+			const pos = parseKey(current);
+			const neighbors = [
+				posKey(pos.x + 1, pos.y),
+				posKey(pos.x - 1, pos.y),
+				posKey(pos.x, pos.y + 1),
+				posKey(pos.x, pos.y - 1),
+			];
+
+			for (const neighbor of shuffleArray(neighbors)) {
+				if (!visited.has(neighbor) && remainingGrass.has(neighbor)) {
+					queue.push(neighbor);
+				}
+			}
+		}
+
+		// Validate the cluster - check connectivity after removing these tiles
+		if (cluster.size > 0) {
+			const testGrass = new Set(remainingGrass);
+			for (const tile of cluster) {
+				testGrass.delete(tile);
+			}
+
+			// Need at least 8 grass tiles remaining
+			if (testGrass.size < 8) continue;
+
+			// Ice tiles act as walkable bridges (like stones)
+			const walkableBridges = new Set([...stones, ...water, ...ice, ...cluster]);
+			if (isConnectedWithJumps(testGrass, brambles, walkableBridges)) {
+				// Valid cluster - add to ice
+				for (const tile of cluster) {
+					remainingGrass.delete(tile);
+					ice.add(tile);
+				}
+			}
+		}
+	}
+
+	return { grass: remainingGrass, ice };
+}
+
+// Compute where a player slides to when entering ice from a given direction
+// Returns the final position after sliding stops (hitting non-ice or obstacle)
+function computeIceSlideDestination(
+	startPos: Position,
+	direction: FlowDirection,
+	iceTiles: Set<string>,
+	obstacles: Set<string>, // brambles, mushrooms, etc.
+	allTiles: Set<string>, // all valid tiles in the level
+): Position {
+	const delta = getDirectionDelta(direction);
+	let current = startPos;
+
+	while (true) {
+		const next = { x: current.x + delta.x, y: current.y + delta.y };
+		const nextKey = posKey(next.x, next.y);
+
+		// Stop if we hit an obstacle or go out of bounds
+		if (obstacles.has(nextKey) || !allTiles.has(nextKey)) {
+			return current;
+		}
+
+		// Stop if we leave the ice
+		if (!iceTiles.has(nextKey)) {
+			return next; // Land on the non-ice tile
+		}
+
+		// Continue sliding on ice
+		current = next;
+	}
+}
+
 // Build level from path
 function buildLevelFromPath(
 	path: Position[],
@@ -906,6 +1111,7 @@ function buildLevelFromPath(
 	stones: Set<string>,
 	water: Set<string>,
 	dirt: Set<string>,
+	ice: Set<string>,
 	waterFlowInput: Record<string, FlowDirection>,
 	rooms: Rectangle[],
 ): Level {
@@ -936,6 +1142,8 @@ function buildLevelFromPath(
 				row.push(TileType.STONE);
 			} else if (water.has(key)) {
 				row.push(TileType.WATER);
+			} else if (ice.has(key)) {
+				row.push(TileType.ICE);
 			} else if (dirt.has(key)) {
 				row.push(TileType.DIRT);
 			} else if (allShapeTiles.has(key)) {
@@ -1030,6 +1238,11 @@ export function generateLevel(
 		elementConfig.dirtChance = baseDirtChance * 4;
 	}
 
+	// Ice only generates if the ICE element is active
+	if (!elements.includes(WE.ICE)) {
+		elementConfig.iceChance = 0;
+	}
+
 	const fullConfig = { ...DEFAULT_CONFIG, ...elementConfig };
 	const maxRetries = 100;
 
@@ -1055,11 +1268,21 @@ export function generateLevel(
 
 		// Generate rivers (water tiles flowing into stones)
 		// Rivers can create new stone endpoints, so use the returned stones set
-		const { grass, stones: finalStones, water, waterFlow } = generateRivers(
+		const { grass: grassAfterRivers, stones: finalStones, water, waterFlow } = generateRivers(
 			grassAfterStones,
 			stones,
 			brambles,
 			fullConfig,
+		);
+
+		// Add ice clusters (slippery tiles that cause sliding)
+		const { grass, ice } = addIceClusters(
+			grassAfterRivers,
+			brambles,
+			finalStones,
+			water,
+			fullConfig.iceChance,
+			fullConfig.iceClusterSize,
 		);
 
 		const shape = new Set(baseShape);
@@ -1072,11 +1295,11 @@ export function generateLevel(
 		// Dirt tiles need to be adjacent to stones so the path can revisit them
 		const dirt = selectDirtCandidates(grass, finalStones, fullConfig.dirtChance);
 
-		// Find path - path finder will visit dirt tiles twice
-		const path = findHamiltonianPath(grassTiles, brambles, finalStones, water, waterFlow, dirt);
+		// Find path - path finder will visit dirt tiles twice, handle ice sliding
+		const path = findHamiltonianPath(grassTiles, brambles, finalStones, water, waterFlow, dirt, ice, shape);
 
 		if (path) {
-			const level = buildLevelFromPath(path, shape, brambles, finalStones, water, dirt, waterFlow, rooms);
+			const level = buildLevelFromPath(path, shape, brambles, finalStones, water, dirt, ice, waterFlow, rooms);
 			if (verifyLevel(level)) {
 				return level;
 			}

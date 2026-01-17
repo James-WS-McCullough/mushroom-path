@@ -1,7 +1,7 @@
 import { computed, ref } from "vue";
 import type { Direction, FlowDirection, Level, Position, Tile } from "../types/game";
 import { TileType } from "../types/game";
-import { playJump, playLand, playRandomDirt, playRandomPop, playStone, playWater } from "./useSound";
+import { playJump, playLand, playRandomDirt, playRandomPop, playStone, playWater, startIceSlide, stopIceSlide } from "./useSound";
 
 interface MoveHistory {
 	playerPosition: Position;
@@ -52,8 +52,8 @@ export function useGame(level: Level) {
 	function canLandOn(position: Position): boolean {
 		const tile = getTile(position);
 		if (!tile) return false;
-		// Can land on grass, stone, water, or dirt tiles
-		return tile.type === TileType.GRASS || tile.type === TileType.STONE || tile.type === TileType.WATER || tile.type === TileType.DIRT;
+		// Can land on grass, stone, water, dirt, or ice tiles
+		return tile.type === TileType.GRASS || tile.type === TileType.STONE || tile.type === TileType.WATER || tile.type === TileType.DIRT || tile.type === TileType.ICE;
 	}
 
 	function isObstacle(position: Position): boolean {
@@ -117,6 +117,40 @@ export function useGame(level: Level) {
 				break;
 			} else {
 				// Hit something else, stop at current water tile
+				break;
+			}
+		}
+
+		return { destination: current, path };
+	}
+
+	function computeIceSlideDestination(startPos: Position, direction: Direction): { destination: Position; path: Position[] } {
+		const path: Position[] = [startPos];
+		const delta = getDirectionDelta(direction);
+		let current = startPos;
+
+		while (true) {
+			const next = { x: current.x + delta.x, y: current.y + delta.y };
+			const nextTile = getTile(next);
+
+			if (!nextTile) {
+				// Out of bounds, stop at current
+				break;
+			}
+
+			// Stop if we hit an obstacle (bramble, mushroom) or void
+			if (nextTile.type === TileType.BRAMBLE || nextTile.type === TileType.MUSHROOM || nextTile.type === TileType.VOID) {
+				break;
+			}
+
+			if (nextTile.type === TileType.ICE) {
+				// Continue sliding through ice
+				path.push(next);
+				current = next;
+			} else {
+				// Landed on a non-ice tile (grass, stone, dirt, water)
+				path.push(next);
+				current = next;
 				break;
 			}
 		}
@@ -263,6 +297,72 @@ export function useGame(level: Level) {
 					}
 				}, 150);
 			}, 200);
+		} else if (landingTile?.type === TileType.ICE) {
+			// Ice sliding - slide in the direction of movement
+			const { path, destination } = computeIceSlideDestination(newPosition, direction);
+			slidePath.value = path;
+			playerPosition.value = newPosition;
+
+			// Start sliding animation after hop completes
+			setTimeout(() => {
+				isHopping.value = false;
+				startIceSlide();
+				isSliding.value = true;
+
+				// Animate through slide path
+				let pathIndex = 1;
+				const slideInterval = setInterval(() => {
+					const nextPos = path[pathIndex];
+					if (pathIndex < path.length && nextPos) {
+						playerPosition.value = nextPos;
+						pathIndex++;
+					} else {
+						clearInterval(slideInterval);
+						stopIceSlide();
+						isSliding.value = false;
+						slidePath.value = [];
+
+						// Check if we landed on water - chain into water slide
+						const finalTile = getTile(destination);
+						if (finalTile?.type === TileType.WATER) {
+							const { path: waterPath } = computeSlideDestination(destination);
+							slidePath.value = waterPath;
+							playWater();
+							isSliding.value = true;
+
+							let waterPathIndex = 1;
+							const waterSlideInterval = setInterval(() => {
+								const waterNextPos = waterPath[waterPathIndex];
+								if (waterPathIndex < waterPath.length && waterNextPos) {
+									playerPosition.value = waterNextPos;
+									waterPathIndex++;
+								} else {
+									clearInterval(waterSlideInterval);
+									isSliding.value = false;
+									slidePath.value = [];
+
+									if (checkWinCondition()) {
+										hasWon.value = true;
+									}
+								}
+							}, 150);
+						} else {
+							// Play landing sound based on final tile type
+							if (finalTile?.type === TileType.GRASS) {
+								playLand();
+							} else if (finalTile?.type === TileType.DIRT) {
+								playRandomDirt();
+							} else if (finalTile?.type === TileType.STONE) {
+								playStone();
+							}
+
+							if (checkWinCondition()) {
+								hasWon.value = true;
+							}
+						}
+					}
+				}, 150); // Ice slide speed
+			}, 200);
 		} else {
 			playerPosition.value = newPosition;
 
@@ -337,6 +437,15 @@ export function useGame(level: Level) {
 			playJump();
 		}
 
+		// Determine movement direction from click
+		const moveDx = target.x - playerPosition.value.x;
+		const moveDy = target.y - playerPosition.value.y;
+		let direction: Direction;
+		if (moveDx > 0) direction = "right";
+		else if (moveDx < 0) direction = "left";
+		else if (moveDy > 0) direction = "down";
+		else direction = "up";
+
 		// Check if landing on water - need to slide
 		const landingTile = getTile(target);
 		if (landingTile?.type === TileType.WATER) {
@@ -367,6 +476,72 @@ export function useGame(level: Level) {
 						}
 					}
 				}, 150);
+			}, 200);
+		} else if (landingTile?.type === TileType.ICE) {
+			// Ice sliding - slide in the direction of movement
+			const { path, destination } = computeIceSlideDestination(target, direction);
+			slidePath.value = path;
+			playerPosition.value = target;
+
+			// Start sliding animation after hop completes
+			setTimeout(() => {
+				isHopping.value = false;
+				startIceSlide();
+				isSliding.value = true;
+
+				// Animate through slide path
+				let pathIndex = 1;
+				const slideInterval = setInterval(() => {
+					const nextPos = path[pathIndex];
+					if (pathIndex < path.length && nextPos) {
+						playerPosition.value = nextPos;
+						pathIndex++;
+					} else {
+						clearInterval(slideInterval);
+						stopIceSlide();
+						isSliding.value = false;
+						slidePath.value = [];
+
+						// Check if we landed on water - chain into water slide
+						const finalTile = getTile(destination);
+						if (finalTile?.type === TileType.WATER) {
+							const { path: waterPath } = computeSlideDestination(destination);
+							slidePath.value = waterPath;
+							playWater();
+							isSliding.value = true;
+
+							let waterPathIndex = 1;
+							const waterSlideInterval = setInterval(() => {
+								const waterNextPos = waterPath[waterPathIndex];
+								if (waterPathIndex < waterPath.length && waterNextPos) {
+									playerPosition.value = waterNextPos;
+									waterPathIndex++;
+								} else {
+									clearInterval(waterSlideInterval);
+									isSliding.value = false;
+									slidePath.value = [];
+
+									if (checkWinCondition()) {
+										hasWon.value = true;
+									}
+								}
+							}, 150);
+						} else {
+							// Play landing sound based on final tile type
+							if (finalTile?.type === TileType.GRASS) {
+								playLand();
+							} else if (finalTile?.type === TileType.DIRT) {
+								playRandomDirt();
+							} else if (finalTile?.type === TileType.STONE) {
+								playStone();
+							}
+
+							if (checkWinCondition()) {
+								hasWon.value = true;
+							}
+						}
+					}
+				}, 150); // Ice slide speed
 			}, 200);
 		} else {
 			playerPosition.value = target;

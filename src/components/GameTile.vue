@@ -25,6 +25,7 @@ const tileClass = computed(() => {
 		"tile--stone": props.tile.type === TileType.STONE,
 		"tile--water": props.tile.type === TileType.WATER,
 		"tile--dirt": props.tile.type === TileType.DIRT,
+		"tile--ice": props.tile.type === TileType.ICE,
 		"tile--reachable": props.isReachable && !props.isPlayerHere,
 		"tile--has-player": props.isPlayerHere,
 	};
@@ -181,6 +182,21 @@ function handleClick() {
           <div class="chevron chevron--2"></div>
           <div class="chevron chevron--3"></div>
         </div>
+      </div>
+    </div>
+
+    <!-- Ice tile with frost and shimmer -->
+    <div v-if="tile.type === TileType.ICE" class="ice-detail">
+      <div class="ice-shine"></div>
+      <div class="ice-cracks">
+        <div class="ice-crack ice-crack--1"></div>
+        <div class="ice-crack ice-crack--2"></div>
+        <div class="ice-crack ice-crack--3"></div>
+      </div>
+      <div class="ice-sparkles">
+        <div class="sparkle sparkle--1"></div>
+        <div class="sparkle sparkle--2"></div>
+        <div class="sparkle sparkle--3"></div>
       </div>
     </div>
   </div>
@@ -688,6 +704,113 @@ function handleClick() {
   border-right: 2px solid rgba(30, 80, 140, 0.7);
   border-bottom: 2px solid rgba(30, 80, 140, 0.7);
   transform: rotate(45deg);
+}
+
+/* Ice tile */
+.tile--ice {
+  background:
+    radial-gradient(circle at 25% 25%, rgba(255, 255, 255, 0.6) 0%, transparent 40%),
+    radial-gradient(circle at 75% 75%, rgba(200, 230, 255, 0.4) 0%, transparent 35%),
+    linear-gradient(135deg, #b8e4f0 0%, #8fcde0 50%, #6ab8d0 100%);
+}
+
+.ice-detail {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.ice-shine {
+  position: absolute;
+  top: -10px;
+  left: -10px;
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.8) 0%, transparent 60%);
+  border-radius: 50%;
+}
+
+.ice-cracks {
+  position: absolute;
+  inset: 0;
+}
+
+.ice-crack {
+  position: absolute;
+  background: rgba(150, 200, 220, 0.5);
+  border-radius: 1px;
+}
+
+.ice-crack--1 {
+  width: 20px;
+  height: 1px;
+  top: 22px;
+  left: 8px;
+  transform: rotate(-15deg);
+}
+
+.ice-crack--2 {
+  width: 15px;
+  height: 1px;
+  bottom: 20px;
+  right: 10px;
+  transform: rotate(25deg);
+}
+
+.ice-crack--3 {
+  width: 12px;
+  height: 1px;
+  top: 38px;
+  left: 28px;
+  transform: rotate(-5deg);
+}
+
+.ice-sparkles {
+  position: absolute;
+  inset: 0;
+}
+
+.sparkle {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  background: white;
+  border-radius: 50%;
+  animation: sparkle 2s ease-in-out infinite;
+}
+
+.sparkle--1 {
+  top: 12px;
+  right: 14px;
+  animation-delay: 0s;
+}
+
+.sparkle--2 {
+  bottom: 16px;
+  left: 18px;
+  width: 3px;
+  height: 3px;
+  animation-delay: 0.7s;
+}
+
+.sparkle--3 {
+  top: 32px;
+  left: 12px;
+  width: 2px;
+  height: 2px;
+  animation-delay: 1.4s;
+}
+
+@keyframes sparkle {
+  0%, 100% {
+    opacity: 0.3;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.3);
+  }
 }
 
 /* Mushroom tile (planted) - darker grass to show it's been visited */

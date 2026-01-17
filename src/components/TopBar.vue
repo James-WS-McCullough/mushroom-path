@@ -27,7 +27,7 @@ const emit = defineEmits<{
           :key="element"
           class="element-icon"
           :class="{ 'element-icon--dirt': element === WE.DIRT }"
-          :title="element === WE.RIVERS ? 'Rivers' : element === WE.DIRT ? 'Dirt Patches' : element"
+          :title="element === WE.RIVERS ? 'Rivers' : element === WE.DIRT ? 'Dirt Patches' : element === WE.ICE ? 'Ice' : element"
         >
           <!-- Water droplet icon for rivers -->
           <svg v-if="element === WE.RIVERS" viewBox="0 0 24 24" class="element-svg element-svg--water">
@@ -39,6 +39,11 @@ const emit = defineEmits<{
             <ellipse cx="12" cy="15" rx="7" ry="3" fill="currentColor" opacity="0.8"/>
             <circle cx="8" cy="16" r="1.5" fill="#4a3a2a"/>
             <circle cx="15" cy="17" r="1" fill="#4a3a2a"/>
+          </svg>
+          <!-- Snowflake icon for ice -->
+          <svg v-else-if="element === WE.ICE" viewBox="0 0 24 24" class="element-svg element-svg--ice">
+            <path d="M12 2v4m0 12v4M2 12h4m12 0h4M5.64 5.64l2.83 2.83m7.07 7.07l2.83 2.83M18.36 5.64l-2.83 2.83m-7.07 7.07l-2.83 2.83" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>
+            <circle cx="12" cy="12" r="3" fill="currentColor"/>
           </svg>
         </div>
       </div>
@@ -222,6 +227,10 @@ const emit = defineEmits<{
 
 .element-svg--dirt {
   color: #8b6b4a;
+}
+
+.element-svg--ice {
+  color: #7ec8e3;
 }
 
 .sound-controls {
