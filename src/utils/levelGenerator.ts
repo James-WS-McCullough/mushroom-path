@@ -1,4 +1,4 @@
-import { type FlowDirection, type Level, type Position, type Room, TileType, type WorldElement, WorldElement as WE } from "../types/game";
+import { type FlowDirection, type Level, type PortalType, type Position, type Room, PortalTypes, TileType, type WorldElement, WorldElement as WE } from "../types/game";
 
 export interface GeneratorConfig {
 	minWidth: number;
@@ -15,6 +15,7 @@ export interface GeneratorConfig {
 	dirtChance: number;
 	iceChance: number;
 	iceClusterSize: number;
+	portalPairs: number; // 0-3 pairs of portals
 }
 
 const DEFAULT_CONFIG: GeneratorConfig = {
@@ -32,6 +33,7 @@ const DEFAULT_CONFIG: GeneratorConfig = {
 	dirtChance: 0.08,
 	iceChance: 0.12,
 	iceClusterSize: 4,
+	portalPairs: 2, // 1-3 pairs when FAIRY element is active
 };
 
 interface Rectangle {
@@ -1103,6 +1105,68 @@ function computeIceSlideDestination(
 	}
 }
 
+// Place portal pairs on grass tiles
+// Portals come in pairs - each pair teleports between each other
+// Returns a map of position key -> portal type
+function placePortalPairs(
+	grass: Set<string>,
+	startPosition: Position,
+	numPairs: number,
+): Map<string, PortalType> {
+	const portals = new Map<string, PortalType>();
+
+	if (numPairs <= 0) return portals;
+
+	// Get available grass tiles (excluding start position)
+	const startKey = posKey(startPosition.x, startPosition.y);
+	const availableTiles = shuffleArray(
+		Array.from(grass).filter(k => k !== startKey)
+	);
+
+	// Need at least 2 tiles per pair
+	const maxPairs = Math.min(numPairs, Math.floor(availableTiles.length / 2), PortalTypes.length);
+
+	for (let i = 0; i < maxPairs; i++) {
+		const portalType = PortalTypes[i];
+		if (!portalType) continue;
+
+		// Find two tiles that are reasonably spaced apart
+		const tile1 = availableTiles.shift();
+		if (!tile1) break;
+
+		// Try to find a tile that's at least 3 steps away
+		let tile2: string | undefined;
+		const pos1 = parseKey(tile1);
+
+		for (let j = 0; j < availableTiles.length; j++) {
+			const candidate = availableTiles[j];
+			if (!candidate) continue;
+
+			const pos2 = parseKey(candidate);
+			const distance = Math.abs(pos2.x - pos1.x) + Math.abs(pos2.y - pos1.y);
+
+			if (distance >= 3) {
+				tile2 = candidate;
+				availableTiles.splice(j, 1);
+				break;
+			}
+		}
+
+		// If no distant tile found, just use the next available
+		if (!tile2) {
+			tile2 = availableTiles.shift();
+		}
+
+		if (!tile2) break;
+
+		// Place the portal pair
+		portals.set(tile1, portalType);
+		portals.set(tile2, portalType);
+	}
+
+	return portals;
+}
+
 // Build level from path
 function buildLevelFromPath(
 	path: Position[],
@@ -1112,6 +1176,7 @@ function buildLevelFromPath(
 	water: Set<string>,
 	dirt: Set<string>,
 	ice: Set<string>,
+	portals: Map<string, PortalType>,
 	waterFlowInput: Record<string, FlowDirection>,
 	rooms: Rectangle[],
 ): Level {
@@ -1144,6 +1209,9 @@ function buildLevelFromPath(
 				row.push(TileType.WATER);
 			} else if (ice.has(key)) {
 				row.push(TileType.ICE);
+			} else if (portals.has(key)) {
+				// Portal tiles replace grass tiles
+				row.push(portals.get(key)!);
 			} else if (dirt.has(key)) {
 				row.push(TileType.DIRT);
 			} else if (allShapeTiles.has(key)) {
@@ -1206,12 +1274,14 @@ function verifyLevel(level: Level): boolean {
 		return false;
 	}
 
-	// Count grass and dirt tiles - should be at least 8
+	// Count grass, dirt, and portal tiles - should be at least 8
 	// Dirt counts as 1 tile (even though it needs 2 visits)
+	// Portal tiles count as grass tiles (walkable, need to be visited)
 	let grassCount = 0;
 	for (const row of level.grid) {
 		for (const tile of row) {
-			if (tile === TileType.GRASS || tile === TileType.DIRT) {
+			if (tile === TileType.GRASS || tile === TileType.DIRT ||
+				tile === TileType.PORTAL_PINK || tile === TileType.PORTAL_BLUE || tile === TileType.PORTAL_YELLOW) {
 				grassCount++;
 			}
 		}
@@ -1241,6 +1311,21 @@ export function generateLevel(
 	// Ice only generates if the ICE element is active
 	if (!elements.includes(WE.ICE)) {
 		elementConfig.iceChance = 0;
+	}
+
+	// Portals only generate if the FAIRY element is active
+	if (!elements.includes(WE.FAIRY)) {
+		elementConfig.portalPairs = 0;
+	} else {
+		// Weighted random portal pairs: 50% for 1, 35% for 2, 15% for 3
+		const roll = Math.random();
+		if (roll < 0.5) {
+			elementConfig.portalPairs = 1;
+		} else if (roll < 0.85) {
+			elementConfig.portalPairs = 2;
+		} else {
+			elementConfig.portalPairs = 3;
+		}
 	}
 
 	const fullConfig = { ...DEFAULT_CONFIG, ...elementConfig };
@@ -1299,7 +1384,11 @@ export function generateLevel(
 		const path = findHamiltonianPath(grassTiles, brambles, finalStones, water, waterFlow, dirt, ice, shape);
 
 		if (path) {
-			const level = buildLevelFromPath(path, shape, brambles, finalStones, water, dirt, ice, waterFlow, rooms);
+			// Place portal pairs AFTER pathfinding (portals don't affect the path - they're teleports)
+			const startPos = path[0] ?? { x: 0, y: 0 };
+			const portals = placePortalPairs(grass, startPos, fullConfig.portalPairs);
+
+			const level = buildLevelFromPath(path, shape, brambles, finalStones, water, dirt, ice, portals, waterFlow, rooms);
 			if (verifyLevel(level)) {
 				return level;
 			}

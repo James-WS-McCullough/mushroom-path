@@ -27,7 +27,7 @@ const emit = defineEmits<{
           :key="element"
           class="element-icon"
           :class="{ 'element-icon--dirt': element === WE.DIRT }"
-          :title="element === WE.RIVERS ? 'Rivers' : element === WE.DIRT ? 'Dirt Patches' : element === WE.ICE ? 'Ice' : element"
+          :title="element === WE.RIVERS ? 'Rivers' : element === WE.DIRT ? 'Dirt Patches' : element === WE.ICE ? 'Ice' : element === WE.FAIRY ? 'Fairy Rings' : element"
         >
           <!-- Water droplet icon for rivers -->
           <svg v-if="element === WE.RIVERS" viewBox="0 0 24 24" class="element-svg element-svg--water">
@@ -44,6 +44,15 @@ const emit = defineEmits<{
           <svg v-else-if="element === WE.ICE" viewBox="0 0 24 24" class="element-svg element-svg--ice">
             <path d="M12 2v4m0 12v4M2 12h4m12 0h4M5.64 5.64l2.83 2.83m7.07 7.07l2.83 2.83M18.36 5.64l-2.83 2.83m-7.07 7.07l-2.83 2.83" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/>
             <circle cx="12" cy="12" r="3" fill="currentColor"/>
+          </svg>
+          <!-- Flower icon for fairy rings -->
+          <svg v-else-if="element === WE.FAIRY" viewBox="0 0 24 24" class="element-svg element-svg--fairy">
+            <circle cx="12" cy="12" r="3" fill="#ffeb3b"/>
+            <ellipse cx="12" cy="5" rx="2.5" ry="4" fill="currentColor"/>
+            <ellipse cx="18.5" cy="9.5" rx="2.5" ry="4" fill="currentColor" transform="rotate(72 18.5 9.5)"/>
+            <ellipse cx="16" cy="17.5" rx="2.5" ry="4" fill="currentColor" transform="rotate(144 16 17.5)"/>
+            <ellipse cx="8" cy="17.5" rx="2.5" ry="4" fill="currentColor" transform="rotate(-144 8 17.5)"/>
+            <ellipse cx="5.5" cy="9.5" rx="2.5" ry="4" fill="currentColor" transform="rotate(-72 5.5 9.5)"/>
           </svg>
         </div>
       </div>
@@ -231,6 +240,10 @@ const emit = defineEmits<{
 
 .element-svg--ice {
   color: #7ec8e3;
+}
+
+.element-svg--fairy {
+  color: #e091c9;
 }
 
 .sound-controls {

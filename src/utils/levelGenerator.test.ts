@@ -35,25 +35,30 @@ function getAdjacent(x: number, y: number): Array<{ x: number; y: number }> {
 	];
 }
 
-// Helper to check if grass/dirt tiles are connected (via walking, jumping, stone, water, or ice bridges)
+// Helper to check if grass/dirt tiles are connected (via walking, jumping, stone, water, ice, or portal bridges)
 function isGrassConnected(level: Level): boolean {
 	const grassTiles: Array<{ x: number; y: number }> = [];
 	const stoneTiles: Array<{ x: number; y: number }> = [];
 	const waterTiles: Array<{ x: number; y: number }> = [];
 	const iceTiles: Array<{ x: number; y: number }> = [];
+	const portalTiles: Array<{ x: number; y: number }> = [];
 
 	for (let y = 0; y < level.height; y++) {
 		for (let x = 0; x < level.width; x++) {
 			const tile = getTile(level, x, y);
 			// Both grass and dirt tiles need to be visited (dirt becomes grass after first visit)
+			// Portal tiles are walkable but don't need to be "collected" - they stay as portals
 			if (tile === TileType.GRASS || tile === TileType.DIRT) {
 				grassTiles.push({ x, y });
-			} else if (tile === TileType.STONE) {
+			}
+			if (tile === TileType.STONE) {
 				stoneTiles.push({ x, y });
 			} else if (tile === TileType.WATER) {
 				waterTiles.push({ x, y });
 			} else if (tile === TileType.ICE) {
 				iceTiles.push({ x, y });
+			} else if (tile === TileType.PORTAL_PINK || tile === TileType.PORTAL_BLUE || tile === TileType.PORTAL_YELLOW) {
+				portalTiles.push({ x, y });
 			}
 		}
 	}
@@ -70,7 +75,8 @@ function isGrassConnected(level: Level): boolean {
 	const stoneSet = new Set(stoneTiles.map((t) => posKey(t.x, t.y)));
 	const waterSet = new Set(waterTiles.map((t) => posKey(t.x, t.y)));
 	const iceSet = new Set(iceTiles.map((t) => posKey(t.x, t.y)));
-	const walkableSet = new Set([...grassSet, ...stoneSet, ...waterSet, ...iceSet]);
+	const portalSet = new Set(portalTiles.map((t) => posKey(t.x, t.y)));
+	const walkableSet = new Set([...grassSet, ...stoneSet, ...waterSet, ...iceSet, ...portalSet]);
 	const brambleSet = new Set<string>();
 
 	for (let y = 0; y < level.height; y++) {
@@ -714,5 +720,113 @@ describe("levelGenerator", () => {
 				expect(getTile(level, level.startPosition.x, level.startPosition.y)).toBe(TileType.GRASS);
 			}
 		}, 15000);
+	});
+
+	describe("portal tiles (fairy rings)", () => {
+		it("should generate portal pairs when FAIRY element is active", () => {
+			// Generate multiple levels with FAIRY element
+			let hasPortals = false;
+			for (let i = 0; i < 20; i++) {
+				const level = generateLevel({}, [WorldElement.FAIRY]);
+				if (!level) continue;
+
+				const portalCount =
+					countTiles(level, TileType.PORTAL_PINK) +
+					countTiles(level, TileType.PORTAL_BLUE) +
+					countTiles(level, TileType.PORTAL_YELLOW);
+
+				if (portalCount > 0) {
+					hasPortals = true;
+					break;
+				}
+			}
+			expect(hasPortals).toBe(true);
+		});
+
+		it("should not generate portals without FAIRY element", () => {
+			for (let i = 0; i < 5; i++) {
+				const level = generateLevel({}, []);
+				if (!level) continue;
+
+				const portalCount =
+					countTiles(level, TileType.PORTAL_PINK) +
+					countTiles(level, TileType.PORTAL_BLUE) +
+					countTiles(level, TileType.PORTAL_YELLOW);
+
+				expect(portalCount).toBe(0);
+			}
+		}, 15000);
+
+		it("should generate portals in pairs", () => {
+			// Portals should always come in pairs of the same color
+			for (let i = 0; i < 10; i++) {
+				const level = generateLevel({}, [WorldElement.FAIRY]);
+				if (!level) continue;
+
+				const pinkCount = countTiles(level, TileType.PORTAL_PINK);
+				const blueCount = countTiles(level, TileType.PORTAL_BLUE);
+				const yellowCount = countTiles(level, TileType.PORTAL_YELLOW);
+
+				// Each portal type should have 0 or 2 tiles
+				expect(pinkCount === 0 || pinkCount === 2).toBe(true);
+				expect(blueCount === 0 || blueCount === 2).toBe(true);
+				expect(yellowCount === 0 || yellowCount === 2).toBe(true);
+			}
+		}, 15000);
+
+		it("should generate up to 3 portal pairs", () => {
+			// With portalPairs: 3, should have at most 6 portal tiles (3 pairs)
+			let foundMultiplePairs = false;
+			for (let i = 0; i < 20; i++) {
+				const level = generateLevel({ portalPairs: 3 }, [WorldElement.FAIRY]);
+				if (!level) continue;
+
+				const portalCount =
+					countTiles(level, TileType.PORTAL_PINK) +
+					countTiles(level, TileType.PORTAL_BLUE) +
+					countTiles(level, TileType.PORTAL_YELLOW);
+
+				expect(portalCount).toBeLessThanOrEqual(6);
+
+				if (portalCount > 2) {
+					foundMultiplePairs = true;
+					break;
+				}
+			}
+			// Should find at least one level with multiple pairs in 20 tries
+			expect(foundMultiplePairs).toBe(true);
+		});
+
+		it("should not place portals on start position", () => {
+			for (let i = 0; i < 10; i++) {
+				const level = generateLevel({}, [WorldElement.FAIRY]);
+				if (!level) continue;
+
+				const startTile = getTile(level, level.startPosition.x, level.startPosition.y);
+				expect(startTile).toBe(TileType.GRASS);
+			}
+		}, 15000);
+
+		it("should maintain grass connectivity with portals", () => {
+			for (let i = 0; i < 5; i++) {
+				const level = generateLevel({}, [WorldElement.FAIRY]);
+				if (!level) continue;
+
+				expect(isGrassConnected(level)).toBe(true);
+			}
+		}, 15000);
+
+		it("should maintain at least 8 grass+dirt tiles with portals", () => {
+			const level = generateLevel({}, [WorldElement.FAIRY]);
+			expect(level).not.toBeNull();
+			if (!level) return;
+
+			// Portals don't count toward the tile count (they stay as portals)
+			// But the level should still have enough grass/dirt tiles
+			const grassCount = countTiles(level, TileType.GRASS);
+			const dirtCount = countTiles(level, TileType.DIRT);
+
+			expect(grassCount + dirtCount).toBeGreaterThanOrEqual(8);
+		});
 	});
 });

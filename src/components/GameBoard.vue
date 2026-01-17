@@ -236,6 +236,18 @@ function isJustPlanted(tilePos: Position): boolean {
 	return planted.x === tilePos.x && planted.y === tilePos.y;
 }
 
+function getPoofStyle(position: Position) {
+	const boardPadding = hasRooms.value ? 0 : 3;
+	// Match character positioning: boardPadding + position * 67, then add half tile for center
+	// Character sprite is 115px tall, anchored at bottom of 64px tile
+	// Body center is roughly 50px up from tile bottom
+	// Offset left by 3px to better align with character sprite
+	return {
+		left: `${boardPadding + position.x * 67 + TILE_SIZE / 2 - 3}px`,
+		top: `${boardPadding + position.y * 67 + TILE_SIZE - 50}px`,
+	};
+}
+
 function handleTileClick(position: Position) {
 	game.moveToPosition(position);
 }
@@ -387,8 +399,21 @@ onUnmounted(() => {
           :is-hopping="game.isHopping.value"
           :is-sliding="game.isSliding.value"
           :is-stuck="game.isStuck.value"
+          :is-teleporting="game.isTeleporting.value"
+          :teleport-phase="game.teleportPhase.value"
+          :facing-direction="game.facingDirection.value"
           :board-padding="hasRooms ? 0 : 3"
         />
+
+        <!-- Teleport poof smoke effect -->
+        <div
+          v-for="(poofPos, index) in game.poofPositions.value"
+          :key="`poof-${poofPos.x}-${poofPos.y}-${index}`"
+          class="poof-effect"
+          :style="getPoofStyle(poofPos)"
+        >
+          <div class="poof-smoke"></div>
+        </div>
       </div>
       </div>
     </div>
@@ -459,5 +484,38 @@ onUnmounted(() => {
   pointer-events: none;
   z-index: -1;
   overflow: visible;
+}
+
+/* Teleport poof smoke effect */
+.poof-effect {
+  position: absolute;
+  pointer-events: none;
+  z-index: 100;
+  transform: translate(-50%, -50%);
+}
+
+.poof-smoke {
+  position: absolute;
+  width: 60px;
+  height: 60px;
+  left: -30px;
+  top: -30px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.95) 0%, rgba(245, 245, 255, 0.8) 30%, rgba(220, 220, 240, 0.4) 60%, transparent 80%);
+  border-radius: 50%;
+  animation: poof-expand 0.25s ease-out forwards;
+}
+
+@keyframes poof-expand {
+  0% {
+    opacity: 1;
+    transform: scale(0.3);
+  }
+  50% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2);
+  }
 }
 </style>

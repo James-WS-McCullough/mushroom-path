@@ -29,14 +29,50 @@ export function playSound(path: string, volume = 1) {
 
 // Background music state
 let musicStarted = false;
-let bgmOpening: HTMLAudioElement | null = null;
-let bgmLoop: HTMLAudioElement | null = null;
-const BGM_VOLUME = 0.3;
+let currentBgm: HTMLAudioElement | null = null;
+const BGM_VOLUME = 0.2;
+const FADE_DURATION = 1000; // 1 second fade
+
+// World BGM playlist system
+const BGM_TRACKS = [
+	"/music/BGM 01.mp3",
+	"/music/BGM 02.mp3",
+	"/music/BGM 03.mp3",
+	"/music/BGM 04.mp3",
+	"/music/BGM 05.mp3",
+	"/music/BGM 06.mp3",
+	"/music/BGM 07.mp3",
+	"/music/BGM 08.mp3",
+	"/music/BGM 09.mp3",
+];
+
+let bgmPlaylist: string[] = [];
+let currentPlaylistIndex = 0;
+
+function shufflePlaylist() {
+	// Fisher-Yates shuffle
+	bgmPlaylist = [...BGM_TRACKS];
+	for (let i = bgmPlaylist.length - 1; i > 0; i--) {
+		const j = Math.floor(Math.random() * (i + 1));
+		const temp = bgmPlaylist[i]!;
+		bgmPlaylist[i] = bgmPlaylist[j]!;
+		bgmPlaylist[j] = temp;
+	}
+	currentPlaylistIndex = 0;
+}
+
+function getNextBgmTrack(): string {
+	if (bgmPlaylist.length === 0 || currentPlaylistIndex >= bgmPlaylist.length) {
+		shufflePlaylist();
+	}
+	const track = bgmPlaylist[currentPlaylistIndex]!;
+	currentPlaylistIndex++;
+	return track;
+}
 
 function updateMusicVolume() {
 	const volume = isMusicMuted.value ? 0 : BGM_VOLUME;
-	if (bgmOpening) bgmOpening.volume = volume;
-	if (bgmLoop) bgmLoop.volume = volume;
+	if (currentBgm) currentBgm.volume = volume;
 }
 
 export function toggleMusicMute() {
@@ -48,26 +84,80 @@ export function toggleSfxMute() {
 	isSfxMuted.value = !isSfxMuted.value;
 }
 
+function fadeOutAudio(audio: HTMLAudioElement, duration: number): Promise<void> {
+	return new Promise((resolve) => {
+		const startVolume = audio.volume;
+		const steps = 20;
+		const stepDuration = duration / steps;
+		const volumeStep = startVolume / steps;
+		let currentStep = 0;
+
+		const fadeInterval = setInterval(() => {
+			currentStep++;
+			audio.volume = Math.max(0, startVolume - volumeStep * currentStep);
+
+			if (currentStep >= steps) {
+				clearInterval(fadeInterval);
+				audio.pause();
+				audio.currentTime = 0;
+				resolve();
+			}
+		}, stepDuration);
+	});
+}
+
+function fadeInAudio(audio: HTMLAudioElement, targetVolume: number, duration: number): void {
+	audio.volume = 0;
+	audio.play().catch(() => {});
+
+	const steps = 20;
+	const stepDuration = duration / steps;
+	const volumeStep = targetVolume / steps;
+	let currentStep = 0;
+
+	const fadeInterval = setInterval(() => {
+		currentStep++;
+		audio.volume = Math.min(targetVolume, volumeStep * currentStep);
+
+		if (currentStep >= steps) {
+			clearInterval(fadeInterval);
+		}
+	}, stepDuration);
+}
+
 export function startBackgroundMusic() {
 	if (musicStarted) return;
 	musicStarted = true;
 
-	bgmOpening = new Audio("/music/main-bgm-opening.mp3");
-	bgmLoop = new Audio("/music/main-bgm-loop.mp3");
+	// Initialize playlist and start first track
+	shufflePlaylist();
+	const firstTrack = getNextBgmTrack();
 
-	bgmOpening.volume = isMusicMuted.value ? 0 : BGM_VOLUME;
-	bgmLoop.volume = isMusicMuted.value ? 0 : BGM_VOLUME;
-	bgmLoop.loop = true;
+	currentBgm = new Audio(firstTrack);
+	currentBgm.loop = true;
+	currentBgm.volume = isMusicMuted.value ? 0 : BGM_VOLUME;
 
-	// When opening ends, start the loop
-	bgmOpening.addEventListener("ended", () => {
-		bgmLoop?.play().catch(() => {});
-	});
-
-	bgmOpening.play().catch(() => {
-		// If autoplay fails, try starting the loop directly on next interaction
+	currentBgm.play().catch(() => {
+		// If autoplay fails, reset state
 		musicStarted = false;
 	});
+}
+
+export async function changeWorldBGM() {
+	if (!musicStarted) return;
+
+	const nextTrack = getNextBgmTrack();
+	const targetVolume = isMusicMuted.value ? 0 : BGM_VOLUME;
+
+	// Fade out current BGM
+	if (currentBgm) {
+		await fadeOutAudio(currentBgm, FADE_DURATION);
+	}
+
+	// Create and fade in new BGM
+	currentBgm = new Audio(nextTrack);
+	currentBgm.loop = true;
+	fadeInAudio(currentBgm, targetVolume, FADE_DURATION);
 }
 
 export function playRandomPop(volume = 0.25) {
@@ -164,4 +254,8 @@ export function playVoiceSuccess(volume = 0.7) {
 
 export function playVoiceTutorial(section: 1 | 2 | 3, volume = 0.7) {
 	playSound(`/voice/voice-tutorial0${section}.mp3`, volume);
+}
+
+export function playTeleportPoof(volume = 0.5) {
+	playSound("/sfx/teleport-poof.mp3", volume);
 }

@@ -7,6 +7,10 @@ export const TileType = {
 	WATER: "water",
 	DIRT: "dirt",
 	ICE: "ice",
+	// Fairy ring portal flowers - each color pairs with its match
+	PORTAL_PINK: "portal_pink",
+	PORTAL_BLUE: "portal_blue",
+	PORTAL_YELLOW: "portal_yellow",
 } as const;
 
 export type TileType = (typeof TileType)[keyof typeof TileType];
@@ -53,6 +57,16 @@ export const WorldElement = {
 	RIVERS: "rivers",
 	DIRT: "dirt",
 	ICE: "ice",
+	FAIRY: "fairy",
 } as const;
 
 export type WorldElement = (typeof WorldElement)[keyof typeof WorldElement];
+
+// Portal tile types for easy iteration
+export const PortalTypes = [
+	TileType.PORTAL_PINK,
+	TileType.PORTAL_BLUE,
+	TileType.PORTAL_YELLOW,
+] as const;
+
+export type PortalType = (typeof PortalTypes)[number];

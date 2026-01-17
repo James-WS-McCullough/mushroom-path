@@ -6,7 +6,10 @@ defineProps<{
 const emit = defineEmits<{
 	restart: [];
 	skip: [];
+	customWorld: [];
 }>();
+
+const isDev = import.meta.env.DEV;
 </script>
 
 <template>
@@ -22,6 +25,13 @@ const emit = defineEmits<{
         Skip
         <span class="btn-icon">→</span>
       </button>
+      <template v-if="isDev">
+        <div class="bar-divider"></div>
+        <button class="bar-btn bar-btn--dev" @click="emit('customWorld')" :disabled="disabled">
+          <span class="btn-icon">⚙</span>
+          Custom
+        </button>
+      </template>
     </div>
   </div>
 </template>
@@ -146,5 +156,14 @@ const emit = defineEmits<{
   background: linear-gradient(180deg, rgba(93, 65, 40, 0.3) 0%, rgba(93, 65, 40, 0.6) 50%, rgba(93, 65, 40, 0.3) 100%);
   border-radius: 1px;
   margin: 0 8px;
+}
+
+.bar-btn--dev {
+  background: linear-gradient(180deg, rgba(230, 220, 255, 0.95) 0%, rgba(210, 200, 240, 0.95) 100%);
+  color: #4a4a6a;
+}
+
+.bar-btn--dev:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(240, 235, 255, 0.98) 0%, rgba(225, 215, 250, 0.98) 100%);
 }
 </style>

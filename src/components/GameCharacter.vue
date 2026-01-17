@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import type { FacingDirection, TeleportPhase } from "../composables/useGame";
 import { playVoiceStuck, playVoiceWave } from "../composables/useSound";
 import type { Position } from "../types/game";
 
@@ -8,6 +9,9 @@ const props = defineProps<{
 	isHopping: boolean;
 	isSliding: boolean;
 	isStuck: boolean;
+	isTeleporting: boolean;
+	teleportPhase: TeleportPhase;
+	facingDirection: FacingDirection;
 	boardPadding?: number;
 }>();
 
@@ -58,8 +62,8 @@ function resetIdleTimer() {
 	isWaving.value = false;
 	waveJumpCount.value = 0;
 
-	// Start new idle timer (10-20 seconds)
-	const idleDelay = 10000 + Math.random() * 10000;
+	// Start new idle timer (30-60 seconds)
+	const idleDelay = 30000 + Math.random() * 30000;
 	idleTimer = setTimeout(() => {
 		if (!props.isStuck && !props.isHopping && !props.isSliding) {
 			startWaveAnimation();
@@ -71,7 +75,10 @@ function startWaveAnimation() {
 	const jumpCount = 2 + Math.floor(Math.random() * 2); // 2 or 3 jumps
 	waveJumpCount.value = 0;
 	isWaving.value = true;
-	playVoiceWave(0.6);
+	const speakChance = Math.random();
+	if (speakChance < 0.3) {
+		playVoiceWave(0.6);
+	}
 
 	waveInterval = setInterval(() => {
 		waveJumpCount.value++;
@@ -137,13 +144,20 @@ const spriteUrl = computed(() => {
 
 <template>
   <div
-    class="character"
+    :class="[
+      'character',
+      {
+        'character--shrinking': teleportPhase === 'shrinking',
+        'character--hidden': isTeleporting && !teleportPhase,
+        'character--growing': teleportPhase === 'growing',
+      }
+    ]"
     :style="{
       left: `${(boardPadding ?? 0) + position.x * 67}px`,
       top: `${(boardPadding ?? 0) + position.y * 67}px`,
     }"
   >
-    <div :class="['character__sprite', { 'character__sprite--hopping': isHopping, 'character__sprite--stuck': isStuck, 'character__sprite--waving': isWaving }]">
+    <div :class="['character__sprite', { 'character__sprite--hopping': isHopping, 'character__sprite--stuck': isStuck, 'character__sprite--waving': isWaving, 'character__sprite--facing-right': facingDirection === 'right' }]">
       <img :src="spriteUrl" alt="Mushroom Girl" class="sprite-img" />
     </div>
   </div>
@@ -157,6 +171,45 @@ const spriteUrl = computed(() => {
   transition: left 0.15s ease-out, top 0.15s ease-out;
   z-index: 10;
   pointer-events: none;
+}
+
+/* Shrinking phase - player shrinks down before teleporting */
+.character--shrinking {
+  animation: shrink-down 0.2s ease-in forwards;
+}
+
+@keyframes shrink-down {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0);
+    opacity: 0;
+  }
+}
+
+/* Hidden phase - player is invisible while teleporting */
+.character--hidden {
+  opacity: 0;
+  transform: scale(0);
+  transition: left 0s, top 0s;
+}
+
+/* Growing phase - player grows back after appearing */
+.character--growing {
+  animation: grow-up 0.2s ease-out forwards;
+}
+
+@keyframes grow-up {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .character__sprite {
@@ -173,6 +226,11 @@ const spriteUrl = computed(() => {
   width: 100%;
   height: 100%;
   object-fit: contain;
+  transition: transform 0.1s ease-out;
+}
+
+.character__sprite--facing-right .sprite-img {
+  transform: scaleX(-1);
 }
 
 .character__sprite--hopping {

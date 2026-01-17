@@ -1,12 +1,21 @@
 import { computed, ref } from "vue";
-import type { Direction, FlowDirection, Level, Position, Tile } from "../types/game";
-import { TileType } from "../types/game";
-import { playJump, playLand, playRandomDirt, playRandomPop, playStone, playWater, startIceSlide, stopIceSlide } from "./useSound";
+import type { Direction, FlowDirection, Level, Position, PortalType, Tile } from "../types/game";
+import { PortalTypes, TileType } from "../types/game";
+import { playJump, playLand, playRandomDirt, playRandomPop, playStone, playTeleportPoof, playWater, startIceSlide, stopIceSlide } from "./useSound";
+
+interface ChangedTile {
+	position: Position;
+	originalType: TileType;
+}
 
 interface MoveHistory {
 	playerPosition: Position;
 	tileState: TileType; // The tile type at the position player left (before mushroom planted)
+	additionalChanges?: ChangedTile[]; // For tracking portal conversions, etc.
 }
+
+export type FacingDirection = "left" | "right";
+export type TeleportPhase = "shrinking" | "growing" | null;
 
 export function useGame(level: Level) {
 	const tiles = ref<Tile[][]>([]);
@@ -14,6 +23,10 @@ export function useGame(level: Level) {
 	const hasWon = ref(false);
 	const isHopping = ref(false);
 	const isSliding = ref(false);
+	const isTeleporting = ref(false);
+	const teleportPhase = ref<TeleportPhase>(null);
+	const poofPositions = ref<Position[]>([]);
+	const facingDirection = ref<FacingDirection>("left"); // Sprites face left by default
 	const slidePath = ref<Position[]>([]);
 	const lastPlantedPosition = ref<Position | null>(null);
 	const moveHistory = ref<MoveHistory[]>([]);
@@ -30,6 +43,10 @@ export function useGame(level: Level) {
 		hasWon.value = false;
 		isHopping.value = false;
 		isSliding.value = false;
+		isTeleporting.value = false;
+		teleportPhase.value = null;
+		poofPositions.value = [];
+		facingDirection.value = "left";
 		slidePath.value = [];
 		lastPlantedPosition.value = null;
 		moveHistory.value = [];
@@ -52,8 +69,28 @@ export function useGame(level: Level) {
 	function canLandOn(position: Position): boolean {
 		const tile = getTile(position);
 		if (!tile) return false;
-		// Can land on grass, stone, water, dirt, or ice tiles
-		return tile.type === TileType.GRASS || tile.type === TileType.STONE || tile.type === TileType.WATER || tile.type === TileType.DIRT || tile.type === TileType.ICE;
+		// Can land on grass, stone, water, dirt, ice, or portal tiles
+		return tile.type === TileType.GRASS || tile.type === TileType.STONE || tile.type === TileType.WATER || tile.type === TileType.DIRT || tile.type === TileType.ICE || isPortalTile(tile.type);
+	}
+
+	function isPortalTile(tileType: TileType): tileType is PortalType {
+		return (PortalTypes as readonly TileType[]).includes(tileType);
+	}
+
+	function findMatchingPortal(portalType: PortalType, currentPosition: Position): Position | null {
+		// Find the other portal of the same type
+		for (let y = 0; y < tiles.value.length; y++) {
+			const row = tiles.value[y];
+			if (!row) continue;
+			for (let x = 0; x < row.length; x++) {
+				const tile = row[x];
+				if (!tile) continue;
+				if (tile.type === portalType && (x !== currentPosition.x || y !== currentPosition.y)) {
+					return { x, y };
+				}
+			}
+		}
+		return null;
 	}
 
 	function isObstacle(position: Position): boolean {
@@ -195,7 +232,7 @@ export function useGame(level: Level) {
 		if (!cell) return;
 
 		if (tile.type === TileType.GRASS) {
-			// Grass becomes mushroom
+			// Grass becomes mushroom when left
 			cell.type = TileType.MUSHROOM;
 			playRandomPop();
 			lastPlantedPosition.value = { ...position };
@@ -207,6 +244,7 @@ export function useGame(level: Level) {
 			// Dirt becomes grass (needs to be stepped on again)
 			cell.type = TileType.GRASS;
 		}
+		// Portal tiles stay as portals - they can be used multiple times
 	}
 
 	function checkWinCondition(): boolean {
@@ -245,6 +283,13 @@ export function useGame(level: Level) {
 
 		const newPosition = tryMove(direction);
 		if (!newPosition) return;
+
+		// Update facing direction for left/right movement
+		if (direction === "left") {
+			facingDirection.value = "left";
+		} else if (direction === "right") {
+			facingDirection.value = "right";
+		}
 
 		// Check if this is a jump (moving 2 tiles)
 		const dx = Math.abs(newPosition.x - playerPosition.value.x);
@@ -346,6 +391,49 @@ export function useGame(level: Level) {
 									}
 								}
 							}, 150);
+						} else if (finalTile && isPortalTile(finalTile.type)) {
+							// Chain into portal teleportation
+							const portalType = finalTile.type as PortalType;
+							const matchingPortal = findMatchingPortal(portalType, destination);
+							if (matchingPortal) {
+								// Start shrinking
+								isTeleporting.value = true;
+								teleportPhase.value = "shrinking";
+
+								// After shrink completes, show poof and teleport
+								setTimeout(() => {
+									// Show poof at source
+									const vanishPos = { ...destination };
+									poofPositions.value = [vanishPos];
+									playTeleportPoof();
+
+									// Move player to destination (while invisible)
+									playerPosition.value = { ...matchingPortal };
+
+									// After longer pause, show poof at destination and start growing
+									setTimeout(() => {
+										const appearPos = { ...matchingPortal };
+										poofPositions.value = [appearPos];
+										playTeleportPoof();
+										teleportPhase.value = "growing";
+
+										// After grow completes, end teleport
+										setTimeout(() => {
+											isTeleporting.value = false;
+											teleportPhase.value = null;
+											poofPositions.value = [];
+
+											if (checkWinCondition()) {
+												hasWon.value = true;
+											}
+										}, 200);
+									}, 350);
+								}, 200);
+							} else {
+								if (checkWinCondition()) {
+									hasWon.value = true;
+								}
+							}
 						} else {
 							// Play landing sound based on final tile type
 							if (finalTile?.type === TileType.GRASS) {
@@ -362,6 +450,57 @@ export function useGame(level: Level) {
 						}
 					}
 				}, 150); // Ice slide speed
+			}, 200);
+		} else if (landingTile && isPortalTile(landingTile.type)) {
+			// Portal teleportation - portals stay active for bidirectional travel
+			const portalType = landingTile.type as PortalType;
+			playerPosition.value = newPosition;
+
+			setTimeout(() => {
+				isHopping.value = false;
+
+				// Find matching portal
+				const matchingPortal = findMatchingPortal(portalType, newPosition);
+				if (matchingPortal) {
+					// Start shrinking
+					isTeleporting.value = true;
+					teleportPhase.value = "shrinking";
+
+					// After shrink completes, show poof and teleport
+					setTimeout(() => {
+						// Show poof at source
+						const vanishPos = { ...newPosition };
+						poofPositions.value = [vanishPos];
+						playTeleportPoof();
+
+						// Move player to destination (while invisible)
+						playerPosition.value = { ...matchingPortal };
+
+						// After longer pause, show poof at destination and start growing
+						setTimeout(() => {
+							const appearPos = { ...matchingPortal };
+							poofPositions.value = [appearPos];
+							playTeleportPoof();
+							teleportPhase.value = "growing";
+
+							// After grow completes, end teleport
+							setTimeout(() => {
+								isTeleporting.value = false;
+								teleportPhase.value = null;
+								poofPositions.value = [];
+
+								if (checkWinCondition()) {
+									hasWon.value = true;
+								}
+							}, 200);
+						}, 350);
+					}, 200);
+				} else {
+					// No matching portal, just stay here
+					if (checkWinCondition()) {
+						hasWon.value = true;
+					}
+				}
 			}, 200);
 		} else {
 			playerPosition.value = newPosition;
@@ -446,6 +585,13 @@ export function useGame(level: Level) {
 		else if (moveDy > 0) direction = "down";
 		else direction = "up";
 
+		// Update facing direction for horizontal movement
+		if (moveDx > 0) {
+			facingDirection.value = "right";
+		} else if (moveDx < 0) {
+			facingDirection.value = "left";
+		}
+
 		// Check if landing on water - need to slide
 		const landingTile = getTile(target);
 		if (landingTile?.type === TileType.WATER) {
@@ -526,6 +672,49 @@ export function useGame(level: Level) {
 									}
 								}
 							}, 150);
+						} else if (finalTile && isPortalTile(finalTile.type)) {
+							// Chain into portal teleportation
+							const portalType = finalTile.type as PortalType;
+							const matchingPortal = findMatchingPortal(portalType, destination);
+							if (matchingPortal) {
+								// Start shrinking
+								isTeleporting.value = true;
+								teleportPhase.value = "shrinking";
+
+								// After shrink completes, show poof and teleport
+								setTimeout(() => {
+									// Show poof at source
+									const vanishPos = { ...destination };
+									poofPositions.value = [vanishPos];
+									playTeleportPoof();
+
+									// Move player to destination (while invisible)
+									playerPosition.value = { ...matchingPortal };
+
+									// After longer pause, show poof at destination and start growing
+									setTimeout(() => {
+										const appearPos = { ...matchingPortal };
+										poofPositions.value = [appearPos];
+										playTeleportPoof();
+										teleportPhase.value = "growing";
+
+										// After grow completes, end teleport
+										setTimeout(() => {
+											isTeleporting.value = false;
+											teleportPhase.value = null;
+											poofPositions.value = [];
+
+											if (checkWinCondition()) {
+												hasWon.value = true;
+											}
+										}, 200);
+									}, 350);
+								}, 200);
+							} else {
+								if (checkWinCondition()) {
+									hasWon.value = true;
+								}
+							}
 						} else {
 							// Play landing sound based on final tile type
 							if (finalTile?.type === TileType.GRASS) {
@@ -542,6 +731,57 @@ export function useGame(level: Level) {
 						}
 					}
 				}, 150); // Ice slide speed
+			}, 200);
+		} else if (landingTile && isPortalTile(landingTile.type)) {
+			// Portal teleportation - portals stay active for bidirectional travel
+			const portalType = landingTile.type as PortalType;
+			playerPosition.value = target;
+
+			setTimeout(() => {
+				isHopping.value = false;
+
+				// Find matching portal
+				const matchingPortal = findMatchingPortal(portalType, target);
+				if (matchingPortal) {
+					// Start shrinking
+					isTeleporting.value = true;
+					teleportPhase.value = "shrinking";
+
+					// After shrink completes, show poof and teleport
+					setTimeout(() => {
+						// Show poof at source
+						const vanishPos = { ...target };
+						poofPositions.value = [vanishPos];
+						playTeleportPoof();
+
+						// Move player to destination (while invisible)
+						playerPosition.value = { ...matchingPortal };
+
+						// After longer pause, show poof at destination and start growing
+						setTimeout(() => {
+							const appearPos = { ...matchingPortal };
+							poofPositions.value = [appearPos];
+							playTeleportPoof();
+							teleportPhase.value = "growing";
+
+							// After grow completes, end teleport
+							setTimeout(() => {
+								isTeleporting.value = false;
+								teleportPhase.value = null;
+								poofPositions.value = [];
+
+								if (checkWinCondition()) {
+									hasWon.value = true;
+								}
+							}, 200);
+						}, 350);
+					}, 200);
+				} else {
+					// No matching portal, just stay here
+					if (checkWinCondition()) {
+						hasWon.value = true;
+					}
+				}
 			}, 200);
 		} else {
 			playerPosition.value = target;
@@ -569,6 +809,7 @@ export function useGame(level: Level) {
 		for (const row of tiles.value) {
 			for (const tile of row) {
 				// Count grass and dirt tiles (dirt counts as 2 since it needs two visits)
+				// Portal tiles don't count - they stay as portals and can be reused
 				if (tile.type === TileType.GRASS) {
 					count++;
 				} else if (tile.type === TileType.DIRT) {
@@ -584,15 +825,38 @@ export function useGame(level: Level) {
 	// Check if player is stuck (can't move in any direction)
 	const isStuck = computed(() => {
 		if (hasWon.value) return false;
+		if (isTeleporting.value) return false; // Don't show stuck during teleport
+
+		const currentPos = playerPosition.value;
+		const currentTile = getTile(currentPos);
+
+		// If landing on a portal (still hopping), not stuck - about to teleport
+		// But after teleporting here, we should check if stuck normally
+		if (currentTile && isPortalTile(currentTile.type) && isHopping.value) {
+			const matchingPortal = findMatchingPortal(currentTile.type, currentPos);
+			if (matchingPortal) return false;
+		}
 
 		// Try all four directions
 		const directions: Direction[] = ["up", "down", "left", "right"];
 		for (const direction of directions) {
-			if (tryMove(direction) !== null) {
-				return false; // Can move in at least one direction
+			const targetPos = tryMove(direction);
+			if (targetPos === null) continue;
+
+			// Check if landing on water that loops back to current position
+			const targetTile = getTile(targetPos);
+			if (targetTile?.type === TileType.WATER) {
+				const { destination } = computeSlideDestination(targetPos);
+				// If water takes us back to where we started, this isn't a valid escape
+				if (destination.x === currentPos.x && destination.y === currentPos.y) {
+					continue;
+				}
 			}
+
+			// Found a valid move that doesn't loop back
+			return false;
 		}
-		return true; // Can't move anywhere
+		return true; // Can't move anywhere useful
 	});
 
 	function undo() {
@@ -601,6 +865,17 @@ export function useGame(level: Level) {
 
 		const lastMove = moveHistory.value.pop();
 		if (!lastMove) return;
+
+		// Restore any additional changed tiles (e.g., portal conversions)
+		if (lastMove.additionalChanges) {
+			for (const change of lastMove.additionalChanges) {
+				const row = tiles.value[change.position.y];
+				const cell = row?.[change.position.x];
+				if (cell) {
+					cell.type = change.originalType;
+				}
+			}
+		}
 
 		// Restore the tile at current position (remove mushroom if it was planted)
 		// Stone tiles never have mushrooms planted, so only restore MUSHROOM -> GRASS
@@ -631,6 +906,10 @@ export function useGame(level: Level) {
 		hasWon,
 		isHopping,
 		isSliding,
+		isTeleporting,
+		teleportPhase,
+		poofPositions,
+		facingDirection,
 		slidePath,
 		isStuck,
 		lastPlantedPosition,

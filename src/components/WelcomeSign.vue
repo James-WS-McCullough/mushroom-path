@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from "vue";
-import { playNewWorld } from "../composables/useSound";
 
 defineProps<{
 	worldName: string;
@@ -20,7 +19,6 @@ function startClose() {
 }
 
 onMounted(() => {
-	playNewWorld();
 	timeout = setTimeout(startClose, 3000);
 });
 
@@ -32,8 +30,9 @@ onUnmounted(() => {
 <template>
   <div :class="['welcome-overlay', { 'welcome-overlay--leaving': isLeaving }]">
     <div class="signpost" @click.stop>
-      <!-- Post -->
-      <div class="post"></div>
+      <!-- Posts -->
+      <div class="post post--left"></div>
+      <div class="post post--right"></div>
 
       <!-- Sign board -->
       <div class="sign-board">
@@ -45,22 +44,22 @@ onUnmounted(() => {
         <!-- Decorative nails -->
         <div class="nail nail--left"></div>
         <div class="nail nail--right"></div>
-      </div>
 
-      <!-- Decorative mushrooms at base -->
-      <div class="base-decoration">
-        <div class="tiny-mushroom tiny-mushroom--left">
-          <div class="tiny-cap"></div>
-          <div class="tiny-stem"></div>
-        </div>
-        <div class="tiny-mushroom tiny-mushroom--right">
-          <div class="tiny-cap tiny-cap--red"></div>
-          <div class="tiny-stem"></div>
-        </div>
-        <div class="grass-tuft">
-          <div class="grass-blade"></div>
-          <div class="grass-blade"></div>
-          <div class="grass-blade"></div>
+        <!-- Decorative mushrooms on top of sign -->
+        <div class="top-decoration">
+          <div class="tiny-mushroom tiny-mushroom--left">
+            <div class="tiny-cap"></div>
+            <div class="tiny-stem"></div>
+          </div>
+          <div class="grass-tuft">
+            <div class="grass-blade"></div>
+            <div class="grass-blade"></div>
+            <div class="grass-blade"></div>
+          </div>
+          <div class="tiny-mushroom tiny-mushroom--right">
+            <div class="tiny-cap tiny-cap--red"></div>
+            <div class="tiny-stem"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -74,8 +73,9 @@ onUnmounted(() => {
   inset: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
+  padding-left: 24px;
   z-index: 150;
   animation: fadeIn 0.4s ease;
   transition: opacity 0.4s ease;
@@ -123,8 +123,6 @@ onUnmounted(() => {
 .post {
   position: absolute;
   top: 0;
-  left: 50%;
-  transform: translateX(-50%);
   width: 20px;
   height: 100vh;
   background: linear-gradient(90deg, #6d5243 0%, #8b6b52 50%, #6d5243 100%);
@@ -133,6 +131,14 @@ onUnmounted(() => {
     inset -3px 0 0 rgba(0, 0, 0, 0.2),
     3px 6px 12px rgba(0, 0, 0, 0.3);
   z-index: 1;
+}
+
+.post--left {
+  left: 10px;
+}
+
+.post--right {
+  left: 310px; /* Mirror of left post: sign width (340px) - post width (20px) - offset (10px) */
 }
 
 .post::before {
@@ -154,8 +160,7 @@ onUnmounted(() => {
 .sign-board {
   position: absolute;
   top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
   width: 340px;
   min-height: 130px;
   background: linear-gradient(180deg, #a08060 0%, #8b6b4a 50%, #7a5c3d 100%);
@@ -238,13 +243,15 @@ onUnmounted(() => {
   right: 10px;
 }
 
-.base-decoration {
+.top-decoration {
   position: absolute;
-  bottom: -20px;
+  top: -18px;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   align-items: flex-end;
-  gap: 8px;
-  z-index: 0;
+  gap: 12px;
+  z-index: 3;
 }
 
 .tiny-mushroom {

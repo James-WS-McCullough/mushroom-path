@@ -15,6 +15,13 @@ const emit = defineEmits<{
 	click: [];
 }>();
 
+// Check if tile is a portal type
+const isPortal = computed(() => {
+	return props.tile.type === TileType.PORTAL_PINK ||
+		props.tile.type === TileType.PORTAL_BLUE ||
+		props.tile.type === TileType.PORTAL_YELLOW;
+});
+
 const tileClass = computed(() => {
 	return {
 		tile: true,
@@ -26,6 +33,10 @@ const tileClass = computed(() => {
 		"tile--water": props.tile.type === TileType.WATER,
 		"tile--dirt": props.tile.type === TileType.DIRT,
 		"tile--ice": props.tile.type === TileType.ICE,
+		"tile--portal": isPortal.value,
+		"tile--portal-pink": props.tile.type === TileType.PORTAL_PINK,
+		"tile--portal-blue": props.tile.type === TileType.PORTAL_BLUE,
+		"tile--portal-yellow": props.tile.type === TileType.PORTAL_YELLOW,
 		"tile--reachable": props.isReachable && !props.isPlayerHere,
 		"tile--has-player": props.isPlayerHere,
 	};
@@ -197,6 +208,38 @@ function handleClick() {
         <div class="sparkle sparkle--1"></div>
         <div class="sparkle sparkle--2"></div>
         <div class="sparkle sparkle--3"></div>
+      </div>
+    </div>
+
+    <!-- Fairy ring portal flowers -->
+    <div v-if="isPortal" class="portal-detail">
+      <!-- Fairy ring circle of small flowers -->
+      <div class="fairy-ring">
+        <div class="ring-flower ring-flower--1"></div>
+        <div class="ring-flower ring-flower--2"></div>
+        <div class="ring-flower ring-flower--3"></div>
+        <div class="ring-flower ring-flower--4"></div>
+        <div class="ring-flower ring-flower--5"></div>
+        <div class="ring-flower ring-flower--6"></div>
+        <div class="ring-flower ring-flower--7"></div>
+        <div class="ring-flower ring-flower--8"></div>
+      </div>
+      <!-- Central larger flower -->
+      <div class="portal-flower">
+        <div class="flower-petals">
+          <div class="petal petal--1"></div>
+          <div class="petal petal--2"></div>
+          <div class="petal petal--3"></div>
+          <div class="petal petal--4"></div>
+          <div class="petal petal--5"></div>
+        </div>
+        <div class="flower-center"></div>
+      </div>
+      <!-- Magical sparkles -->
+      <div class="portal-sparkles">
+        <div class="portal-sparkle portal-sparkle--1"></div>
+        <div class="portal-sparkle portal-sparkle--2"></div>
+        <div class="portal-sparkle portal-sparkle--3"></div>
       </div>
     </div>
   </div>
@@ -811,6 +854,188 @@ function handleClick() {
     opacity: 1;
     transform: scale(1.3);
   }
+}
+
+/* Portal tiles - fairy ring flowers */
+.tile--portal {
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.3) 0%, transparent 50%),
+    radial-gradient(circle at 20% 80%, rgba(120, 180, 100, 0.4) 0%, transparent 30%),
+    linear-gradient(135deg, #7cb668 0%, #5a9a4a 100%);
+}
+
+.portal-detail {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Fairy ring - circle of small flowers around the edge */
+.fairy-ring {
+  position: absolute;
+  inset: 4px;
+}
+
+.ring-flower {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+}
+
+/* Position ring flowers in a circle */
+.ring-flower--1 { top: 0; left: 50%; transform: translateX(-50%); }
+.ring-flower--2 { top: 8px; right: 8px; }
+.ring-flower--3 { top: 50%; right: 0; transform: translateY(-50%); }
+.ring-flower--4 { bottom: 8px; right: 8px; }
+.ring-flower--5 { bottom: 0; left: 50%; transform: translateX(-50%); }
+.ring-flower--6 { bottom: 8px; left: 8px; }
+.ring-flower--7 { top: 50%; left: 0; transform: translateY(-50%); }
+.ring-flower--8 { top: 8px; left: 8px; }
+
+/* Central flower */
+.portal-flower {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 28px;
+  height: 28px;
+}
+
+.flower-petals {
+  position: absolute;
+  inset: 0;
+  animation: flowerPulse 3s ease-in-out infinite;
+}
+
+.petal {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50% 50% 50% 0;
+  top: 50%;
+  left: 50%;
+  transform-origin: 0% 100%;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.1);
+}
+
+.petal--1 { transform: rotate(0deg) translateY(-100%); }
+.petal--2 { transform: rotate(72deg) translateY(-100%); }
+.petal--3 { transform: rotate(144deg) translateY(-100%); }
+.petal--4 { transform: rotate(216deg) translateY(-100%); }
+.petal--5 { transform: rotate(288deg) translateY(-100%); }
+
+.flower-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 10px;
+  height: 10px;
+  background: radial-gradient(circle, #fff9c4 0%, #ffeb3b 100%);
+  border-radius: 50%;
+  box-shadow: 0 0 8px rgba(255, 235, 59, 0.6);
+}
+
+@keyframes flowerPulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+/* Portal sparkles */
+.portal-sparkles {
+  position: absolute;
+  inset: 0;
+}
+
+.portal-sparkle {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  background: white;
+  border-radius: 50%;
+  animation: portalSparkle 2s ease-in-out infinite;
+}
+
+.portal-sparkle--1 {
+  top: 10px;
+  right: 12px;
+  animation-delay: 0s;
+}
+
+.portal-sparkle--2 {
+  bottom: 12px;
+  left: 10px;
+  width: 3px;
+  height: 3px;
+  animation-delay: 0.7s;
+}
+
+.portal-sparkle--3 {
+  top: 14px;
+  left: 14px;
+  width: 2px;
+  height: 2px;
+  animation-delay: 1.3s;
+}
+
+@keyframes portalSparkle {
+  0%, 100% {
+    opacity: 0.2;
+    transform: scale(1) translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.5) translateY(-3px);
+  }
+}
+
+/* Pink portal flowers (roses) */
+.tile--portal-pink .ring-flower {
+  background: radial-gradient(circle, #ffb6c1 0%, #ff69b4 100%);
+}
+
+.tile--portal-pink .petal {
+  background: linear-gradient(135deg, #ffb6c1 0%, #ff69b4 50%, #db7093 100%);
+}
+
+.tile--portal-pink .portal-sparkle {
+  background: #ffb6c1;
+  box-shadow: 0 0 4px #ff69b4;
+}
+
+/* Blue portal flowers (forget-me-nots) */
+.tile--portal-blue .ring-flower {
+  background: radial-gradient(circle, #add8e6 0%, #6495ed 100%);
+}
+
+.tile--portal-blue .petal {
+  background: linear-gradient(135deg, #add8e6 0%, #6495ed 50%, #4169e1 100%);
+}
+
+.tile--portal-blue .portal-sparkle {
+  background: #add8e6;
+  box-shadow: 0 0 4px #6495ed;
+}
+
+/* Yellow portal flowers (buttercups) */
+.tile--portal-yellow .ring-flower {
+  background: radial-gradient(circle, #fff9c4 0%, #ffd700 100%);
+}
+
+.tile--portal-yellow .petal {
+  background: linear-gradient(135deg, #fff9c4 0%, #ffd700 50%, #ffa500 100%);
+}
+
+.tile--portal-yellow .portal-sparkle {
+  background: #fff9c4;
+  box-shadow: 0 0 4px #ffd700;
 }
 
 /* Mushroom tile (planted) - darker grass to show it's been visited */

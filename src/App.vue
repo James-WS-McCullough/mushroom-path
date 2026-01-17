@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import BottomBar from "./components/BottomBar.vue";
+import CustomWorldModal from "./components/CustomWorldModal.vue";
 import GameBoard from "./components/GameBoard.vue";
 import StartScreen from "./components/StartScreen.vue";
 import TopBar from "./components/TopBar.vue";
 import TutorialModal from "./components/TutorialModal.vue";
 import WelcomeSign from "./components/WelcomeSign.vue";
-import { playSuccess, playUndo, playVoiceSuccess, startBackgroundMusic } from "./composables/useSound";
+import { changeWorldBGM, playSuccess, playUndo, playVoiceSuccess, startBackgroundMusic } from "./composables/useSound";
 import { level1 } from "./data/levels";
 import type { Level, WorldElement } from "./types/game";
 import { WorldElement as WE } from "./types/game";
@@ -38,6 +39,7 @@ const levelKey = ref(0);
 const showWinModal = ref(false);
 const showTutorial = ref(false);
 const showWelcomeSign = ref(false);
+const showCustomWorldModal = ref(false);
 const isFading = ref(false);
 const isBlack = ref(false);
 
@@ -45,32 +47,28 @@ const isBlack = ref(false);
 const currentWorldIndex = ref(0);
 const currentLevelNumber = ref(1);
 const currentWorldElements = ref<WorldElement[]>([]);
+// Random offset for world names so first world isn't always the same
+const worldNameOffset = Math.floor(Math.random() * worldNames.length);
 
 // All available world elements
-const allElements: WorldElement[] = [WE.RIVERS, WE.DIRT, WE.ICE];
+const allElements: WorldElement[] = [WE.RIVERS, WE.DIRT, WE.ICE, WE.FAIRY];
 
 function generateWorldElements(): WorldElement[] {
-	const elements: WorldElement[] = [];
+	// Randomly select 0, 1, or 2 elements
+	const elementCount = Math.floor(Math.random() * 3); // 0, 1, or 2
 
-	// 50% chance for a "classic" world with no elements
-	if (Math.random() < 0.5) {
-		return elements;
+	if (elementCount === 0) {
+		return [];
 	}
 
-	// Otherwise, randomly select elements
-	for (const element of allElements) {
-		if (Math.random() < 0.6) { // 60% chance for each element
-			elements.push(element);
-		}
-	}
-
-	return elements;
+	// Shuffle all elements and pick the first N
+	const shuffled = [...allElements].sort(() => Math.random() - 0.5);
+	return shuffled.slice(0, elementCount);
 }
 
 const currentWorldName = computed(() => {
-	return (
-		worldNames[currentWorldIndex.value % worldNames.length] ?? "Mushroom Garden"
-	);
+	const index = (currentWorldIndex.value + worldNameOffset) % worldNames.length;
+	return worldNames[index] ?? "Mushroom Garden";
 });
 
 const displayName = computed(() => {
@@ -119,6 +117,11 @@ function startTransition() {
 
 	// Start fade to black immediately
 	isBlack.value = true;
+
+	// If entering a new world, start the BGM transition
+	if (pendingNewWorld.value) {
+		changeWorldBGM();
+	}
 
 	// After fade completes (500ms), generate new level
 	setTimeout(() => {
@@ -206,6 +209,29 @@ function closeTutorial() {
 function closeWelcomeSign() {
 	showWelcomeSign.value = false;
 }
+
+function openCustomWorldModal() {
+	showCustomWorldModal.value = true;
+}
+
+function startCustomWorld(elements: WorldElement[]) {
+	showCustomWorldModal.value = false;
+
+	// Set up custom world
+	currentWorldIndex.value++;
+	currentLevelNumber.value = 1;
+	currentWorldElements.value = elements;
+
+	// Change BGM for the new world
+	changeWorldBGM();
+
+	// Generate new level with selected elements
+	currentLevel.value = getNewLevel();
+	levelKey.value++;
+
+	// Show welcome sign for the new world
+	showWelcomeSign.value = true;
+}
 </script>
 
 <template>
@@ -235,6 +261,7 @@ function closeWelcomeSign() {
       :disabled="isFading"
       @restart="handleRestart"
       @skip="handleSkip"
+      @custom-world="openCustomWorldModal"
     />
 
     <!-- Win Modal -->
@@ -273,6 +300,13 @@ function closeWelcomeSign() {
       v-if="showWelcomeSign"
       :world-name="currentWorldName"
       @close="closeWelcomeSign"
+    />
+
+    <!-- Custom World Modal (dev only) -->
+    <CustomWorldModal
+      v-if="showCustomWorldModal"
+      @close="showCustomWorldModal = false"
+      @start="startCustomWorld"
     />
   </div>
 </template>
