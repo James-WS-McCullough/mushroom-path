@@ -1,7 +1,7 @@
 import { computed, ref } from "vue";
 import type { Direction, FlowDirection, Level, Position, PortalType, Tile } from "../types/game";
 import { PortalTypes, TileType } from "../types/game";
-import { playJump, playLand, playRandomDirt, playRandomPop, playStone, playTeleportPoof, playWater, startIceSlide, stopIceSlide } from "./useSound";
+import { playJump, playLand, playRandomDirt, playRandomPop, playShovelDirt, playStone, playTeleportPoof, playWater, startIceSlide, stopIceSlide } from "./useSound";
 
 interface ChangedTile {
 	position: Position;
@@ -29,8 +29,14 @@ export function useGame(level: Level) {
 	const facingDirection = ref<FacingDirection>("left"); // Sprites face left by default
 	const slidePath = ref<Position[]>([]);
 	const lastPlantedPosition = ref<Position | null>(null);
+	const lastCleanedPosition = ref<Position | null>(null);
 	const moveHistory = ref<MoveHistory[]>([]);
 	const waterFlow = level.waterFlow ?? {};
+
+	// Idle hint tracking
+	const lastMoveTime = ref(Date.now());
+	const currentTime = ref(Date.now());
+	let idleIntervalId: ReturnType<typeof setInterval> | null = null;
 
 	function initializeGame() {
 		tiles.value = level.grid.map((row, y) =>
@@ -49,7 +55,29 @@ export function useGame(level: Level) {
 		facingDirection.value = "left";
 		slidePath.value = [];
 		lastPlantedPosition.value = null;
+		lastCleanedPosition.value = null;
 		moveHistory.value = [];
+
+		// Reset idle tracking
+		lastMoveTime.value = Date.now();
+		currentTime.value = Date.now();
+
+		// Start interval for tracking idle time
+		if (idleIntervalId) clearInterval(idleIntervalId);
+		idleIntervalId = setInterval(() => {
+			currentTime.value = Date.now();
+		}, 500);
+	}
+
+	function resetIdleTimer() {
+		lastMoveTime.value = Date.now();
+	}
+
+	function cleanupIdleTimer() {
+		if (idleIntervalId) {
+			clearInterval(idleIntervalId);
+			idleIntervalId = null;
+		}
 	}
 
 	function getTile(position: Position): Tile | null {
@@ -243,6 +271,12 @@ export function useGame(level: Level) {
 		} else if (tile.type === TileType.DIRT) {
 			// Dirt becomes grass (needs to be stepped on again)
 			cell.type = TileType.GRASS;
+			playShovelDirt();
+			lastCleanedPosition.value = { ...position };
+			// Clear after animation completes
+			setTimeout(() => {
+				lastCleanedPosition.value = null;
+			}, 500);
 		}
 		// Portal tiles stay as portals - they can be used multiple times
 	}
@@ -283,6 +317,9 @@ export function useGame(level: Level) {
 
 		const newPosition = tryMove(direction);
 		if (!newPosition) return;
+
+		// Reset idle timer on successful move
+		resetIdleTimer();
 
 		// Update facing direction for left/right movement
 		if (direction === "left") {
@@ -556,6 +593,9 @@ export function useGame(level: Level) {
 		if (isHopping.value && currentTile?.type === TileType.WATER) return;
 		if (!canReachByClick(target)) return;
 
+		// Reset idle timer on successful move
+		resetIdleTimer();
+
 		// Check if this is a jump (moving 2 tiles)
 		const dx = Math.abs(target.x - playerPosition.value.x);
 		const dy = Math.abs(target.y - playerPosition.value.y);
@@ -820,6 +860,17 @@ export function useGame(level: Level) {
 		return count;
 	});
 
+	// Show hints when player is idle for 4+ seconds and remaining tiles < 8
+	const IDLE_HINT_THRESHOLD = 4000; // 4 seconds
+	const TILES_HINT_THRESHOLD = 8;
+
+	const showHints = computed(() => {
+		if (hasWon.value) return false;
+		if (grassTilesRemaining.value >= TILES_HINT_THRESHOLD) return false;
+		const idleTime = currentTime.value - lastMoveTime.value;
+		return idleTime >= IDLE_HINT_THRESHOLD;
+	});
+
 	const canUndo = computed(() => moveHistory.value.length > 0);
 
 	// Check if player is stuck (can't move in any direction)
@@ -913,6 +964,7 @@ export function useGame(level: Level) {
 		slidePath,
 		isStuck,
 		lastPlantedPosition,
+		lastCleanedPosition,
 		movePlayer,
 		moveToPosition,
 		canReachByClick,
@@ -921,6 +973,8 @@ export function useGame(level: Level) {
 		canUndo,
 		undo,
 		getWaterFlow,
+		showHints,
+		cleanupIdleTimer,
 		levelWidth: level.width,
 		levelHeight: level.height,
 	};

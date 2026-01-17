@@ -8,7 +8,11 @@ const props = defineProps<{
 	isPlayerHere: boolean;
 	isReachable: boolean;
 	isJustPlanted: boolean;
+	isJustCleaned?: boolean;
 	flowDirection?: FlowDirection | null;
+	hasIceElement?: boolean;
+	hasDirtElement?: boolean;
+	shouldShimmer?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -23,6 +27,10 @@ const isPortal = computed(() => {
 });
 
 const tileClass = computed(() => {
+	// Shimmer applies to grass and dirt tiles when hints are active and player is not here
+	const canShimmer = props.shouldShimmer && !props.isPlayerHere &&
+		(props.tile.type === TileType.GRASS || props.tile.type === TileType.DIRT);
+
 	return {
 		tile: true,
 		"tile--grass": props.tile.type === TileType.GRASS,
@@ -39,6 +47,15 @@ const tileClass = computed(() => {
 		"tile--portal-yellow": props.tile.type === TileType.PORTAL_YELLOW,
 		"tile--reachable": props.isReachable && !props.isPlayerHere,
 		"tile--has-player": props.isPlayerHere,
+		"tile--just-cleaned": props.isJustCleaned,
+		"tile--shimmer": canShimmer,
+		// Ice biome takes priority over swamp
+		"tile--frosty": props.hasIceElement && props.tile.type === TileType.GRASS,
+		"tile--frosty-mushroom": props.hasIceElement && props.tile.type === TileType.MUSHROOM,
+		"tile--frosty-dirt": props.hasIceElement && props.tile.type === TileType.DIRT,
+		"tile--swamp": !props.hasIceElement && props.hasDirtElement && props.tile.type === TileType.GRASS,
+		"tile--swamp-mushroom": !props.hasIceElement && props.hasDirtElement && props.tile.type === TileType.MUSHROOM,
+		"tile--swamp-dirt": !props.hasIceElement && props.hasDirtElement && props.tile.type === TileType.DIRT,
 	};
 });
 
@@ -59,10 +76,10 @@ const mushroomVariant = computed(() => {
 	return hash % 5;
 });
 
-// Deterministic bramble variant based on position (0-2)
+// Deterministic bramble variant based on position (0-5)
 const brambleVariant = computed(() => {
 	const hash = props.tile.position.x * 11 + props.tile.position.y * 17;
-	return hash % 3;
+	return hash % 6;
 });
 
 function handleClick() {
@@ -79,6 +96,13 @@ function handleClick() {
       <div class="grass-blade"></div>
       <div class="grass-blade"></div>
       <div class="grass-blade"></div>
+    </div>
+
+    <!-- Mud vanishing animation when dirt becomes grass -->
+    <div v-if="isJustCleaned" class="mud-vanish">
+      <div class="mud-patch mud-patch--1"></div>
+      <div class="mud-patch mud-patch--2"></div>
+      <div class="mud-patch mud-patch--3"></div>
     </div>
 
     <!-- Mushroom sprites - different variants -->
@@ -296,6 +320,34 @@ function handleClick() {
   height: 11px;
 }
 
+/* Frosty grass tile (ice world) - lavender-blue frost */
+.tile--frosty {
+  background:
+    radial-gradient(circle at 20% 80%, rgba(220, 225, 245, 0.5) 0%, transparent 30%),
+    radial-gradient(circle at 80% 20%, rgba(235, 240, 255, 0.4) 0%, transparent 25%),
+    linear-gradient(135deg, #c8d0e8 0%, #b0b8d0 100%);
+}
+
+.tile--frosty .grass-detail {
+  opacity: 0.6;
+}
+
+.tile--frosty .grass-blade {
+  background: linear-gradient(to top, #98a0c0, #c0c8e0);
+}
+
+/* Swamp grass tile (dirt/swamp biome) - dense murky greens */
+.tile--swamp {
+  background:
+    radial-gradient(circle at 20% 80%, rgba(60, 90, 50, 0.5) 0%, transparent 30%),
+    radial-gradient(circle at 80% 20%, rgba(70, 100, 55, 0.4) 0%, transparent 25%),
+    linear-gradient(135deg, #4a6b3a 0%, #3a5a2a 100%);
+}
+
+.tile--swamp .grass-blade {
+  background: linear-gradient(to top, #3a5a2a, #5a7a4a);
+}
+
 /* Void tile (invisible, empty space) */
 .tile--void {
   background: transparent;
@@ -430,51 +482,375 @@ function handleClick() {
   height: 4px;
 }
 
-/* Bramble variants */
+/* Bramble variant 1 - vines sweep right, thorns cluster left */
 .bramble--variant-1 .thorn:nth-child(1) {
-  top: 10px;
+  top: 6px;
   left: 8px;
+  transform: rotate(-40deg);
+}
+
+.bramble--variant-1 .thorn:nth-child(2) {
+  top: 20px;
+  left: 6px;
+  transform: rotate(-20deg);
 }
 
 .bramble--variant-1 .thorn:nth-child(3) {
+  bottom: 12px;
+  left: 10px;
+  transform: rotate(-35deg);
+}
+
+.bramble--variant-1 .thorn:nth-child(4) {
+  top: 14px;
+  right: 20px;
+  transform: rotate(30deg);
+}
+
+.bramble--variant-1 .thorn:nth-child(5) {
   bottom: 10px;
-  left: 26px;
+  right: 10px;
+  transform: rotate(15deg);
+}
+
+.bramble--variant-1 .vine:nth-child(1) {
+  top: -4px;
+  right: 4px;
+  left: auto;
+  transform: rotate(-20deg);
+  width: 32px;
+  height: 32px;
+}
+
+.bramble--variant-1 .vine:nth-child(2) {
+  bottom: -6px;
+  right: 8px;
+  transform: rotate(-150deg);
+  width: 30px;
+  height: 30px;
+}
+
+.bramble--variant-1 .vine:nth-child(3) {
+  top: 16px;
+  left: 20px;
+  right: auto;
+  width: 24px;
+  height: 24px;
+  transform: rotate(80deg);
 }
 
 .bramble--variant-1 .berry:nth-child(1) {
-  top: 20px;
-  left: 18px;
+  top: 18px;
+  right: 12px;
+  width: 7px;
+  height: 7px;
 }
 
 .bramble--variant-1 .berry:nth-child(2) {
-  bottom: 16px;
-  right: 18px;
+  bottom: 14px;
+  right: 26px;
+}
+
+.bramble--variant-1 .berry:nth-child(3) {
+  top: 10px;
+  left: 26px;
+}
+
+/* Bramble variant 2 - horizontal spread, vines on top/bottom */
+.bramble--variant-2 .thorn:nth-child(1) {
+  top: 14px;
+  left: 4px;
+  transform: rotate(-45deg);
 }
 
 .bramble--variant-2 .thorn:nth-child(2) {
-  top: 18px;
-  right: 10px;
+  top: 14px;
+  right: 4px;
+  transform: rotate(45deg);
+}
+
+.bramble--variant-2 .thorn:nth-child(3) {
+  top: 30px;
+  left: 14px;
+  transform: rotate(-10deg);
 }
 
 .bramble--variant-2 .thorn:nth-child(4) {
-  bottom: 16px;
-  right: 24px;
+  top: 30px;
+  right: 14px;
+  transform: rotate(10deg);
+}
+
+.bramble--variant-2 .thorn:nth-child(5) {
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%) rotate(0deg);
 }
 
 .bramble--variant-2 .vine:nth-child(1) {
-  top: -6px;
-  left: 12px;
-  transform: rotate(35deg);
+  top: -10px;
+  left: 14px;
+  transform: rotate(30deg);
+  width: 40px;
+  height: 40px;
+}
+
+.bramble--variant-2 .vine:nth-child(2) {
+  bottom: -14px;
+  left: 10px;
+  transform: rotate(-110deg);
+  width: 38px;
+  height: 38px;
+}
+
+.bramble--variant-2 .vine:nth-child(3) {
+  display: none;
 }
 
 .bramble--variant-2 .berry:nth-child(1) {
-  top: 14px;
-  left: 30px;
+  top: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 7px;
+  height: 7px;
+}
+
+.bramble--variant-2 .berry:nth-child(2) {
+  bottom: 18px;
+  left: 8px;
 }
 
 .bramble--variant-2 .berry:nth-child(3) {
+  bottom: 18px;
+  right: 8px;
+}
+
+/* Bramble variant 3 - spiral pattern with curling vines */
+.bramble--variant-3 .thorn:nth-child(1) {
+  top: 4px;
+  left: 20px;
+  transform: rotate(-15deg);
+}
+
+.bramble--variant-3 .thorn:nth-child(2) {
+  top: 16px;
+  right: 6px;
+  transform: rotate(35deg);
+}
+
+.bramble--variant-3 .thorn:nth-child(3) {
+  bottom: 6px;
+  right: 18px;
+  transform: rotate(50deg);
+}
+
+.bramble--variant-3 .thorn:nth-child(4) {
+  bottom: 14px;
+  left: 6px;
+  transform: rotate(-50deg);
+}
+
+.bramble--variant-3 .thorn:nth-child(5) {
   top: 26px;
+  left: 18px;
+  transform: rotate(5deg);
+}
+
+.bramble--variant-3 .vine:nth-child(1) {
+  top: 2px;
+  left: -4px;
+  transform: rotate(70deg);
+  width: 44px;
+  height: 44px;
+}
+
+.bramble--variant-3 .vine:nth-child(2) {
+  bottom: 2px;
+  right: -4px;
+  transform: rotate(-110deg);
+  width: 44px;
+  height: 44px;
+}
+
+.bramble--variant-3 .vine:nth-child(3) {
+  top: 14px;
+  left: 14px;
+  width: 20px;
+  height: 20px;
+  transform: rotate(150deg);
+}
+
+.bramble--variant-3 .berry:nth-child(1) {
+  top: 10px;
+  left: 8px;
+  width: 5px;
+  height: 5px;
+}
+
+.bramble--variant-3 .berry:nth-child(2) {
+  top: 30px;
+  right: 10px;
+  width: 6px;
+  height: 6px;
+}
+
+.bramble--variant-3 .berry:nth-child(3) {
+  bottom: 8px;
+  left: 28px;
+}
+
+/* Bramble variant 4 - dense center with radiating thorns */
+.bramble--variant-4 .thorn:nth-child(1) {
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%) rotate(0deg);
+}
+
+.bramble--variant-4 .thorn:nth-child(2) {
+  top: 18px;
+  left: 4px;
+  transform: rotate(-55deg);
+}
+
+.bramble--variant-4 .thorn:nth-child(3) {
+  top: 18px;
+  right: 4px;
+  transform: rotate(55deg);
+}
+
+.bramble--variant-4 .thorn:nth-child(4) {
+  bottom: 6px;
+  left: 14px;
+  transform: rotate(-25deg);
+}
+
+.bramble--variant-4 .thorn:nth-child(5) {
+  bottom: 6px;
+  right: 14px;
+  transform: rotate(25deg);
+}
+
+.bramble--variant-4 .vine:nth-child(1) {
+  top: 6px;
+  left: 4px;
+  transform: rotate(55deg);
+  width: 30px;
+  height: 30px;
+}
+
+.bramble--variant-4 .vine:nth-child(2) {
+  top: 6px;
+  right: 4px;
+  left: auto;
+  transform: rotate(-55deg);
+  width: 30px;
+  height: 30px;
+}
+
+.bramble--variant-4 .vine:nth-child(3) {
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%) rotate(180deg);
+  width: 34px;
+  height: 34px;
+}
+
+.bramble--variant-4 .berry:nth-child(1) {
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 8px;
+  height: 8px;
+}
+
+.bramble--variant-4 .berry:nth-child(2) {
+  top: 12px;
+  left: 20px;
+  width: 4px;
+  height: 4px;
+}
+
+.bramble--variant-4 .berry:nth-child(3) {
+  top: 12px;
   right: 20px;
+  width: 4px;
+  height: 4px;
+}
+
+/* Bramble variant 5 - wild overgrown with many vines */
+.bramble--variant-5 .thorn:nth-child(1) {
+  top: 8px;
+  left: 6px;
+  transform: rotate(-60deg);
+}
+
+.bramble--variant-5 .thorn:nth-child(2) {
+  top: 4px;
+  right: 16px;
+  transform: rotate(20deg);
+}
+
+.bramble--variant-5 .thorn:nth-child(3) {
+  bottom: 16px;
+  left: 22px;
+  transform: rotate(-5deg);
+}
+
+.bramble--variant-5 .thorn:nth-child(4) {
+  bottom: 4px;
+  right: 8px;
+  transform: rotate(60deg);
+}
+
+.bramble--variant-5 .thorn:nth-child(5) {
+  top: 28px;
+  right: 24px;
+  transform: rotate(35deg);
+}
+
+.bramble--variant-5 .vine:nth-child(1) {
+  top: -6px;
+  left: 16px;
+  transform: rotate(40deg);
+  width: 48px;
+  height: 48px;
+}
+
+.bramble--variant-5 .vine:nth-child(2) {
+  bottom: -10px;
+  left: -4px;
+  transform: rotate(-80deg);
+  width: 42px;
+  height: 42px;
+}
+
+.bramble--variant-5 .vine:nth-child(3) {
+  top: 10px;
+  right: -6px;
+  width: 36px;
+  height: 36px;
+  transform: rotate(-30deg);
+}
+
+.bramble--variant-5 .berry:nth-child(1) {
+  top: 14px;
+  left: 18px;
+  width: 5px;
+  height: 5px;
+}
+
+.bramble--variant-5 .berry:nth-child(2) {
+  bottom: 10px;
+  left: 10px;
+  width: 6px;
+  height: 6px;
+}
+
+.bramble--variant-5 .berry:nth-child(3) {
+  top: 20px;
+  right: 8px;
+  width: 7px;
+  height: 7px;
 }
 
 /* Stone tile */
@@ -541,12 +917,12 @@ function handleClick() {
   right: 12px;
 }
 
-/* Dirt tile */
+/* Dirt tile - grass with mud patches */
 .tile--dirt {
   background:
-    radial-gradient(circle at 25% 35%, rgba(120, 90, 60, 0.4) 0%, transparent 35%),
-    radial-gradient(circle at 75% 65%, rgba(90, 65, 40, 0.3) 0%, transparent 30%),
-    linear-gradient(135deg, #8b6b4a 0%, #6d5238 50%, #5a4530 100%);
+    radial-gradient(circle at 20% 80%, rgba(120, 180, 100, 0.4) 0%, transparent 30%),
+    radial-gradient(circle at 80% 20%, rgba(140, 200, 120, 0.3) 0%, transparent 25%),
+    linear-gradient(135deg, #7cb668 0%, #5a9a4a 100%);
 }
 
 .dirt-detail {
@@ -557,38 +933,38 @@ function handleClick() {
 
 .dirt-clump {
   position: absolute;
-  background: linear-gradient(135deg, #7a5c40 0%, #5a4230 100%);
-  border-radius: 50% 50% 40% 40%;
+  background: linear-gradient(135deg, #8b6b4a 0%, #6d5238 100%);
+  border-radius: 50% 45% 50% 45%;
   box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.15);
 }
 
 .dirt-clump--1 {
-  width: 14px;
-  height: 10px;
-  top: 12px;
-  left: 10px;
-  transform: rotate(-10deg);
+  width: 32px;
+  height: 24px;
+  top: 4px;
+  left: 4px;
+  transform: rotate(-5deg);
 }
 
 .dirt-clump--2 {
-  width: 12px;
-  height: 8px;
-  bottom: 14px;
-  right: 12px;
-  transform: rotate(15deg);
+  width: 28px;
+  height: 20px;
+  bottom: 6px;
+  right: 4px;
+  transform: rotate(8deg);
 }
 
 .dirt-clump--3 {
-  width: 10px;
-  height: 7px;
-  bottom: 18px;
-  left: 22px;
-  transform: rotate(-5deg);
+  width: 20px;
+  height: 16px;
+  top: 26px;
+  right: 18px;
+  transform: rotate(-3deg);
 }
 
 .dirt-rock {
   position: absolute;
-  background: linear-gradient(135deg, #9a8878 0%, #7a6858 100%);
+  background: linear-gradient(135deg, #7a5c40 0%, #5a4230 100%);
   border-radius: 40% 50% 45% 55%;
   box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.2);
 }
@@ -596,15 +972,130 @@ function handleClick() {
 .dirt-rock--1 {
   width: 8px;
   height: 6px;
-  top: 18px;
-  right: 16px;
+  top: 30px;
+  left: 8px;
 }
 
 .dirt-rock--2 {
-  width: 6px;
+  width: 7px;
   height: 5px;
-  bottom: 12px;
-  left: 14px;
+  bottom: 28px;
+  right: 28px;
+}
+
+/* Frosty dirt tile (ice biome) - frosty grass with mud */
+.tile--frosty-dirt {
+  background:
+    radial-gradient(circle at 20% 80%, rgba(220, 225, 245, 0.5) 0%, transparent 30%),
+    radial-gradient(circle at 80% 20%, rgba(235, 240, 255, 0.4) 0%, transparent 25%),
+    linear-gradient(135deg, #c8d0e8 0%, #b0b8d0 100%);
+}
+
+/* Swamp dirt tile (swamp biome) - swampy grass with mud */
+.tile--swamp-dirt {
+  background:
+    radial-gradient(circle at 20% 80%, rgba(60, 90, 50, 0.5) 0%, transparent 30%),
+    radial-gradient(circle at 80% 20%, rgba(70, 100, 55, 0.4) 0%, transparent 25%),
+    linear-gradient(135deg, #4a6b3a 0%, #3a5a2a 100%);
+}
+
+/* Mud vanishing animation */
+.mud-vanish {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.mud-patch {
+  position: absolute;
+  background: linear-gradient(135deg, #8b6b4a 0%, #6d5238 100%);
+  border-radius: 50% 45% 50% 45%;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.15);
+  animation: mudVanish 0.5s ease-out forwards;
+}
+
+.mud-patch--1 {
+  width: 32px;
+  height: 24px;
+  top: 4px;
+  left: 4px;
+  transform: rotate(-5deg);
+  animation-delay: 0s;
+}
+
+.mud-patch--2 {
+  width: 28px;
+  height: 20px;
+  bottom: 6px;
+  right: 4px;
+  transform: rotate(8deg);
+  animation-delay: 0.05s;
+}
+
+.mud-patch--3 {
+  width: 20px;
+  height: 16px;
+  top: 26px;
+  right: 18px;
+  transform: rotate(-3deg);
+  animation-delay: 0.1s;
+}
+
+@keyframes mudVanish {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(0.8);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+}
+
+/* Grass growing animation when cleaned */
+.tile--just-cleaned .grass-detail {
+  animation: grassGrow 0.5s ease-out forwards;
+}
+
+.tile--just-cleaned .grass-blade {
+  animation: bladeGrow 0.4s ease-out forwards;
+}
+
+.tile--just-cleaned .grass-blade:nth-child(1) {
+  animation-delay: 0.1s;
+}
+
+.tile--just-cleaned .grass-blade:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.tile--just-cleaned .grass-blade:nth-child(3) {
+  animation-delay: 0.2s;
+}
+
+@keyframes grassGrow {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes bladeGrow {
+  0% {
+    transform: scaleY(0);
+    opacity: 0;
+  }
+  100% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
 }
 
 /* Water tile */
@@ -1045,6 +1536,20 @@ function handleClick() {
     linear-gradient(135deg, #5a9a4a 0%, #4a8040 100%);
 }
 
+/* Frosty mushroom tile (darker frost where mushroom grew) */
+.tile--frosty-mushroom {
+  background:
+    radial-gradient(circle at 20% 80%, rgba(160, 168, 200, 0.4) 0%, transparent 30%),
+    linear-gradient(135deg, #a0a8c8 0%, #8890b0 100%);
+}
+
+/* Swamp mushroom tile (darker swamp where mushroom grew) */
+.tile--swamp-mushroom {
+  background:
+    radial-gradient(circle at 20% 80%, rgba(40, 60, 35, 0.4) 0%, transparent 30%),
+    linear-gradient(135deg, #3a5530 0%, #2a4520 100%);
+}
+
 .mushroom-container {
   display: flex;
   align-items: flex-end;
@@ -1300,5 +1805,25 @@ function handleClick() {
     0 0 0 4px rgba(255, 223, 186, 0.95),
     inset 0 -4px 0 rgba(0, 0, 0, 0.1),
     inset 0 0 25px rgba(255, 240, 200, 0.5);
+}
+
+/* Shimmer hint animation for remaining tiles */
+.tile--shimmer {
+  animation: tileShimmer 2.5s ease-in-out infinite;
+}
+
+@keyframes tileShimmer {
+  0%, 100% {
+    filter: brightness(1);
+    box-shadow:
+      inset 0 -4px 0 rgba(0, 0, 0, 0.1),
+      0 0 0 0 rgba(255, 255, 200, 0);
+  }
+  50% {
+    filter: brightness(1.2);
+    box-shadow:
+      inset 0 -4px 0 rgba(0, 0, 0, 0.1),
+      0 0 12px 2px rgba(255, 255, 200, 0.5);
+  }
 }
 </style>

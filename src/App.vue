@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import BottomBar from "./components/BottomBar.vue";
 import CustomWorldModal from "./components/CustomWorldModal.vue";
 import GameBoard from "./components/GameBoard.vue";
@@ -7,22 +7,22 @@ import StartScreen from "./components/StartScreen.vue";
 import TopBar from "./components/TopBar.vue";
 import TutorialModal from "./components/TutorialModal.vue";
 import WelcomeSign from "./components/WelcomeSign.vue";
+import { getLevelQueue } from "./composables/useLevelQueue";
 import { changeWorldBGM, playSuccess, playUndo, playVoiceSuccess, startBackgroundMusic } from "./composables/useSound";
 import { level1 } from "./data/levels";
 import type { Level, WorldElement } from "./types/game";
 import { WorldElement as WE } from "./types/game";
-import { generateLevel } from "./utils/levelGenerator";
 
-const LEVELS_PER_WORLD = 10;
+const levelQueue = getLevelQueue();
 
-const worldNames = [
+const LEVELS_PER_WORLD = 8;
+
+const forestWorldNames = [
 	"Mossy Meadow",
 	"Shady Grove",
 	"Fern Hollow",
 	"Dewdrop Dell",
 	"Toadstool Trail",
-	"Mushroom Marsh",
-	"Spore Shore",
 	"Fungal Forest",
 	"Mycelium Mile",
 	"Cap Corner",
@@ -33,11 +33,44 @@ const worldNames = [
 	"Morel Maze",
 ];
 
+const iceWorldNames = [
+	"Frozen Fungi Fjord",
+	"Shivercap Summit",
+	"Frostspore Falls",
+	"Icicle Inn",
+	"Permafrost Patch",
+	"Snowcap Sanctuary",
+	"Glacier Glade",
+	"Blizzard Basin",
+	"Tundra Trail",
+	"Crystal Cap Cavern",
+	"Chillcap Chasm",
+	"Winter Whisper Woods",
+	"Polar Porcini Peak",
+];
+
+const swampWorldNames = [
+	"Mushroom Marsh",
+	"Bogcap Bayou",
+	"Murky Morel Mire",
+	"Sludge Spore Swamp",
+	"Dankwood Dell",
+	"Foggy Fungus Fen",
+	"Peatcap Pond",
+	"Mildew Meadow",
+	"Mossmire Hollow",
+	"Wetland Whispers",
+	"Brackish Basin",
+	"Swampcap Sanctuary",
+	"Quagmire Quarter",
+];
+
 const gameStarted = ref(false);
 const currentLevel = ref<Level>(level1);
 const levelKey = ref(0);
 const showWinModal = ref(false);
 const showTutorial = ref(false);
+const isInitialTutorial = ref(false);
 const showWelcomeSign = ref(false);
 const showCustomWorldModal = ref(false);
 const isFading = ref(false);
@@ -47,11 +80,23 @@ const isBlack = ref(false);
 const currentWorldIndex = ref(0);
 const currentLevelNumber = ref(1);
 const currentWorldElements = ref<WorldElement[]>([]);
-// Random offset for world names so first world isn't always the same
-const worldNameOffset = Math.floor(Math.random() * worldNames.length);
+// Random offsets for world names so first world isn't always the same
+const forestNameOffset = Math.floor(Math.random() * forestWorldNames.length);
+const iceNameOffset = Math.floor(Math.random() * iceWorldNames.length);
+const swampNameOffset = Math.floor(Math.random() * swampWorldNames.length);
 
 // All available world elements
 const allElements: WorldElement[] = [WE.RIVERS, WE.DIRT, WE.ICE, WE.FAIRY];
+
+// Update body class based on current biome (ice takes priority)
+watch(currentWorldElements, (elements) => {
+	document.body.classList.remove("biome-ice", "biome-swamp");
+	if (elements.includes(WE.ICE)) {
+		document.body.classList.add("biome-ice");
+	} else if (elements.includes(WE.DIRT)) {
+		document.body.classList.add("biome-swamp");
+	}
+}, { immediate: true });
 
 function generateWorldElements(): WorldElement[] {
 	// Randomly select 0, 1, or 2 elements
@@ -67,8 +112,17 @@ function generateWorldElements(): WorldElement[] {
 }
 
 const currentWorldName = computed(() => {
-	const index = (currentWorldIndex.value + worldNameOffset) % worldNames.length;
-	return worldNames[index] ?? "Mushroom Garden";
+	// Select name list based on biome (ice takes priority)
+	if (currentWorldElements.value.includes(WE.ICE)) {
+		const index = (currentWorldIndex.value + iceNameOffset) % iceWorldNames.length;
+		return iceWorldNames[index] ?? "Frozen Fungi";
+	} else if (currentWorldElements.value.includes(WE.DIRT)) {
+		const index = (currentWorldIndex.value + swampNameOffset) % swampWorldNames.length;
+		return swampWorldNames[index] ?? "Murky Marsh";
+	} else {
+		const index = (currentWorldIndex.value + forestNameOffset) % forestWorldNames.length;
+		return forestWorldNames[index] ?? "Mushroom Garden";
+	}
 });
 
 const displayName = computed(() => {
@@ -76,8 +130,7 @@ const displayName = computed(() => {
 });
 
 function getNewLevel(): Level {
-	const newLevel = generateLevel({}, currentWorldElements.value);
-	return newLevel ?? level1;
+	return levelQueue.getNextLevel();
 }
 
 function advanceLevel(): boolean {
@@ -86,7 +139,9 @@ function advanceLevel(): boolean {
 		// Move to next world
 		currentWorldIndex.value++;
 		currentLevelNumber.value = 1;
-		currentWorldElements.value = generateWorldElements();
+		const newElements = generateWorldElements();
+		currentWorldElements.value = newElements;
+		levelQueue.setWorldElements(newElements);
 		return true; // Entered new world
 	}
 	return false; // Same world
@@ -183,7 +238,9 @@ function handleBegin() {
 	startBackgroundMusic();
 
 	// Generate elements for first world
-	currentWorldElements.value = generateWorldElements();
+	const firstElements = generateWorldElements();
+	currentWorldElements.value = firstElements;
+	levelQueue.setWorldElements(firstElements);
 
 	// Generate first level when game starts
 	currentLevel.value = getNewLevel();
@@ -192,6 +249,7 @@ function handleBegin() {
 	// Show tutorial on first visit
 	const hasSeenTutorial = localStorage.getItem("mushroom-path-tutorial-seen");
 	if (!hasSeenTutorial) {
+		isInitialTutorial.value = true;
 		showTutorial.value = true;
 	} else {
 		// Show welcome sign for first world if tutorial already seen
@@ -202,8 +260,11 @@ function handleBegin() {
 function closeTutorial() {
 	showTutorial.value = false;
 	localStorage.setItem("mushroom-path-tutorial-seen", "true");
-	// Show welcome sign after closing tutorial
-	showWelcomeSign.value = true;
+	// Only show welcome sign after closing the initial tutorial
+	if (isInitialTutorial.value) {
+		isInitialTutorial.value = false;
+		showWelcomeSign.value = true;
+	}
 }
 
 function closeWelcomeSign() {
@@ -221,6 +282,7 @@ function startCustomWorld(elements: WorldElement[]) {
 	currentWorldIndex.value++;
 	currentLevelNumber.value = 1;
 	currentWorldElements.value = elements;
+	levelQueue.setWorldElements(elements);
 
 	// Change BGM for the new world
 	changeWorldBGM();
@@ -250,6 +312,8 @@ function startCustomWorld(elements: WorldElement[]) {
       <GameBoard
         :key="levelKey"
         :level="currentLevel"
+        :has-ice-element="currentWorldElements.includes(WE.ICE)"
+        :has-dirt-element="currentWorldElements.includes(WE.DIRT)"
         @win="handleWin"
       />
 

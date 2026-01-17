@@ -86,11 +86,6 @@ onUnmounted(() => {
   opacity: 0;
 }
 
-.welcome-overlay--leaving .signpost {
-  transform: scale(0.9) translateY(20px);
-  opacity: 0;
-}
-
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -105,19 +100,6 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  animation: signBounce 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
-  transition: transform 0.4s ease, opacity 0.4s ease;
-}
-
-@keyframes signBounce {
-  0% {
-    transform: scale(0.8) translateY(30px);
-    opacity: 0;
-  }
-  100% {
-    transform: scale(1) translateY(0);
-    opacity: 1;
-  }
 }
 
 .post {

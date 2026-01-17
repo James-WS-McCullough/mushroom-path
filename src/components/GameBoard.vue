@@ -13,6 +13,8 @@ const CELL_SIZE = TILE_SIZE + GAP_SIZE;
 
 const props = defineProps<{
 	level: Level;
+	hasIceElement?: boolean;
+	hasDirtElement?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -236,6 +238,16 @@ function isJustPlanted(tilePos: Position): boolean {
 	return planted.x === tilePos.x && planted.y === tilePos.y;
 }
 
+function isJustCleaned(tilePos: Position): boolean {
+	const cleaned = game.lastCleanedPosition.value;
+	if (!cleaned) return false;
+	return cleaned.x === tilePos.x && cleaned.y === tilePos.y;
+}
+
+function shouldShimmer(): boolean {
+	return game.showHints.value;
+}
+
 function getPoofStyle(position: Position) {
 	const boardPadding = hasRooms.value ? 0 : 3;
 	// Match character positioning: boardPadding + position * 67, then add half tile for center
@@ -317,6 +329,7 @@ onUnmounted(() => {
 		resizeObserver.disconnect();
 		resizeObserver = null;
 	}
+	game.cleanupIdleTimer();
 });
 </script>
 
@@ -339,7 +352,11 @@ onUnmounted(() => {
             :is-player-here="isPlayerHere(tile.position)"
             :is-reachable="isReachable(tile.position)"
             :is-just-planted="isJustPlanted(tile.position)"
+            :is-just-cleaned="isJustCleaned(tile.position)"
             :flow-direction="game.getWaterFlow(tile.position)"
+            :has-ice-element="hasIceElement"
+            :has-dirt-element="hasDirtElement"
+            :should-shimmer="shouldShimmer()"
             @click="handleTileClick(tile.position)"
           />
         </template>
@@ -416,6 +433,11 @@ onUnmounted(() => {
         </div>
       </div>
       </div>
+    </div>
+
+    <!-- Floating remaining tiles counter -->
+    <div class="tiles-remaining">
+      {{ Math.max(0, game.grassTilesRemaining.value - 1) }}
     </div>
   </div>
 </template>
@@ -517,5 +539,22 @@ onUnmounted(() => {
     opacity: 0;
     transform: scale(2);
   }
+}
+
+/* Floating remaining tiles counter */
+.tiles-remaining {
+  position: fixed;
+  bottom: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: 'Georgia', serif;
+  font-size: 32px;
+  font-weight: bold;
+  color: rgba(255, 255, 255, 0.6);
+  text-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.3),
+    0 0 20px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+  z-index: 10;
 }
 </style>

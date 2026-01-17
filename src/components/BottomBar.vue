@@ -46,6 +46,7 @@ const isDev = import.meta.env.DEV;
   box-shadow:
     0 4px 16px rgba(0, 0, 0, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  z-index: 200;
 }
 
 .wood-texture {

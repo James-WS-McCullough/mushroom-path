@@ -170,6 +170,10 @@ export function playRandomDirt(volume = 0.3) {
 	playSound(`/sfx/Dirt-${dirtNumber}.mp3`, volume);
 }
 
+export function playShovelDirt(volume = 0.4) {
+	playSound("/sfx/shovel-dirt.mp3", volume);
+}
+
 export function playJump(volume = 0.35) {
 	if (isSfxMuted.value) return;
 	const audio = getAudio("/sfx/jump.mp3");
