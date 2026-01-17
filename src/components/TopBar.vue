@@ -201,6 +201,59 @@ const emit = defineEmits<{
     0 2px 0 #4a3a2a,
     0 3px 6px rgba(0, 0, 0, 0.4);
   letter-spacing: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 480px) {
+  .bar-content {
+    padding: 0 8px;
+    gap: 8px;
+  }
+
+  .level-name {
+    font-size: 16px;
+    letter-spacing: 1px;
+  }
+
+  .info-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  .info-icon {
+    font-size: 18px;
+  }
+
+  .element-icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .element-svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .sound-btn {
+    width: 28px;
+    height: 28px;
+  }
+
+  .sound-svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .sound-controls {
+    gap: 4px;
+    margin-left: 4px;
+  }
+
+  .elements-display {
+    gap: 4px;
+  }
 }
 
 .elements-display {

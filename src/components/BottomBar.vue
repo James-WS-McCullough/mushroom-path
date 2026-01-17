@@ -1,10 +1,12 @@
 <script setup lang="ts">
 defineProps<{
 	disabled: boolean;
+	canUndo: boolean;
 }>();
 
 const emit = defineEmits<{
 	restart: [];
+	undo: [];
 	skip: [];
 	customWorld: [];
 }>();
@@ -18,11 +20,16 @@ const isDev = import.meta.env.DEV;
     <div class="bar-content">
       <button class="bar-btn" @click="emit('restart')" :disabled="disabled">
         <span class="btn-icon">↺</span>
-        Restart
+        <span class="btn-label">Restart</span>
+      </button>
+      <div class="bar-divider"></div>
+      <button class="bar-btn" @click="emit('undo')" :disabled="disabled || !canUndo">
+        <span class="btn-icon">↩</span>
+        <span class="btn-label">Undo</span>
       </button>
       <div class="bar-divider"></div>
       <button class="bar-btn" @click="emit('skip')" :disabled="disabled">
-        Skip
+        <span class="btn-label">Skip</span>
         <span class="btn-icon">→</span>
       </button>
       <template v-if="isDev">
@@ -166,5 +173,42 @@ const isDev = import.meta.env.DEV;
 
 .bar-btn--dev:hover:not(:disabled) {
   background: linear-gradient(180deg, rgba(240, 235, 255, 0.98) 0%, rgba(225, 215, 250, 0.98) 100%);
+}
+
+@media (max-width: 480px) {
+  .bottom-bar {
+    height: 72px;
+  }
+
+  .bar-content {
+    gap: 8px;
+    padding: 0 12px;
+  }
+
+  .bar-btn {
+    padding: 14px 16px;
+    font-size: 15px;
+    gap: 6px;
+    border-radius: 10px;
+  }
+
+  .btn-icon {
+    font-size: 18px;
+  }
+
+  .bar-divider {
+    margin: 0 4px;
+    height: 32px;
+  }
+}
+
+@media (max-width: 360px) {
+  .btn-label {
+    display: none;
+  }
+
+  .bar-btn {
+    padding: 14px 14px;
+  }
 }
 </style>

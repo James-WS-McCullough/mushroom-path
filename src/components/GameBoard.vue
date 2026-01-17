@@ -23,47 +23,81 @@ const emit = defineEmits<{
 
 const game = useGame(props.level);
 
-// Camera system for tall maps
+// Camera system for maps that don't fit in viewport
 const viewportRef = ref<HTMLElement | null>(null);
 const viewportHeight = ref(0);
+const viewportWidth = ref(0);
 let resizeObserver: ResizeObserver | null = null;
 
 // Calculate board dimensions (including wrapper padding and extra breathing room)
 const WRAPPER_PADDING = 12;
-const CAMERA_PADDING = 48; // Padding above and below the board when panning
+const CAMERA_PADDING = 48; // Padding around the board when panning
 
 const boardHeight = computed(() => {
 	const innerPadding = hasRooms.value ? 0 : 6; // 3px padding on each side
 	return game.levelHeight * CELL_SIZE - GAP_SIZE + innerPadding + (WRAPPER_PADDING * 2) + (CAMERA_PADDING * 2);
 });
 
-// Check if camera panning is needed
-const needsPanning = computed(() => {
+const boardWidth = computed(() => {
+	const innerPadding = hasRooms.value ? 0 : 6; // 3px padding on each side
+	return game.levelWidth * CELL_SIZE - GAP_SIZE + innerPadding + (WRAPPER_PADDING * 2) + (CAMERA_PADDING * 2);
+});
+
+// Check if camera panning is needed for each axis
+const needsVerticalPanning = computed(() => {
 	return boardHeight.value > viewportHeight.value && viewportHeight.value > 0;
+});
+
+const needsHorizontalPanning = computed(() => {
+	return boardWidth.value > viewportWidth.value && viewportWidth.value > 0;
+});
+
+const needsPanning = computed(() => {
+	return needsVerticalPanning.value || needsHorizontalPanning.value;
 });
 
 // Calculate camera offset to follow player
 const cameraOffset = computed(() => {
-	if (!needsPanning.value) return { x: 0, y: 0 };
+	let offsetX = 0;
+	let offsetY = 0;
 
-	const playerY = game.playerPosition.value.y;
-	const playerPixelY = playerY * CELL_SIZE + TILE_SIZE / 2 + WRAPPER_PADDING + CAMERA_PADDING;
+	// Vertical panning
+	if (needsVerticalPanning.value) {
+		const playerY = game.playerPosition.value.y;
+		const playerPixelY = playerY * CELL_SIZE + TILE_SIZE / 2 + WRAPPER_PADDING + CAMERA_PADDING;
 
-	// Keep player centered vertically in viewport
-	const targetOffset = playerPixelY - viewportHeight.value / 2;
+		// Keep player centered vertically in viewport
+		const targetOffsetY = playerPixelY - viewportHeight.value / 2;
 
-	// Clamp to valid range
-	const maxOffset = boardHeight.value - viewportHeight.value;
-	const clampedOffset = Math.max(0, Math.min(targetOffset, maxOffset));
+		// Clamp to valid range
+		const maxOffsetY = boardHeight.value - viewportHeight.value;
+		offsetY = -Math.max(0, Math.min(targetOffsetY, maxOffsetY));
+	}
 
-	return { x: 0, y: -clampedOffset };
+	// Horizontal panning
+	if (needsHorizontalPanning.value) {
+		const playerX = game.playerPosition.value.x;
+		const playerPixelX = playerX * CELL_SIZE + TILE_SIZE / 2 + WRAPPER_PADDING + CAMERA_PADDING;
+
+		// Keep player centered horizontally in viewport
+		const targetOffsetX = playerPixelX - viewportWidth.value / 2;
+
+		// Clamp to valid range
+		const maxOffsetX = boardWidth.value - viewportWidth.value;
+		offsetX = -Math.max(0, Math.min(targetOffsetX, maxOffsetX));
+	}
+
+	return { x: offsetX, y: offsetY };
 });
 
 const boardTransform = computed(() => {
 	if (!needsPanning.value) return {};
-	// Add top padding as base offset so board doesn't start flush with viewport
+
+	const translateX = needsHorizontalPanning.value ? cameraOffset.value.x + CAMERA_PADDING : 0;
+	const translateY = needsVerticalPanning.value ? cameraOffset.value.y + CAMERA_PADDING : 0;
+
 	return {
-		transform: `translateY(${cameraOffset.value.y + CAMERA_PADDING}px)`,
+		transform: `translate(${translateX}px, ${translateY}px)`,
 	};
 });
 
@@ -317,6 +351,7 @@ onMounted(() => {
 		resizeObserver = new ResizeObserver((entries) => {
 			for (const entry of entries) {
 				viewportHeight.value = entry.contentRect.height;
+				viewportWidth.value = entry.contentRect.width;
 			}
 		});
 		resizeObserver.observe(viewportRef.value);
@@ -330,6 +365,17 @@ onUnmounted(() => {
 		resizeObserver = null;
 	}
 	game.cleanupIdleTimer();
+});
+
+// Expose undo functionality for parent component
+defineExpose({
+	canUndo: game.canUndo,
+	undo: () => {
+		if (game.canUndo.value) {
+			playUndo();
+			game.undo();
+		}
+	},
 });
 </script>
 
@@ -465,6 +511,7 @@ onUnmounted(() => {
 .camera-viewport--active {
   overflow: hidden;
   align-items: flex-start;
+  justify-content: flex-start;
 }
 
 .camera-viewport--active .board-wrapper {
@@ -556,5 +603,11 @@ onUnmounted(() => {
     0 0 20px rgba(0, 0, 0, 0.2);
   pointer-events: none;
   z-index: 10;
+}
+
+@media (max-width: 480px) {
+  .tiles-remaining {
+    bottom: 86px;
+  }
 }
 </style>

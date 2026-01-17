@@ -253,6 +253,7 @@ function handleBegin() {
   margin: 0;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
   letter-spacing: 2px;
+  text-align: center;
 }
 
 .subtitle {
@@ -264,6 +265,13 @@ function handleBegin() {
     0 3px 0 #3d5636,
     0 4px 8px rgba(0, 0, 0, 0.4);
   letter-spacing: 2px;
+  text-align: center;
+}
+
+@media (max-width: 480px) {
+  .subtitle {
+    font-size: 36px;
+  }
 }
 
 .begin-button {

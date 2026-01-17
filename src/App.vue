@@ -76,6 +76,13 @@ const showCustomWorldModal = ref(false);
 const isFading = ref(false);
 const isBlack = ref(false);
 
+// Reference to GameBoard for undo functionality
+const gameBoardRef = ref<InstanceType<typeof GameBoard> | null>(null);
+
+const canUndo = computed(() => {
+	return gameBoardRef.value?.canUndo ?? false;
+});
+
 // World and level tracking
 const currentWorldIndex = ref(0);
 const currentLevelNumber = ref(1);
@@ -234,6 +241,11 @@ function handleRestart() {
 	levelKey.value++;
 }
 
+function handleUndo() {
+	if (isFading.value) return;
+	gameBoardRef.value?.undo();
+}
+
 function handleBegin() {
 	startBackgroundMusic();
 
@@ -309,6 +321,7 @@ function startCustomWorld(elements: WorldElement[]) {
 
     <main class="app">
       <GameBoard
+        ref="gameBoardRef"
         :key="levelKey"
         :level="currentLevel"
         :has-ice-element="currentWorldElements.includes(WE.ICE)"
@@ -322,7 +335,9 @@ function startCustomWorld(elements: WorldElement[]) {
 
     <BottomBar
       :disabled="isFading"
+      :can-undo="canUndo"
       @restart="handleRestart"
+      @undo="handleUndo"
       @skip="handleSkip"
       @custom-world="openCustomWorldModal"
     />

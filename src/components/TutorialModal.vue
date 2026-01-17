@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { playTutorialAppears, playVoiceTutorial } from "../composables/useSound";
 
 const emit = defineEmits<{
@@ -103,11 +103,17 @@ const page = computed(() => {
 	return p;
 });
 
+function closeTutorial() {
+	// Play first tutorial voice line when closing
+	playVoiceTutorial(1);
+	emit("close");
+}
+
 function nextPage() {
 	if (currentPage.value < pages.length - 1) {
 		currentPage.value++;
 	} else {
-		emit("close");
+		closeTutorial();
 	}
 }
 
@@ -122,29 +128,15 @@ function isHighlighted(x: number, y: number): boolean {
 	return page.value.highlight.some((h) => h.x === x && h.y === y);
 }
 
-// Play voice lines for specific tutorial pages
-watch(currentPage, (pageIndex) => {
-	if (pageIndex === 2) {
-		// Planting section
-		playVoiceTutorial(1);
-	} else if (pageIndex === 3) {
-		// Jumping section
-		playVoiceTutorial(2);
-	} else if (pageIndex === 4) {
-		// Brambles section
-		playVoiceTutorial(3);
-	}
-});
-
 onMounted(() => {
 	playTutorialAppears();
 });
 </script>
 
 <template>
-  <div class="modal-overlay" @click.self="emit('close')">
+  <div class="modal-overlay" @click.self="closeTutorial">
     <div class="modal">
-      <button class="close-btn" @click="emit('close')">×</button>
+      <button class="close-btn" @click="closeTutorial">×</button>
 
       <h2 class="modal-title">{{ page.title }}</h2>
 
