@@ -15,6 +15,7 @@ const props = defineProps<{
 	level: Level;
 	hasIceElement?: boolean;
 	hasDirtElement?: boolean;
+	disabled?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -295,10 +296,12 @@ function getPoofStyle(position: Position) {
 }
 
 function handleTileClick(position: Position) {
+	if (props.disabled) return;
 	game.moveToPosition(position);
 }
 
 function handleKeydown(event: KeyboardEvent) {
+	if (props.disabled) return;
 	const keyMap: Record<string, Direction> = {
 		ArrowUp: "up",
 		ArrowDown: "down",
@@ -472,6 +475,7 @@ defineExpose({
           :teleport-phase="game.teleportPhase.value"
           :facing-direction="game.facingDirection.value"
           :board-padding="hasRooms ? 0 : 3"
+          :disabled="props.disabled"
         />
 
         <!-- Teleport poof smoke effect -->

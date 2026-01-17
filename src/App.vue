@@ -2,6 +2,7 @@
 import { computed, ref, watch } from "vue";
 import BottomBar from "./components/BottomBar.vue";
 import CustomWorldModal from "./components/CustomWorldModal.vue";
+import DialogueScene from "./components/DialogueScene.vue";
 import GameBoard from "./components/GameBoard.vue";
 import MusicPlayer from "./components/MusicPlayer.vue";
 import StartScreen from "./components/StartScreen.vue";
@@ -10,6 +11,8 @@ import TutorialModal from "./components/TutorialModal.vue";
 import WelcomeSign from "./components/WelcomeSign.vue";
 import { getLevelQueue } from "./composables/useLevelQueue";
 import { changeWorldBGM, initializeAudio, playSuccess, playUndo, playVoiceSuccess, startBackgroundMusic } from "./composables/useSound";
+import { adventureScenes, introDialogue, mechanicDialogues, worldEndDialogues } from "./data/dialogues";
+import type { DialogueScene as DialogueSceneType } from "./data/dialogues";
 import { level1 } from "./data/levels";
 import type { Level, WorldElement } from "./types/game";
 import { WorldElement as WE } from "./types/game";
@@ -94,7 +97,46 @@ const isInitialTutorial = ref(false);
 const showWelcomeSign = ref(false);
 const showCustomWorldModal = ref(false);
 const showMusicPlayer = ref(false);
+const currentDialogue = ref<DialogueSceneType | null>(null);
+const hasSeenIntro = localStorage.getItem("mushroom-path-intro-seen");
 const isFading = ref(false);
+
+// Mechanic intro tracking
+function hasSeenMechanic(mechanic: string): boolean {
+	return localStorage.getItem(`mushroom-path-mechanic-${mechanic}`) === "true";
+}
+
+function markMechanicSeen(mechanic: string): void {
+	localStorage.setItem(`mushroom-path-mechanic-${mechanic}`, "true");
+}
+
+// Queue of mechanic dialogues to show when entering a new world
+const pendingMechanicDialogues = ref<DialogueSceneType[]>([]);
+
+// Map WorldElement to mechanic key for dialogue lookup
+function getMechanicKey(element: WorldElement): string {
+	switch (element) {
+		case WE.ICE: return "ice";
+		case WE.DIRT: return "dirt";
+		case WE.RIVERS: return "rivers";
+		case WE.FAIRY: return "fairy";
+		default: return "";
+	}
+}
+
+// Check for unseen mechanics in the given elements and queue their dialogues
+function queueUnseenMechanicDialogues(elements: WorldElement[]): void {
+	const dialogues: DialogueSceneType[] = [];
+	for (const element of elements) {
+		const key = getMechanicKey(element);
+		if (key && !hasSeenMechanic(key) && mechanicDialogues[key]) {
+			dialogues.push(mechanicDialogues[key]);
+			markMechanicSeen(key);
+		}
+	}
+	pendingMechanicDialogues.value = dialogues;
+}
+
 const isBlack = ref(false);
 
 // Loading states for user feedback
@@ -138,9 +180,26 @@ function generateWorldElements(): WorldElement[] {
 		return [];
 	}
 
-	// Shuffle all elements and pick the first N
-	const shuffled = [...allElements].sort(() => Math.random() - 0.5);
-	return shuffled.slice(0, elementCount);
+	// Separate elements into seen and unseen
+	const seenElements = allElements.filter(el => hasSeenMechanic(getMechanicKey(el)));
+	const unseenElements = allElements.filter(el => !hasSeenMechanic(getMechanicKey(el)));
+
+	const result: WorldElement[] = [];
+
+	// Add at most ONE unseen element (to introduce one mechanic at a time)
+	if (unseenElements.length > 0 && elementCount > 0) {
+		const randomUnseen = unseenElements[Math.floor(Math.random() * unseenElements.length)]!;
+		result.push(randomUnseen);
+	}
+
+	// Fill remaining slots with seen elements
+	if (result.length < elementCount && seenElements.length > 0) {
+		const shuffledSeen = [...seenElements].sort(() => Math.random() - 0.5);
+		const remaining = elementCount - result.length;
+		result.push(...shuffledSeen.slice(0, remaining));
+	}
+
+	return result;
 }
 
 const currentWorldName = computed(() => {
@@ -174,12 +233,16 @@ function advanceLevel(): boolean {
 		const newElements = generateWorldElements();
 		currentWorldElements.value = newElements;
 		levelQueue.setWorldElements(newElements);
+		// Queue mechanic intro dialogues for any new mechanics
+		queueUnseenMechanicDialogues(newElements);
 		return true; // Entered new world
 	}
 	return false; // Same world
 }
 
 const pendingNewWorld = ref(false);
+const pendingWorldDialogue = ref<DialogueSceneType | null>(null);
+const showWelcomeAfterDialogue = ref(false);
 
 function handleWin() {
 	playSuccess();
@@ -190,6 +253,20 @@ function handleWin() {
 	skipModalText.value = "Garden Complete!";
 	randomizeWinMushrooms();
 	showWinModal.value = true;
+
+	// Check if this is the last level of the world and if there's a dialogue
+	const isLastLevelOfWorld = currentLevelNumber.value === LEVELS_PER_WORLD;
+	if (isLastLevelOfWorld) {
+		// Check for specific world dialogue first (like meeting Dew after world 0)
+		const worldDialogue = worldEndDialogues[currentWorldIndex.value];
+		if (worldDialogue) {
+			pendingWorldDialogue.value = worldDialogue;
+		} else if (currentWorldIndex.value > 0 && adventureScenes.length > 0) {
+			// After meeting Dew, play random adventure scenes
+			const randomScene = adventureScenes[Math.floor(Math.random() * adventureScenes.length)]!;
+			pendingWorldDialogue.value = randomScene;
+		}
+	}
 
 	// After showing the modal briefly, start the transition
 	setTimeout(() => {
@@ -224,11 +301,25 @@ function startTransition() {
 			// Small pause while black, then fade back in
 			setTimeout(() => {
 				isBlack.value = false;
-				// After fade in completes, re-enable controls and maybe show welcome
+				// After fade in completes, re-enable controls and maybe show welcome/dialogue
 				setTimeout(() => {
 					isFading.value = false;
 					if (pendingNewWorld.value) {
-						showWelcomeSign.value = true;
+						// Priority: mechanic dialogue > adventure scene > welcome sign
+						if (pendingMechanicDialogues.value.length > 0) {
+							// Show mechanic intro dialogue
+							currentDialogue.value = pendingMechanicDialogues.value.shift()!;
+							showWelcomeAfterDialogue.value = true;
+							// Clear adventure scene since we're showing mechanic instead
+							pendingWorldDialogue.value = null;
+						} else if (pendingWorldDialogue.value) {
+							// Show adventure scene
+							currentDialogue.value = pendingWorldDialogue.value;
+							pendingWorldDialogue.value = null;
+							showWelcomeAfterDialogue.value = true;
+						} else {
+							showWelcomeSign.value = true;
+						}
 						pendingNewWorld.value = false;
 					}
 				}, 500);
@@ -258,6 +349,18 @@ function handleSkip() {
 	skipModalText.value = "Level Skipped";
 	randomizeWinMushrooms();
 	showWinModal.value = true;
+
+	// Check if this is the last level of the world and if there's a dialogue
+	const isLastLevelOfWorld = currentLevelNumber.value === LEVELS_PER_WORLD;
+	if (isLastLevelOfWorld) {
+		const worldDialogue = worldEndDialogues[currentWorldIndex.value];
+		if (worldDialogue) {
+			pendingWorldDialogue.value = worldDialogue;
+		} else if (currentWorldIndex.value > 0 && adventureScenes.length > 0) {
+			const randomScene = adventureScenes[Math.floor(Math.random() * adventureScenes.length)]!;
+			pendingWorldDialogue.value = randomScene;
+		}
+	}
 
 	// Show modal briefly then start transition
 	setTimeout(() => {
@@ -290,13 +393,29 @@ async function handleBegin() {
 	initializeAudio();
 	startBackgroundMusic();
 
+	isLoading.value = false;
+	loadingMessage.value = "";
+
+	// Show intro dialogue if not seen before
+	if (!hasSeenIntro) {
+		currentDialogue.value = introDialogue;
+		return;
+	}
+
+	// Otherwise go straight to game
+	await startGame();
+}
+
+async function startGame() {
+	isLoading.value = true;
+	loadingMessage.value = "Generating level...";
+
+	// Small delay to ensure UI updates
+	await new Promise((resolve) => setTimeout(resolve, 50));
+
 	// First world is always neutral (no elements)
 	currentWorldElements.value = [];
 	levelQueue.setWorldElements([]);
-
-	// Generate first level when game starts
-	loadingMessage.value = "Generating level...";
-	await new Promise((resolve) => setTimeout(resolve, 50));
 
 	currentLevel.value = getNewLevel();
 	gameStarted.value = true;
@@ -328,6 +447,13 @@ function closeWelcomeSign() {
 	showWelcomeSign.value = false;
 }
 
+function showNextMechanicDialogue(): void {
+	if (pendingMechanicDialogues.value.length > 0) {
+		const nextDialogue = pendingMechanicDialogues.value.shift()!;
+		currentDialogue.value = nextDialogue;
+	}
+}
+
 function openCustomWorldModal() {
 	showCustomWorldModal.value = true;
 }
@@ -341,6 +467,9 @@ function startCustomWorld(elements: WorldElement[]) {
 	currentWorldElements.value = elements;
 	levelQueue.setWorldElements(elements);
 
+	// Queue mechanic intro dialogues for any new mechanics
+	queueUnseenMechanicDialogues(elements);
+
 	// Change BGM for the new world
 	changeWorldBGM();
 
@@ -351,14 +480,44 @@ function startCustomWorld(elements: WorldElement[]) {
 	// Show welcome sign for the new world
 	showWelcomeSign.value = true;
 }
+
+async function handleDialogueComplete() {
+	const dialogueId = currentDialogue.value?.id;
+	currentDialogue.value = null;
+
+	if (dialogueId === "intro") {
+		localStorage.setItem("mushroom-path-intro-seen", "true");
+		await startGame();
+	} else if (showWelcomeAfterDialogue.value) {
+		// World-end dialogue finished, show welcome sign
+		showWelcomeAfterDialogue.value = false;
+		showWelcomeSign.value = true;
+	} else if (pendingMechanicDialogues.value.length > 0) {
+		// More mechanic dialogues in queue
+		showNextMechanicDialogue();
+	}
+	// Otherwise dialogue was skipped or no follow-up needed
+}
 </script>
 
 <template>
+  <!-- Dialogue Scene (intro and story events) -->
+  <Transition name="dialogue-fade">
+    <DialogueScene
+      v-if="currentDialogue"
+      :scene="currentDialogue"
+      :can-skip="true"
+      :overlay="currentDialogue.overlay"
+      @complete="handleDialogueComplete"
+      @skip="handleDialogueComplete"
+    />
+  </Transition>
+
   <!-- Start Screen -->
-  <StartScreen v-if="!gameStarted && !showMusicPlayer" @begin="handleBegin" @open-music-player="showMusicPlayer = true" />
+  <StartScreen v-if="!gameStarted && !showMusicPlayer && !currentDialogue" @begin="handleBegin" @open-music-player="showMusicPlayer = true" />
 
   <!-- Music Player -->
-  <MusicPlayer v-if="showMusicPlayer" @close="showMusicPlayer = false" />
+  <MusicPlayer v-if="showMusicPlayer && !currentDialogue" @close="showMusicPlayer = false" />
 
   <!-- Loading Overlay (shown during initial load) -->
   <div v-if="isLoading" class="loading-overlay">
@@ -368,8 +527,8 @@ function startCustomWorld(elements: WorldElement[]) {
     </div>
   </div>
 
-  <!-- Game -->
-  <div v-if="gameStarted" class="layout">
+  <!-- Game (stays visible for overlay dialogues) -->
+  <div v-if="gameStarted && (!currentDialogue || currentDialogue.overlay)" class="layout">
     <TopBar
       :level-name="displayName"
       :elements="currentWorldElements"
@@ -383,6 +542,7 @@ function startCustomWorld(elements: WorldElement[]) {
         :level="currentLevel"
         :has-ice-element="currentWorldElements.includes(WE.ICE)"
         :has-dirt-element="currentWorldElements.includes(WE.DIRT)"
+        :disabled="!!currentDialogue"
         @win="handleWin"
       />
 
@@ -813,5 +973,16 @@ function startCustomWorld(elements: WorldElement[]) {
   50% {
     opacity: 1;
   }
+}
+
+/* Dialogue Fade Transition */
+.dialogue-fade-enter-active,
+.dialogue-fade-leave-active {
+  transition: opacity 0.4s ease;
+}
+
+.dialogue-fade-enter-from,
+.dialogue-fade-leave-to {
+  opacity: 0;
 }
 </style>

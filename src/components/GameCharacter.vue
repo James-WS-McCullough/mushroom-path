@@ -13,6 +13,7 @@ const props = defineProps<{
 	teleportPhase: TeleportPhase;
 	facingDirection: FacingDirection;
 	boardPadding?: number;
+	disabled?: boolean;
 }>();
 
 // Blinking state
@@ -111,6 +112,26 @@ watch([() => props.isHopping, () => props.isSliding], () => {
 watch(() => props.isStuck, (stuck) => {
 	if (stuck) {
 		playVoiceStuck();
+	}
+});
+
+// Watch for disabled state to pause/resume idle behavior
+watch(() => props.disabled, (disabled) => {
+	if (disabled) {
+		// Pause idle behavior
+		if (idleTimer) {
+			clearTimeout(idleTimer);
+			idleTimer = null;
+		}
+		if (waveInterval) {
+			clearInterval(waveInterval);
+			waveInterval = null;
+		}
+		isWaving.value = false;
+		waveJumpCount.value = 0;
+	} else {
+		// Resume idle behavior
+		resetIdleTimer();
 	}
 });
 
