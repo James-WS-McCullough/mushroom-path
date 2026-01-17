@@ -153,8 +153,7 @@ const spriteUrl = computed(() => {
       }
     ]"
     :style="{
-      left: `${(boardPadding ?? 0) + position.x * 67}px`,
-      top: `${(boardPadding ?? 0) + position.y * 67}px`,
+      transform: `translate3d(${(boardPadding ?? 0) + position.x * 67}px, ${(boardPadding ?? 0) + position.y * 67}px, 0)`,
     }"
   >
     <!-- Ground shadow -->
@@ -169,9 +168,12 @@ const spriteUrl = computed(() => {
 <style scoped>
 .character {
   position: absolute;
+  left: 0;
+  top: 0;
   width: 64px;
   height: 64px;
-  transition: left 0.15s ease-out, top 0.15s ease-out;
+  transition: transform 0.15s ease-out;
+  will-change: transform;
   z-index: 10;
   pointer-events: none;
 }
@@ -235,39 +237,49 @@ const spriteUrl = computed(() => {
 
 /* Shrinking phase - player shrinks down before teleporting */
 .character--shrinking {
+  transition: transform 0s;
+}
+
+.character--shrinking .character__sprite,
+.character--shrinking .character__shadow {
   animation: shrink-down 0.2s ease-in forwards;
 }
 
 @keyframes shrink-down {
   0% {
-    transform: scale(1);
+    transform: translateX(-50%) scale(1);
     opacity: 1;
   }
   100% {
-    transform: scale(0);
+    transform: translateX(-50%) scale(0);
     opacity: 0;
   }
 }
 
 /* Hidden phase - player is invisible while teleporting */
 .character--hidden {
+  transition: transform 0s;
+}
+
+.character--hidden .character__sprite,
+.character--hidden .character__shadow {
   opacity: 0;
-  transform: scale(0);
-  transition: left 0s, top 0s;
+  transform: translateX(-50%) scale(0);
 }
 
 /* Growing phase - player grows back after appearing */
-.character--growing {
+.character--growing .character__sprite,
+.character--growing .character__shadow {
   animation: grow-up 0.2s ease-out forwards;
 }
 
 @keyframes grow-up {
   0% {
-    transform: scale(0);
+    transform: translateX(-50%) scale(0);
     opacity: 0;
   }
   100% {
-    transform: scale(1);
+    transform: translateX(-50%) scale(1);
     opacity: 1;
   }
 }

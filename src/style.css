@@ -4,6 +4,15 @@
 	box-sizing: border-box;
 }
 
+/* Disable double-tap-to-zoom while preserving pinch zoom */
+html {
+	touch-action: manipulation;
+}
+
+button {
+	touch-action: manipulation;
+}
+
 :root {
 	font-family: "Georgia", "Times New Roman", serif;
 	line-height: 1.5;

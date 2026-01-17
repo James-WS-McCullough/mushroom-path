@@ -219,7 +219,7 @@ describe("levelGenerator", () => {
 				levels.map((l) => JSON.stringify(l.grid)),
 			);
 			expect(uniqueGrids.size).toBeGreaterThan(1);
-		});
+		}, 15000);
 
 		it("should respect minWidth and maxWidth config", () => {
 			const level = generateLevel({

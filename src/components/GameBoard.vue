@@ -97,7 +97,7 @@ const boardTransform = computed(() => {
 	const translateY = needsVerticalPanning.value ? cameraOffset.value.y + CAMERA_PADDING : 0;
 
 	return {
-		transform: `translate(${translateX}px, ${translateY}px)`,
+		transform: `translate3d(${translateX}px, ${translateY}px, 0)`,
 	};
 });
 
@@ -383,7 +383,13 @@ defineExpose({
   <div class="game-container">
     <div
       ref="viewportRef"
-      :class="['camera-viewport', { 'camera-viewport--active': needsPanning }]"
+      :class="[
+        'camera-viewport',
+        {
+          'camera-viewport--pan-vertical': needsVerticalPanning,
+          'camera-viewport--pan-horizontal': needsHorizontalPanning,
+        }
+      ]"
     >
       <div
         :class="['board-wrapper', { 'board-wrapper--no-bg': hasRooms }]"
@@ -508,14 +514,23 @@ defineExpose({
   width: 100%;
 }
 
-.camera-viewport--active {
+/* Vertical panning - align to top, keep horizontal centering */
+.camera-viewport--pan-vertical {
   overflow: hidden;
   align-items: flex-start;
+}
+
+/* Horizontal panning - align to left */
+.camera-viewport--pan-horizontal {
+  overflow: hidden;
   justify-content: flex-start;
 }
 
-.camera-viewport--active .board-wrapper {
-  transition: transform 0.3s ease-out;
+/* Apply smooth transform transition when any panning is active */
+.camera-viewport--pan-vertical .board-wrapper,
+.camera-viewport--pan-horizontal .board-wrapper {
+  transition: transform 0.25s ease-out;
+  will-change: transform;
 }
 
 .board-wrapper {
@@ -541,6 +556,7 @@ defineExpose({
   background: rgba(0, 0, 0, 0.2);
   padding: 3px;
   border-radius: 8px;
+  contain: layout style;
 }
 
 .board-wrapper--no-bg .board {

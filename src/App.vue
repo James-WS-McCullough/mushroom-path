@@ -8,12 +8,31 @@ import TopBar from "./components/TopBar.vue";
 import TutorialModal from "./components/TutorialModal.vue";
 import WelcomeSign from "./components/WelcomeSign.vue";
 import { getLevelQueue } from "./composables/useLevelQueue";
-import { changeWorldBGM, playSuccess, playUndo, playVoiceSuccess, startBackgroundMusic } from "./composables/useSound";
+import { changeWorldBGM, initializeAudio, playSuccess, playUndo, playVoiceSuccess, startBackgroundMusic } from "./composables/useSound";
 import { level1 } from "./data/levels";
 import type { Level, WorldElement } from "./types/game";
 import { WorldElement as WE } from "./types/game";
 
 const levelQueue = getLevelQueue();
+
+// Preload character sprites to avoid loading delays during gameplay
+const SPRITE_URLS = [
+	"/art/MushroomGirl.webp",
+	"/art/MushroomGirl-blink.webp",
+	"/art/MushroomGirl-Jump.webp",
+	"/art/MushroomGirl-Wave.webp",
+	"/art/MushroomGirl-Stuck.webp",
+];
+
+function preloadSprites() {
+	for (const url of SPRITE_URLS) {
+		const img = new Image();
+		img.src = url;
+	}
+}
+
+// Start preloading immediately
+preloadSprites();
 
 const LEVELS_PER_WORLD = 8;
 
@@ -75,6 +94,10 @@ const showWelcomeSign = ref(false);
 const showCustomWorldModal = ref(false);
 const isFading = ref(false);
 const isBlack = ref(false);
+
+// Loading states for user feedback
+const isLoading = ref(false);
+const loadingMessage = ref("");
 
 // Reference to GameBoard for undo functionality
 const gameBoardRef = ref<InstanceType<typeof GameBoard> | null>(null);
@@ -187,21 +210,28 @@ function startTransition() {
 
 	// After fade completes (500ms), generate new level
 	setTimeout(() => {
-		currentLevel.value = getNewLevel();
-		levelKey.value++;
+		// Show loading message while generating
+		loadingMessage.value = "Generating level...";
 
-		// Small pause while black, then fade back in
+		// Small delay to let the message render before blocking work
 		setTimeout(() => {
-			isBlack.value = false;
-			// After fade in completes, re-enable controls and maybe show welcome
+			currentLevel.value = getNewLevel();
+			levelKey.value++;
+			loadingMessage.value = "";
+
+			// Small pause while black, then fade back in
 			setTimeout(() => {
-				isFading.value = false;
-				if (pendingNewWorld.value) {
-					showWelcomeSign.value = true;
-					pendingNewWorld.value = false;
-				}
-			}, 500);
-		}, 200);
+				isBlack.value = false;
+				// After fade in completes, re-enable controls and maybe show welcome
+				setTimeout(() => {
+					isFading.value = false;
+					if (pendingNewWorld.value) {
+						showWelcomeSign.value = true;
+						pendingNewWorld.value = false;
+					}
+				}, 500);
+			}, 200);
+		}, 50);
 	}, 500);
 }
 
@@ -246,7 +276,16 @@ function handleUndo() {
 	gameBoardRef.value?.undo();
 }
 
-function handleBegin() {
+async function handleBegin() {
+	// Show loading state
+	isLoading.value = true;
+	loadingMessage.value = "Loading audio...";
+
+	// Small delay to ensure UI updates before potentially blocking work
+	await new Promise((resolve) => setTimeout(resolve, 50));
+
+	// Initialize audio system (starts preloading sounds in background for mobile)
+	initializeAudio();
 	startBackgroundMusic();
 
 	// First world is always neutral (no elements)
@@ -254,8 +293,13 @@ function handleBegin() {
 	levelQueue.setWorldElements([]);
 
 	// Generate first level when game starts
+	loadingMessage.value = "Generating level...";
+	await new Promise((resolve) => setTimeout(resolve, 50));
+
 	currentLevel.value = getNewLevel();
 	gameStarted.value = true;
+	isLoading.value = false;
+	loadingMessage.value = "";
 
 	// Show tutorial on first visit
 	const hasSeenTutorial = localStorage.getItem("mushroom-path-tutorial-seen");
@@ -311,6 +355,14 @@ function startCustomWorld(elements: WorldElement[]) {
   <!-- Start Screen -->
   <StartScreen v-if="!gameStarted" @begin="handleBegin" />
 
+  <!-- Loading Overlay (shown during initial load) -->
+  <div v-if="isLoading" class="loading-overlay">
+    <div class="loading-content">
+      <div class="loading-spinner"></div>
+      <p class="loading-text">{{ loadingMessage }}</p>
+    </div>
+  </div>
+
   <!-- Game -->
   <div v-else class="layout">
     <TopBar
@@ -330,7 +382,9 @@ function startCustomWorld(elements: WorldElement[]) {
       />
 
       <!-- Fade Transition Overlay (game area only) -->
-      <div :class="['transition-overlay', { 'transition-overlay--black': isBlack }]"></div>
+      <div :class="['transition-overlay', { 'transition-overlay--black': isBlack }]">
+        <p v-if="loadingMessage && isBlack" class="transition-loading-text">{{ loadingMessage }}</p>
+      </div>
     </main>
 
     <BottomBar
@@ -688,9 +742,71 @@ function startCustomWorld(elements: WorldElement[]) {
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.5s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .transition-overlay--black {
   opacity: 1;
+}
+
+.transition-loading-text {
+  font-family: 'Georgia', serif;
+  font-size: 18px;
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+/* Loading Overlay (initial load) */
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(40, 50, 30, 0.9);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+}
+
+.loading-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(255, 248, 230, 0.3);
+  border-top-color: #fff8e6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.loading-text {
+  font-family: 'Georgia', serif;
+  font-size: 18px;
+  color: #fff8e6;
+  margin: 0;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 </style>

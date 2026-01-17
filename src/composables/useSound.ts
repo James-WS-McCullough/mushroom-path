@@ -1,39 +1,211 @@
-// Sound utility for playing audio effects
+// Sound utility for playing audio effects using Web Audio API
+// Optimized for mobile with proper AudioContext handling
 
 import { ref } from "vue";
-
-const audioCache = new Map<string, HTMLAudioElement>();
 
 // Mute state (reactive for UI binding)
 export const isMusicMuted = ref(false);
 export const isSfxMuted = ref(false);
 
-function getAudio(path: string): HTMLAudioElement {
-	let audio = audioCache.get(path);
-	if (!audio) {
-		audio = new Audio(path);
-		audioCache.set(path, audio);
+// ============================================
+// Web Audio API Core
+// ============================================
+
+let audioContext: AudioContext | null = null;
+const audioBufferCache = new Map<string, AudioBuffer>();
+const loadingPromises = new Map<string, Promise<AudioBuffer>>();
+
+function getAudioContext(): AudioContext {
+	if (!audioContext) {
+		audioContext = new AudioContext();
 	}
-	return audio;
+	return audioContext;
 }
 
-export function playSound(path: string, volume = 1) {
+// Resume audio context on user interaction (required for mobile)
+async function ensureAudioContextResumed(): Promise<void> {
+	const ctx = getAudioContext();
+	if (ctx.state === "suspended") {
+		await ctx.resume();
+	}
+}
+
+// Set up event listeners to resume audio context on any interaction
+function setupAudioContextListeners(): void {
+	const resume = () => ensureAudioContextResumed();
+	document.addEventListener("click", resume);
+	document.addEventListener("touchstart", resume);
+	document.addEventListener("keydown", resume);
+}
+
+// Handle visibility changes - pause/resume music when page is hidden/shown
+document.addEventListener("visibilitychange", () => {
+	if (document.hidden) {
+		// Pause music when page is hidden (minimized, tab switched, etc.)
+		if (currentBgm && !currentBgm.paused) {
+			currentBgm.pause();
+		}
+	} else {
+		// Resume when page becomes visible again
+		ensureAudioContextResumed();
+		if (currentBgm && musicStarted && !isMusicMuted.value) {
+			currentBgm.play().catch(() => {});
+		}
+	}
+});
+
+// ============================================
+// Audio Loading & Caching
+// ============================================
+
+async function loadSound(path: string): Promise<AudioBuffer> {
+	// Return cached buffer if available
+	const cached = audioBufferCache.get(path);
+	if (cached) {
+		return cached;
+	}
+
+	// Return existing loading promise if in progress
+	const existingPromise = loadingPromises.get(path);
+	if (existingPromise) {
+		return existingPromise;
+	}
+
+	// Fetch and decode
+	const loadPromise = fetch(path)
+		.then((response) => {
+			if (!response.ok) {
+				throw new Error(`Failed to load audio: ${path}`);
+			}
+			return response.arrayBuffer();
+		})
+		.then((arrayBuffer) => getAudioContext().decodeAudioData(arrayBuffer))
+		.then((audioBuffer) => {
+			audioBufferCache.set(path, audioBuffer);
+			loadingPromises.delete(path);
+			return audioBuffer;
+		})
+		.catch((error) => {
+			loadingPromises.delete(path);
+			console.warn(`Failed to load sound: ${path}`, error);
+			throw error;
+		});
+
+	loadingPromises.set(path, loadPromise);
+	return loadPromise;
+}
+
+async function preloadSounds(paths: string[]): Promise<void> {
+	await Promise.all(paths.map((path) => loadSound(path).catch(() => {})));
+}
+
+// All SFX paths to preload
+const ALL_SFX_PATHS = [
+	// Pop sounds (7 variants)
+	...Array.from({ length: 7 }, (_, i) => `/sfx/Pop-${i + 1}.mp3`),
+	// Dirt sounds
+	"/sfx/Dirt-1.mp3",
+	"/sfx/Dirt-2.mp3",
+	"/sfx/shovel-dirt.mp3",
+	// Movement sounds
+	"/sfx/jump.mp3",
+	"/sfx/land-1.mp3",
+	"/sfx/land-2.mp3",
+	// Tile sounds
+	"/sfx/hit-water.mp3",
+	"/sfx/hit-stone.mp3",
+	"/sfx/ice-slide.mp3",
+	"/sfx/ice-slide-loop.mp3",
+	// UI sounds
+	"/sfx/success.mp3",
+	"/sfx/new-world.mp3",
+	"/sfx/tutorial-appears.mp3",
+	"/sfx/undo.mp3",
+	"/sfx/teleport-poof.mp3",
+	// Voice lines
+	"/voice/voice-stuck01.mp3",
+	"/voice/voice-stuck02.mp3",
+	...Array.from({ length: 4 }, (_, i) => `/voice/voice-wave0${i + 1}.mp3`),
+	...Array.from({ length: 8 }, (_, i) => `/voice/voice-success0${i + 1}.mp3`),
+	"/voice/voice-tutorial01.mp3",
+];
+
+// Initialize audio system (call on first user interaction)
+export function initializeAudio(): void {
+	setupAudioContextListeners();
+	ensureAudioContextResumed();
+	// Preload sounds in background (don't block UI)
+	preloadSounds(ALL_SFX_PATHS);
+}
+
+// ============================================
+// Sound Playback
+// ============================================
+
+export async function playSound(path: string, volume = 1): Promise<void> {
 	if (isSfxMuted.value) return;
-	const audio = getAudio(path);
-	audio.currentTime = 0;
-	audio.volume = volume;
-	audio.play().catch(() => {
-		// Ignore autoplay errors (user hasn't interacted yet)
-	});
+
+	try {
+		await ensureAudioContextResumed();
+		const buffer = await loadSound(path);
+		const ctx = getAudioContext();
+
+		// Create fresh source node (required - they're one-shot)
+		const source = ctx.createBufferSource();
+		source.buffer = buffer;
+
+		// Create gain node for volume control
+		const gainNode = ctx.createGain();
+		gainNode.gain.value = volume;
+
+		// Connect: source -> gain -> destination
+		source.connect(gainNode);
+		gainNode.connect(ctx.destination);
+
+		source.start(0);
+	} catch {
+		// Silently fail - sound playback is not critical
+	}
 }
 
-// Background music state
+// Play sound with variable playback rate (for pitch variation)
+async function playSoundWithRate(
+	path: string,
+	volume: number,
+	playbackRate: number,
+): Promise<void> {
+	if (isSfxMuted.value) return;
+
+	try {
+		await ensureAudioContextResumed();
+		const buffer = await loadSound(path);
+		const ctx = getAudioContext();
+
+		const source = ctx.createBufferSource();
+		source.buffer = buffer;
+		source.playbackRate.value = playbackRate;
+
+		const gainNode = ctx.createGain();
+		gainNode.gain.value = volume;
+
+		source.connect(gainNode);
+		gainNode.connect(ctx.destination);
+
+		source.start(0);
+	} catch {
+		// Silently fail
+	}
+}
+
+// ============================================
+// Background Music (HTML5 Audio for streaming)
+// ============================================
+
 let musicStarted = false;
 let currentBgm: HTMLAudioElement | null = null;
 const BGM_VOLUME = 0.2;
-const FADE_DURATION = 1000; // 1 second fade
+const FADE_DURATION = 1000;
 
-// World BGM playlist system
 const BGM_TRACKS = [
 	"/music/BGM 01.mp3",
 	"/music/BGM 02.mp3",
@@ -49,8 +221,7 @@ const BGM_TRACKS = [
 let bgmPlaylist: string[] = [];
 let currentPlaylistIndex = 0;
 
-function shufflePlaylist() {
-	// Fisher-Yates shuffle
+function shufflePlaylist(): void {
 	bgmPlaylist = [...BGM_TRACKS];
 	for (let i = bgmPlaylist.length - 1; i > 0; i--) {
 		const j = Math.floor(Math.random() * (i + 1));
@@ -70,21 +241,25 @@ function getNextBgmTrack(): string {
 	return track;
 }
 
-function updateMusicVolume() {
-	const volume = isMusicMuted.value ? 0 : BGM_VOLUME;
-	if (currentBgm) currentBgm.volume = volume;
+function updateMusicMuted(): void {
+	if (currentBgm) {
+		currentBgm.muted = isMusicMuted.value;
+	}
 }
 
-export function toggleMusicMute() {
+export function toggleMusicMute(): void {
 	isMusicMuted.value = !isMusicMuted.value;
-	updateMusicVolume();
+	updateMusicMuted();
 }
 
-export function toggleSfxMute() {
+export function toggleSfxMute(): void {
 	isSfxMuted.value = !isSfxMuted.value;
 }
 
-function fadeOutAudio(audio: HTMLAudioElement, duration: number): Promise<void> {
+function fadeOutAudio(
+	audio: HTMLAudioElement,
+	duration: number,
+): Promise<void> {
 	return new Promise((resolve) => {
 		const startVolume = audio.volume;
 		const steps = 20;
@@ -106,7 +281,11 @@ function fadeOutAudio(audio: HTMLAudioElement, duration: number): Promise<void> 
 	});
 }
 
-function fadeInAudio(audio: HTMLAudioElement, targetVolume: number, duration: number): void {
+function fadeInAudio(
+	audio: HTMLAudioElement,
+	targetVolume: number,
+	duration: number,
+): void {
 	audio.volume = 0;
 	audio.play().catch(() => {});
 
@@ -125,141 +304,167 @@ function fadeInAudio(audio: HTMLAudioElement, targetVolume: number, duration: nu
 	}, stepDuration);
 }
 
-export function startBackgroundMusic() {
+export function startBackgroundMusic(): void {
 	if (musicStarted) return;
 	musicStarted = true;
 
-	// Initialize playlist and start first track
 	shufflePlaylist();
 	const firstTrack = getNextBgmTrack();
 
 	currentBgm = new Audio(firstTrack);
 	currentBgm.loop = true;
-	currentBgm.volume = isMusicMuted.value ? 0 : BGM_VOLUME;
+	currentBgm.volume = BGM_VOLUME;
+	currentBgm.muted = isMusicMuted.value;
 
 	currentBgm.play().catch(() => {
-		// If autoplay fails, reset state
 		musicStarted = false;
 	});
 }
 
-export async function changeWorldBGM() {
+export async function changeWorldBGM(): Promise<void> {
 	if (!musicStarted) return;
 
 	const nextTrack = getNextBgmTrack();
-	const targetVolume = isMusicMuted.value ? 0 : BGM_VOLUME;
 
-	// Fade out current BGM
 	if (currentBgm) {
 		await fadeOutAudio(currentBgm, FADE_DURATION);
 	}
 
-	// Create and fade in new BGM
 	currentBgm = new Audio(nextTrack);
 	currentBgm.loop = true;
-	fadeInAudio(currentBgm, targetVolume, FADE_DURATION);
+	currentBgm.muted = isMusicMuted.value;
+	fadeInAudio(currentBgm, BGM_VOLUME, FADE_DURATION);
 }
 
-export function playRandomPop(volume = 0.25) {
+// ============================================
+// Sound Effect Functions
+// ============================================
+
+export function playRandomPop(volume = 0.25): void {
 	const popNumber = Math.floor(Math.random() * 7) + 1;
 	playSound(`/sfx/Pop-${popNumber}.mp3`, volume);
 }
 
-export function playRandomDirt(volume = 0.3) {
+export function playRandomDirt(volume = 0.3): void {
 	const dirtNumber = Math.floor(Math.random() * 2) + 1;
 	playSound(`/sfx/Dirt-${dirtNumber}.mp3`, volume);
 }
 
-export function playShovelDirt(volume = 0.4) {
+export function playShovelDirt(volume = 0.4): void {
 	playSound("/sfx/shovel-dirt.mp3", volume);
 }
 
-export function playJump(volume = 0.35) {
-	if (isSfxMuted.value) return;
-	const audio = getAudio("/sfx/jump.mp3");
-	audio.currentTime = 0;
-	audio.volume = volume;
+export function playJump(volume = 0.35): void {
 	// Vary pitch by ±10% randomly
-	audio.playbackRate = 0.9 + Math.random() * 0.2;
-	audio.play().catch(() => {});
+	const playbackRate = 0.9 + Math.random() * 0.2;
+	playSoundWithRate("/sfx/jump.mp3", volume, playbackRate);
 }
 
-export function playLand(volume = 0.3) {
+export function playLand(volume = 0.3): void {
 	const landNumber = Math.floor(Math.random() * 2) + 1;
 	playSound(`/sfx/land-${landNumber}.mp3`, volume);
 }
 
-export function playSuccess(volume = 0.6) {
+export function playSuccess(volume = 0.6): void {
 	playSound("/sfx/success.mp3", volume);
 }
 
-export function playNewWorld(volume = 0.6) {
+export function playNewWorld(volume = 0.6): void {
 	playSound("/sfx/new-world.mp3", volume);
 }
 
-export function playTutorialAppears(volume = 0.5) {
+export function playTutorialAppears(volume = 0.5): void {
 	playSound("/sfx/tutorial-appears.mp3", volume);
 }
 
-export function playUndo(volume = 0.4) {
+export function playUndo(volume = 0.4): void {
 	playSound("/sfx/undo.mp3", volume);
 }
 
-export function playWater(volume = 0.4) {
+export function playWater(volume = 0.4): void {
 	playSound("/sfx/hit-water.mp3", volume);
 }
 
-export function playStone(volume = 0.35) {
+export function playStone(volume = 0.35): void {
 	playSound("/sfx/hit-stone.mp3", volume);
 }
 
-// Ice slide loop state
-let iceSlideAudio: HTMLAudioElement | null = null;
+// ============================================
+// Ice Slide Loop (Web Audio API)
+// ============================================
 
-export function startIceSlide(volume = 0.4) {
+let iceSlideSource: AudioBufferSourceNode | null = null;
+let iceSlideGain: GainNode | null = null;
+
+export async function startIceSlide(volume = 0.4): Promise<void> {
 	if (isSfxMuted.value) return;
-	if (iceSlideAudio) {
-		stopIceSlide();
+
+	stopIceSlide();
+
+	try {
+		await ensureAudioContextResumed();
+		const buffer = await loadSound("/sfx/ice-slide-loop.mp3");
+		const ctx = getAudioContext();
+
+		iceSlideSource = ctx.createBufferSource();
+		iceSlideSource.buffer = buffer;
+		iceSlideSource.loop = true;
+
+		iceSlideGain = ctx.createGain();
+		iceSlideGain.gain.value = volume;
+
+		iceSlideSource.connect(iceSlideGain);
+		iceSlideGain.connect(ctx.destination);
+
+		iceSlideSource.start(0);
+	} catch {
+		// Silently fail
 	}
-	iceSlideAudio = new Audio("/sfx/ice-slide-loop.mp3");
-	iceSlideAudio.loop = true;
-	iceSlideAudio.volume = volume;
-	iceSlideAudio.play().catch(() => {});
 }
 
-export function stopIceSlide() {
-	if (iceSlideAudio) {
-		iceSlideAudio.pause();
-		iceSlideAudio.currentTime = 0;
-		iceSlideAudio = null;
+export function stopIceSlide(): void {
+	if (iceSlideSource) {
+		try {
+			iceSlideSource.stop();
+		} catch {
+			// May already be stopped
+		}
+		iceSlideSource.disconnect();
+		iceSlideSource = null;
+	}
+	if (iceSlideGain) {
+		iceSlideGain.disconnect();
+		iceSlideGain = null;
 	}
 }
 
-export function playIce(volume = 0.4) {
-	// For non-looping ice sound (e.g., landing on ice)
+export function playIce(volume = 0.4): void {
 	playSound("/sfx/ice-slide.mp3", volume);
 }
 
-// Voice lines
-export function playVoiceStuck(volume = 0.7) {
+// ============================================
+// Voice Lines
+// ============================================
+
+export function playVoiceStuck(volume = 0.7): void {
 	const num = Math.floor(Math.random() * 2) + 1;
 	playSound(`/voice/voice-stuck0${num}.mp3`, volume);
 }
 
-export function playVoiceWave(volume = 0.7) {
+export function playVoiceWave(volume = 0.7): void {
 	const num = Math.floor(Math.random() * 4) + 1;
 	playSound(`/voice/voice-wave0${num}.mp3`, volume);
 }
 
-export function playVoiceSuccess(volume = 0.7) {
+export function playVoiceSuccess(volume = 0.7): void {
 	const num = Math.floor(Math.random() * 8) + 1;
 	playSound(`/voice/voice-success0${num}.mp3`, volume);
 }
 
-export function playVoiceTutorial(section: 1 | 2 | 3, volume = 0.7) {
+export function playVoiceTutorial(section: 1 | 2 | 3, volume = 0.7): void {
 	playSound(`/voice/voice-tutorial0${section}.mp3`, volume);
 }
 
-export function playTeleportPoof(volume = 0.5) {
+export function playTeleportPoof(volume = 0.5): void {
 	playSound("/sfx/teleport-poof.mp3", volume);
 }

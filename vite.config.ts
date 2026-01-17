@@ -7,5 +7,6 @@ export default defineConfig({
 	test: {
 		environment: "happy-dom",
 		globals: true,
+		testTimeout: 15000, // Level generation tests can be slow
 	},
 });

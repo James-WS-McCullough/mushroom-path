@@ -277,10 +277,11 @@ function handleClick() {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
   position: relative;
   box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.1);
   overflow: hidden;
+  contain: layout style;
 }
 
 /* Grass tile */
@@ -1824,6 +1825,50 @@ function handleClick() {
     box-shadow:
       inset 0 -4px 0 rgba(0, 0, 0, 0.1),
       0 0 12px 2px rgba(255, 255, 200, 0.5);
+  }
+}
+
+/* Mobile performance optimizations - reduce animation complexity */
+@media (max-width: 768px) {
+  /* Disable water ripple animations on mobile */
+  .ripple {
+    animation: none;
+    opacity: 0.2;
+    width: 20px;
+    height: 20px;
+  }
+
+  /* Simplify water wave animations */
+  .wave {
+    animation-duration: 2s;
+  }
+
+  /* Reduce sparkle animations */
+  .sparkle,
+  .portal-sparkle {
+    animation-duration: 3s;
+  }
+
+  /* Disable hover transform on mobile (tap targets don't need hover) */
+  .tile--reachable:hover {
+    transform: none;
+  }
+}
+
+/* Respect user's reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .tile {
+    transition: none;
+  }
+
+  .ripple,
+  .wave,
+  .sparkle,
+  .portal-sparkle,
+  .tile--shimmer,
+  .mushroom--pop,
+  .flower-petals {
+    animation: none;
   }
 }
 </style>
