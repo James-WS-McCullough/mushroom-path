@@ -237,10 +237,9 @@ function handleRestart() {
 function handleBegin() {
 	startBackgroundMusic();
 
-	// Generate elements for first world
-	const firstElements = generateWorldElements();
-	currentWorldElements.value = firstElements;
-	levelQueue.setWorldElements(firstElements);
+	// First world is always neutral (no elements)
+	currentWorldElements.value = [];
+	levelQueue.setWorldElements([]);
 
 	// Generate first level when game starts
 	currentLevel.value = getNewLevel();
