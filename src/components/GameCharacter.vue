@@ -157,6 +157,9 @@ const spriteUrl = computed(() => {
       top: `${(boardPadding ?? 0) + position.y * 67}px`,
     }"
   >
+    <!-- Ground shadow -->
+    <div :class="['character__shadow', { 'character__shadow--hopping': isHopping, 'character__shadow--waving': isWaving }]"></div>
+
     <div :class="['character__sprite', { 'character__sprite--hopping': isHopping, 'character__sprite--stuck': isStuck, 'character__sprite--waving': isWaving, 'character__sprite--facing-right': facingDirection === 'right' }]">
       <img :src="spriteUrl" alt="Mushroom Girl" class="sprite-img" />
     </div>
@@ -171,6 +174,63 @@ const spriteUrl = computed(() => {
   transition: left 0.15s ease-out, top 0.15s ease-out;
   z-index: 10;
   pointer-events: none;
+}
+
+/* Ground shadow */
+.character__shadow {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 36px;
+  height: 10px;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 50%;
+  z-index: -1;
+}
+
+/* Shadow shrinks when character hops */
+.character__shadow--hopping {
+  animation: shadow-hop 0.2s ease-out forwards;
+}
+
+@keyframes shadow-hop {
+  0% {
+    transform: translateX(-50%) scale(1);
+    opacity: 1;
+  }
+  30% {
+    transform: translateX(-50%) scale(0.6);
+    opacity: 0.5;
+  }
+  50% {
+    transform: translateX(-50%) scale(0.5);
+    opacity: 0.4;
+  }
+  80% {
+    transform: translateX(-50%) scale(0.8);
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateX(-50%) scale(1);
+    opacity: 1;
+  }
+}
+
+/* Shadow pulses slightly when waving */
+.character__shadow--waving {
+  animation: shadow-wave 0.4s ease-in-out infinite;
+}
+
+@keyframes shadow-wave {
+  0%, 100% {
+    transform: translateX(-50%) scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: translateX(-50%) scale(0.75);
+    opacity: 0.6;
+  }
 }
 
 /* Shrinking phase - player shrinks down before teleporting */
