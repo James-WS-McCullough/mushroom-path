@@ -31,7 +31,12 @@ function startBlinking() {
 	const scheduleBlink = () => {
 		const delay = 2000 + Math.random() * 2000;
 		blinkInterval = setTimeout(() => {
-			if (!props.isStuck && !props.isHopping && !props.isSliding && !isWaving.value) {
+			if (
+				!props.isStuck &&
+				!props.isHopping &&
+				!props.isSliding &&
+				!isWaving.value
+			) {
 				isBlinking.value = true;
 				setTimeout(() => {
 					isBlinking.value = false;
@@ -96,9 +101,13 @@ function startWaveAnimation() {
 }
 
 // Watch for position changes to reset idle timer
-watch(() => props.position, () => {
-	resetIdleTimer();
-}, { deep: true });
+watch(
+	() => props.position,
+	() => {
+		resetIdleTimer();
+	},
+	{ deep: true },
+);
 
 // Watch for movement states
 watch([() => props.isHopping, () => props.isSliding], () => {
@@ -109,31 +118,37 @@ watch([() => props.isHopping, () => props.isSliding], () => {
 });
 
 // Watch for stuck state and play voice line
-watch(() => props.isStuck, (stuck) => {
-	if (stuck) {
-		playVoiceStuck();
-	}
-});
+watch(
+	() => props.isStuck,
+	(stuck) => {
+		if (stuck) {
+			playVoiceStuck();
+		}
+	},
+);
 
 // Watch for disabled state to pause/resume idle behavior
-watch(() => props.disabled, (disabled) => {
-	if (disabled) {
-		// Pause idle behavior
-		if (idleTimer) {
-			clearTimeout(idleTimer);
-			idleTimer = null;
+watch(
+	() => props.disabled,
+	(disabled) => {
+		if (disabled) {
+			// Pause idle behavior
+			if (idleTimer) {
+				clearTimeout(idleTimer);
+				idleTimer = null;
+			}
+			if (waveInterval) {
+				clearInterval(waveInterval);
+				waveInterval = null;
+			}
+			isWaving.value = false;
+			waveJumpCount.value = 0;
+		} else {
+			// Resume idle behavior
+			resetIdleTimer();
 		}
-		if (waveInterval) {
-			clearInterval(waveInterval);
-			waveInterval = null;
-		}
-		isWaving.value = false;
-		waveJumpCount.value = 0;
-	} else {
-		// Resume idle behavior
-		resetIdleTimer();
-	}
-});
+	},
+);
 
 onMounted(() => {
 	startBlinking();

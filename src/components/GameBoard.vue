@@ -36,12 +36,24 @@ const CAMERA_PADDING = 48; // Padding around the board when panning
 
 const boardHeight = computed(() => {
 	const innerPadding = hasRooms.value ? 0 : 6; // 3px padding on each side
-	return game.levelHeight * CELL_SIZE - GAP_SIZE + innerPadding + (WRAPPER_PADDING * 2) + (CAMERA_PADDING * 2);
+	return (
+		game.levelHeight * CELL_SIZE -
+		GAP_SIZE +
+		innerPadding +
+		WRAPPER_PADDING * 2 +
+		CAMERA_PADDING * 2
+	);
 });
 
 const boardWidth = computed(() => {
 	const innerPadding = hasRooms.value ? 0 : 6; // 3px padding on each side
-	return game.levelWidth * CELL_SIZE - GAP_SIZE + innerPadding + (WRAPPER_PADDING * 2) + (CAMERA_PADDING * 2);
+	return (
+		game.levelWidth * CELL_SIZE -
+		GAP_SIZE +
+		innerPadding +
+		WRAPPER_PADDING * 2 +
+		CAMERA_PADDING * 2
+	);
 });
 
 // Check if camera panning is needed for each axis
@@ -65,7 +77,8 @@ const cameraOffset = computed(() => {
 	// Vertical panning
 	if (needsVerticalPanning.value) {
 		const playerY = game.playerPosition.value.y;
-		const playerPixelY = playerY * CELL_SIZE + TILE_SIZE / 2 + WRAPPER_PADDING + CAMERA_PADDING;
+		const playerPixelY =
+			playerY * CELL_SIZE + TILE_SIZE / 2 + WRAPPER_PADDING + CAMERA_PADDING;
 
 		// Keep player centered vertically in viewport
 		const targetOffsetY = playerPixelY - viewportHeight.value / 2;
@@ -78,7 +91,8 @@ const cameraOffset = computed(() => {
 	// Horizontal panning
 	if (needsHorizontalPanning.value) {
 		const playerX = game.playerPosition.value.x;
-		const playerPixelX = playerX * CELL_SIZE + TILE_SIZE / 2 + WRAPPER_PADDING + CAMERA_PADDING;
+		const playerPixelX =
+			playerX * CELL_SIZE + TILE_SIZE / 2 + WRAPPER_PADDING + CAMERA_PADDING;
 
 		// Keep player centered horizontally in viewport
 		const targetOffsetX = playerPixelX - viewportWidth.value / 2;
@@ -94,8 +108,12 @@ const cameraOffset = computed(() => {
 const boardTransform = computed(() => {
 	if (!needsPanning.value) return {};
 
-	const translateX = needsHorizontalPanning.value ? cameraOffset.value.x + CAMERA_PADDING : 0;
-	const translateY = needsVerticalPanning.value ? cameraOffset.value.y + CAMERA_PADDING : 0;
+	const translateX = needsHorizontalPanning.value
+		? cameraOffset.value.x + CAMERA_PADDING
+		: 0;
+	const translateY = needsVerticalPanning.value
+		? cameraOffset.value.y + CAMERA_PADDING
+		: 0;
 
 	return {
 		transform: `translate3d(${translateX}px, ${translateY}px, 0)`,
@@ -370,9 +388,10 @@ onUnmounted(() => {
 	game.cleanupIdleTimer();
 });
 
-// Expose undo functionality for parent component
+// Expose undo functionality and stuck state for parent component
 defineExpose({
 	canUndo: game.canUndo,
+	isStuck: game.isStuck,
 	undo: () => {
 		if (game.canUndo.value) {
 			playUndo();

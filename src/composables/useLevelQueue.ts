@@ -1,6 +1,6 @@
-import { ref, type Ref } from "vue";
-import type { Level, WorldElement } from "../types/game";
+import { type Ref, ref } from "vue";
 import { level1 } from "../data/levels";
+import type { Level, WorldElement } from "../types/game";
 import { generateLevel } from "../utils/levelGenerator";
 
 const QUEUE_SIZE = 3; // Number of levels to keep pre-generated

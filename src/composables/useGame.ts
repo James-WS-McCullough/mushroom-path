@@ -1,7 +1,25 @@
 import { computed, ref } from "vue";
-import type { Direction, FlowDirection, Level, Position, PortalType, Tile } from "../types/game";
+import type {
+	Direction,
+	FlowDirection,
+	Level,
+	PortalType,
+	Position,
+	Tile,
+} from "../types/game";
 import { PortalTypes, TileType } from "../types/game";
-import { playJump, playLand, playRandomDirt, playRandomPop, playShovelDirt, playStone, playTeleportPoof, playWater, startIceSlide, stopIceSlide } from "./useSound";
+import {
+	playJump,
+	playLand,
+	playRandomDirt,
+	playRandomPop,
+	playShovelDirt,
+	playStone,
+	playTeleportPoof,
+	playWater,
+	startIceSlide,
+	stopIceSlide,
+} from "./useSound";
 
 interface ChangedTile {
 	position: Position;
@@ -98,14 +116,24 @@ export function useGame(level: Level) {
 		const tile = getTile(position);
 		if (!tile) return false;
 		// Can land on grass, stone, water, dirt, ice, or portal tiles
-		return tile.type === TileType.GRASS || tile.type === TileType.STONE || tile.type === TileType.WATER || tile.type === TileType.DIRT || tile.type === TileType.ICE || isPortalTile(tile.type);
+		return (
+			tile.type === TileType.GRASS ||
+			tile.type === TileType.STONE ||
+			tile.type === TileType.WATER ||
+			tile.type === TileType.DIRT ||
+			tile.type === TileType.ICE ||
+			isPortalTile(tile.type)
+		);
 	}
 
 	function isPortalTile(tileType: TileType): tileType is PortalType {
 		return (PortalTypes as readonly TileType[]).includes(tileType);
 	}
 
-	function findMatchingPortal(portalType: PortalType, currentPosition: Position): Position | null {
+	function findMatchingPortal(
+		portalType: PortalType,
+		currentPosition: Position,
+	): Position | null {
 		// Find the other portal of the same type
 		for (let y = 0; y < tiles.value.length; y++) {
 			const row = tiles.value[y];
@@ -113,7 +141,10 @@ export function useGame(level: Level) {
 			for (let x = 0; x < row.length; x++) {
 				const tile = row[x];
 				if (!tile) continue;
-				if (tile.type === portalType && (x !== currentPosition.x || y !== currentPosition.y)) {
+				if (
+					tile.type === portalType &&
+					(x !== currentPosition.x || y !== currentPosition.y)
+				) {
 					return { x, y };
 				}
 			}
@@ -151,7 +182,10 @@ export function useGame(level: Level) {
 		return waterFlow[key] ?? null;
 	}
 
-	function computeSlideDestination(startPos: Position): { destination: Position; path: Position[] } {
+	function computeSlideDestination(startPos: Position): {
+		destination: Position;
+		path: Position[];
+	} {
 		const path: Position[] = [startPos];
 		let current = startPos;
 
@@ -189,7 +223,10 @@ export function useGame(level: Level) {
 		return { destination: current, path };
 	}
 
-	function computeIceSlideDestination(startPos: Position, direction: Direction): { destination: Position; path: Position[] } {
+	function computeIceSlideDestination(
+		startPos: Position,
+		direction: Direction,
+	): { destination: Position; path: Position[] } {
 		const path: Position[] = [startPos];
 		const delta = getDirectionDelta(direction);
 		let current = startPos;
@@ -204,7 +241,11 @@ export function useGame(level: Level) {
 			}
 
 			// Stop if we hit an obstacle (bramble, mushroom) or void
-			if (nextTile.type === TileType.BRAMBLE || nextTile.type === TileType.MUSHROOM || nextTile.type === TileType.VOID) {
+			if (
+				nextTile.type === TileType.BRAMBLE ||
+				nextTile.type === TileType.MUSHROOM ||
+				nextTile.type === TileType.VOID
+			) {
 				break;
 			}
 
@@ -381,7 +422,10 @@ export function useGame(level: Level) {
 			}, 200);
 		} else if (landingTile?.type === TileType.ICE) {
 			// Ice sliding - slide in the direction of movement
-			const { path, destination } = computeIceSlideDestination(newPosition, direction);
+			const { path, destination } = computeIceSlideDestination(
+				newPosition,
+				direction,
+			);
 			slidePath.value = path;
 			playerPosition.value = newPosition;
 
@@ -431,7 +475,10 @@ export function useGame(level: Level) {
 						} else if (finalTile && isPortalTile(finalTile.type)) {
 							// Chain into portal teleportation
 							const portalType = finalTile.type as PortalType;
-							const matchingPortal = findMatchingPortal(portalType, destination);
+							const matchingPortal = findMatchingPortal(
+								portalType,
+								destination,
+							);
 							if (matchingPortal) {
 								// Start shrinking
 								isTeleporting.value = true;
@@ -665,7 +712,10 @@ export function useGame(level: Level) {
 			}, 200);
 		} else if (landingTile?.type === TileType.ICE) {
 			// Ice sliding - slide in the direction of movement
-			const { path, destination } = computeIceSlideDestination(target, direction);
+			const { path, destination } = computeIceSlideDestination(
+				target,
+				direction,
+			);
 			slidePath.value = path;
 			playerPosition.value = target;
 
@@ -715,7 +765,10 @@ export function useGame(level: Level) {
 						} else if (finalTile && isPortalTile(finalTile.type)) {
 							// Chain into portal teleportation
 							const portalType = finalTile.type as PortalType;
-							const matchingPortal = findMatchingPortal(portalType, destination);
+							const matchingPortal = findMatchingPortal(
+								portalType,
+								destination,
+							);
 							if (matchingPortal) {
 								// Start shrinking
 								isTeleporting.value = true;

@@ -4,6 +4,7 @@ import { ref } from "vue";
 const emit = defineEmits<{
 	begin: [];
 	openMusicPlayer: [];
+	startTutorial: [];
 }>();
 
 const isLeaving = ref(false);
@@ -12,6 +13,12 @@ function handleBegin() {
 	if (isLeaving.value) return;
 	isLeaving.value = true;
 	setTimeout(() => emit("begin"), 600);
+}
+
+function handleTutorial() {
+	if (isLeaving.value) return;
+	isLeaving.value = true;
+	setTimeout(() => emit("startTutorial"), 600);
 }
 </script>
 
@@ -43,10 +50,15 @@ function handleBegin() {
         <span class="begin-text">Begin</span>
       </button>
 
-      <button class="music-button" @click="emit('openMusicPlayer')">
-        <span class="music-icon">♪</span>
-        <span class="music-text">Music Player</span>
-      </button>
+      <div class="secondary-buttons">
+        <button class="secondary-button" @click="handleTutorial">
+          <span class="secondary-text">Tutorial</span>
+        </button>
+        <button class="secondary-button" @click="emit('openMusicPlayer')">
+          <span class="music-icon">♪</span>
+          <span class="secondary-text">Music</span>
+        </button>
+      </div>
     </div>
 
     <!-- Ground decoration (outside animated content, fixed at bottom) -->
@@ -318,30 +330,35 @@ function handleBegin() {
   letter-spacing: 2px;
 }
 
-.music-button {
+.secondary-buttons {
+  display: flex;
+  gap: 12px;
   margin-top: 16px;
-  padding: 10px 24px;
+}
+
+.secondary-button {
+  padding: 10px 20px;
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 8px;
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   transition: background 0.2s ease, border-color 0.2s ease;
 }
 
-.music-button:hover {
+.secondary-button:hover {
   background: rgba(255, 255, 255, 0.2);
   border-color: rgba(255, 255, 255, 0.3);
 }
 
 .music-icon {
-  font-size: 16px;
+  font-size: 14px;
   color: #c8d4b8;
 }
 
-.music-text {
+.secondary-text {
   font-family: 'Georgia', serif;
   font-size: 14px;
   color: #c8d4b8;

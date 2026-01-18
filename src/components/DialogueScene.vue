@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue";
-import DialogueBox from "./DialogueBox.vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import type { DialogueLine, DialogueScene } from "../data/dialogues";
+import DialogueBox from "./DialogueBox.vue";
 
 const props = defineProps<{
 	scene: DialogueScene;
@@ -22,10 +22,16 @@ const currentLine = computed(() => {
 	return props.scene.lines[currentLineIndex.value] as DialogueLine;
 });
 
-const isLastLine = computed(() => currentLineIndex.value === props.scene.lines.length - 1);
+const isLastLine = computed(
+	() => currentLineIndex.value === props.scene.lines.length - 1,
+);
 
-const leftSpriteUrl = computed(() => `/art/DialogueSprites/${currentLine.value.leftSprite}.webp`);
-const rightSpriteUrl = computed(() => `/art/DialogueSprites/${currentLine.value.rightSprite}.webp`);
+const leftSpriteUrl = computed(
+	() => `/art/DialogueSprites/${currentLine.value.leftSprite}.webp`,
+);
+const rightSpriteUrl = computed(
+	() => `/art/DialogueSprites/${currentLine.value.rightSprite}.webp`,
+);
 
 function handleTextComplete() {
 	isTextComplete.value = true;

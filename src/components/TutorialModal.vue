@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { playTutorialAppears, playVoiceTutorial } from "../composables/useSound";
+import {
+	playTutorialAppears,
+	playVoiceTutorial,
+} from "../composables/useSound";
 
 const emit = defineEmits<{
 	close: [];

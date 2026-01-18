@@ -3,6 +3,7 @@ import { computed, ref, watch } from "vue";
 import BottomBar from "./components/BottomBar.vue";
 import CustomWorldModal from "./components/CustomWorldModal.vue";
 import DialogueScene from "./components/DialogueScene.vue";
+import FirstTimeModal from "./components/FirstTimeModal.vue";
 import GameBoard from "./components/GameBoard.vue";
 import MusicPlayer from "./components/MusicPlayer.vue";
 import StartScreen from "./components/StartScreen.vue";
@@ -10,10 +11,30 @@ import TopBar from "./components/TopBar.vue";
 import TutorialModal from "./components/TutorialModal.vue";
 import WelcomeSign from "./components/WelcomeSign.vue";
 import { getLevelQueue } from "./composables/useLevelQueue";
-import { changeWorldBGM, initializeAudio, playSuccess, playUndo, playVoiceSuccess, startBackgroundMusic } from "./composables/useSound";
-import { adventureScenes, introDialogue, mechanicDialogues, worldEndDialogues } from "./data/dialogues";
+import {
+	changeWorldBGM,
+	initializeAudio,
+	playSuccess,
+	playUndo,
+	playVoiceSuccess,
+	startBackgroundMusic,
+	startTutorialMusic,
+	switchToTutorialMusic,
+} from "./composables/useSound";
 import type { DialogueScene as DialogueSceneType } from "./data/dialogues";
+import {
+	adventureScenes,
+	introDialogue,
+	mechanicDialogues,
+	worldEndDialogues,
+} from "./data/dialogues";
 import { level1 } from "./data/levels";
+import {
+	tutorialGoodbye,
+	tutorialIntroDialogues,
+	tutorialStuckDialogues,
+} from "./data/tutorialDialogues";
+import { tutorialLevels } from "./data/tutorialLevels";
 import type { Level, WorldElement } from "./types/game";
 import { WorldElement as WE } from "./types/game";
 
@@ -101,6 +122,18 @@ const currentDialogue = ref<DialogueSceneType | null>(null);
 const hasSeenIntro = localStorage.getItem("mushroom-path-intro-seen");
 const isFading = ref(false);
 
+// Tutorial world state
+const showFirstTimeModal = ref(false);
+const isInTutorial = ref(false);
+const tutorialPuzzleIndex = ref(0);
+const tutorialStuckShown = ref<boolean[]>([false, false, false, false, false]);
+const hasTutorialComplete = localStorage.getItem(
+	"mushroom-path-tutorial-complete",
+);
+const hasFirstTimeAsked = localStorage.getItem(
+	"mushroom-path-first-time-asked",
+);
+
 // Mechanic intro tracking
 function hasSeenMechanic(mechanic: string): boolean {
 	return localStorage.getItem(`mushroom-path-mechanic-${mechanic}`) === "true";
@@ -116,11 +149,16 @@ const pendingMechanicDialogues = ref<DialogueSceneType[]>([]);
 // Map WorldElement to mechanic key for dialogue lookup
 function getMechanicKey(element: WorldElement): string {
 	switch (element) {
-		case WE.ICE: return "ice";
-		case WE.DIRT: return "dirt";
-		case WE.RIVERS: return "rivers";
-		case WE.FAIRY: return "fairy";
-		default: return "";
+		case WE.ICE:
+			return "ice";
+		case WE.DIRT:
+			return "dirt";
+		case WE.RIVERS:
+			return "rivers";
+		case WE.FAIRY:
+			return "fairy";
+		default:
+			return "";
 	}
 }
 
@@ -163,32 +201,44 @@ const swampNameOffset = Math.floor(Math.random() * swampWorldNames.length);
 const allElements: WorldElement[] = [WE.RIVERS, WE.DIRT, WE.ICE, WE.FAIRY];
 
 // Update body class based on current biome (ice takes priority)
-watch(currentWorldElements, (elements) => {
-	document.body.classList.remove("biome-ice", "biome-swamp");
-	if (elements.includes(WE.ICE)) {
-		document.body.classList.add("biome-ice");
-	} else if (elements.includes(WE.DIRT)) {
-		document.body.classList.add("biome-swamp");
-	}
-}, { immediate: true });
+watch(
+	currentWorldElements,
+	(elements) => {
+		document.body.classList.remove("biome-ice", "biome-swamp");
+		if (elements.includes(WE.ICE)) {
+			document.body.classList.add("biome-ice");
+		} else if (elements.includes(WE.DIRT)) {
+			document.body.classList.add("biome-swamp");
+		}
+	},
+	{ immediate: true },
+);
 
 function generateWorldElements(): WorldElement[] {
-	// Randomly select 0, 1, or 2 elements
-	const elementCount = Math.floor(Math.random() * 3); // 0, 1, or 2
+	// World 2 (index 1) should have at most 1 element - we just met Dew!
+	const maxElements = currentWorldIndex.value === 1 ? 1 : 2;
+
+	// Randomly select 0 to maxElements
+	const elementCount = Math.floor(Math.random() * (maxElements + 1));
 
 	if (elementCount === 0) {
 		return [];
 	}
 
 	// Separate elements into seen and unseen
-	const seenElements = allElements.filter(el => hasSeenMechanic(getMechanicKey(el)));
-	const unseenElements = allElements.filter(el => !hasSeenMechanic(getMechanicKey(el)));
+	const seenElements = allElements.filter((el) =>
+		hasSeenMechanic(getMechanicKey(el)),
+	);
+	const unseenElements = allElements.filter(
+		(el) => !hasSeenMechanic(getMechanicKey(el)),
+	);
 
 	const result: WorldElement[] = [];
 
 	// Add at most ONE unseen element (to introduce one mechanic at a time)
 	if (unseenElements.length > 0 && elementCount > 0) {
-		const randomUnseen = unseenElements[Math.floor(Math.random() * unseenElements.length)]!;
+		const randomUnseen =
+			unseenElements[Math.floor(Math.random() * unseenElements.length)]!;
 		result.push(randomUnseen);
 	}
 
@@ -205,18 +255,26 @@ function generateWorldElements(): WorldElement[] {
 const currentWorldName = computed(() => {
 	// Select name list based on biome (ice takes priority)
 	if (currentWorldElements.value.includes(WE.ICE)) {
-		const index = (currentWorldIndex.value + iceNameOffset) % iceWorldNames.length;
+		const index =
+			(currentWorldIndex.value + iceNameOffset) % iceWorldNames.length;
 		return iceWorldNames[index] ?? "Frozen Fungi";
 	} else if (currentWorldElements.value.includes(WE.DIRT)) {
-		const index = (currentWorldIndex.value + swampNameOffset) % swampWorldNames.length;
+		const index =
+			(currentWorldIndex.value + swampNameOffset) % swampWorldNames.length;
 		return swampWorldNames[index] ?? "Murky Marsh";
 	} else {
-		const index = (currentWorldIndex.value + forestNameOffset) % forestWorldNames.length;
+		const index =
+			(currentWorldIndex.value + forestNameOffset) % forestWorldNames.length;
 		return forestWorldNames[index] ?? "Mushroom Garden";
 	}
 });
 
 const displayName = computed(() => {
+	// Show tutorial level name when in tutorial mode
+	if (isInTutorial.value) {
+		const tutorialLevel = tutorialLevels[tutorialPuzzleIndex.value];
+		return tutorialLevel?.name ?? "Tutorial";
+	}
 	return `${currentWorldName.value} - ${currentLevelNumber.value}`;
 });
 
@@ -245,6 +303,12 @@ const pendingWorldDialogue = ref<DialogueSceneType | null>(null);
 const showWelcomeAfterDialogue = ref(false);
 
 function handleWin() {
+	// Use tutorial-specific handler when in tutorial mode
+	if (isInTutorial.value) {
+		handleTutorialWin();
+		return;
+	}
+
 	playSuccess();
 	// 20% chance to play a voice line
 	if (Math.random() < 0.2) {
@@ -263,7 +327,8 @@ function handleWin() {
 			pendingWorldDialogue.value = worldDialogue;
 		} else if (currentWorldIndex.value > 0 && adventureScenes.length > 0) {
 			// After meeting Dew, play random adventure scenes
-			const randomScene = adventureScenes[Math.floor(Math.random() * adventureScenes.length)]!;
+			const randomScene =
+				adventureScenes[Math.floor(Math.random() * adventureScenes.length)]!;
 			pendingWorldDialogue.value = randomScene;
 		}
 	}
@@ -345,6 +410,8 @@ function randomizeWinMushrooms() {
 
 function handleSkip() {
 	if (isFading.value) return;
+	// Don't allow skipping during tutorial
+	if (isInTutorial.value) return;
 	isFading.value = true;
 	skipModalText.value = "Level Skipped";
 	randomizeWinMushrooms();
@@ -357,7 +424,8 @@ function handleSkip() {
 		if (worldDialogue) {
 			pendingWorldDialogue.value = worldDialogue;
 		} else if (currentWorldIndex.value > 0 && adventureScenes.length > 0) {
-			const randomScene = adventureScenes[Math.floor(Math.random() * adventureScenes.length)]!;
+			const randomScene =
+				adventureScenes[Math.floor(Math.random() * adventureScenes.length)]!;
 			pendingWorldDialogue.value = randomScene;
 		}
 	}
@@ -422,15 +490,8 @@ async function startGame() {
 	isLoading.value = false;
 	loadingMessage.value = "";
 
-	// Show tutorial on first visit
-	const hasSeenTutorial = localStorage.getItem("mushroom-path-tutorial-seen");
-	if (!hasSeenTutorial) {
-		isInitialTutorial.value = true;
-		showTutorial.value = true;
-	} else {
-		// Show welcome sign for first world if tutorial already seen
-		showWelcomeSign.value = true;
-	}
+	// Show welcome sign for first world
+	showWelcomeSign.value = true;
 }
 
 function closeTutorial() {
@@ -487,7 +548,49 @@ async function handleDialogueComplete() {
 
 	if (dialogueId === "intro") {
 		localStorage.setItem("mushroom-path-intro-seen", "true");
-		await startGame();
+		// Show first-time modal unless already asked or tutorial complete
+		if (!hasFirstTimeAsked && !hasTutorialComplete) {
+			showFirstTimeModal.value = true;
+		} else {
+			await startGame();
+		}
+	} else if (dialogueId?.startsWith("tutorial-intro-")) {
+		// Tutorial intro dialogue finished, player can now play the puzzle
+		// Game is already loaded, just let them play
+	} else if (dialogueId === "tutorial-goodbye") {
+		// Tutorial complete, mark as done and transition to regular game
+		localStorage.setItem("mushroom-path-tutorial-complete", "true");
+		isInTutorial.value = false;
+
+		// Fade transition to first world
+		isFading.value = true;
+		isBlack.value = true;
+
+		// Change to a new random BGM for the first world
+		changeWorldBGM();
+
+		setTimeout(async () => {
+			// Reset world state for fresh start
+			currentWorldIndex.value = 0;
+			currentLevelNumber.value = 1;
+			currentWorldElements.value = [];
+			levelQueue.setWorldElements([]);
+
+			// Generate first level
+			currentLevel.value = getNewLevel();
+			levelKey.value++;
+
+			// Fade back in
+			setTimeout(() => {
+				isBlack.value = false;
+				setTimeout(() => {
+					isFading.value = false;
+					showWelcomeSign.value = true;
+				}, 500);
+			}, 200);
+		}, 500);
+	} else if (dialogueId?.startsWith("tutorial-stuck-")) {
+		// Stuck dialogue finished, let player continue
 	} else if (showWelcomeAfterDialogue.value) {
 		// World-end dialogue finished, show welcome sign
 		showWelcomeAfterDialogue.value = false;
@@ -498,6 +601,134 @@ async function handleDialogueComplete() {
 	}
 	// Otherwise dialogue was skipped or no follow-up needed
 }
+
+// First-time modal handlers
+async function handleFirstTimeChoice(choice: "yes" | "no") {
+	showFirstTimeModal.value = false;
+	localStorage.setItem("mushroom-path-first-time-asked", "true");
+
+	if (choice === "yes") {
+		// Switch to tutorial music (Dewdrop Dawn)
+		switchToTutorialMusic();
+		await startTutorialMode();
+	} else {
+		await startGame();
+	}
+}
+
+async function startTutorialMode() {
+	isInTutorial.value = true;
+	tutorialPuzzleIndex.value = 0;
+	tutorialStuckShown.value = [false, false, false, false, false];
+
+	// Load the first tutorial level
+	const firstLevel = tutorialLevels[0];
+	if (firstLevel) {
+		currentLevel.value = firstLevel;
+		gameStarted.value = true;
+		levelKey.value++;
+
+		// Show the first tutorial intro dialogue
+		const introDialogue = tutorialIntroDialogues[0];
+		if (introDialogue) {
+			currentDialogue.value = introDialogue;
+		}
+	}
+}
+
+// Handler for starting tutorial directly from start screen
+async function handleStartTutorial() {
+	// Initialize audio system
+	isLoading.value = true;
+	loadingMessage.value = "Loading audio...";
+	await new Promise((resolve) => setTimeout(resolve, 50));
+
+	initializeAudio();
+	startTutorialMusic(); // Use Dewdrop Dawn for tutorial
+
+	isLoading.value = false;
+	loadingMessage.value = "";
+
+	// Start the tutorial
+	await startTutorialMode();
+}
+
+function handleTutorialWin() {
+	playSuccess();
+	skipModalText.value = "Garden Complete!";
+	randomizeWinMushrooms();
+	showWinModal.value = true;
+
+	// After showing the modal briefly, advance to next puzzle or finish
+	setTimeout(() => {
+		showWinModal.value = false;
+		isFading.value = true;
+		isBlack.value = true;
+
+		setTimeout(() => {
+			tutorialPuzzleIndex.value++;
+
+			if (tutorialPuzzleIndex.value >= tutorialLevels.length) {
+				// Finished all tutorial puzzles - show goodbye dialogue
+				isBlack.value = false;
+				setTimeout(() => {
+					isFading.value = false;
+					currentDialogue.value = tutorialGoodbye;
+				}, 500);
+			} else {
+				// Load next tutorial level
+				const nextLevel = tutorialLevels[tutorialPuzzleIndex.value];
+				if (nextLevel) {
+					currentLevel.value = nextLevel;
+					levelKey.value++;
+				}
+
+				// Fade back in
+				setTimeout(() => {
+					isBlack.value = false;
+					setTimeout(() => {
+						isFading.value = false;
+						// Show intro dialogue for this puzzle
+						const nextIntro = tutorialIntroDialogues[tutorialPuzzleIndex.value];
+						if (nextIntro) {
+							currentDialogue.value = nextIntro;
+						}
+					}, 500);
+				}, 200);
+			}
+		}, 500);
+	}, 1500);
+}
+
+// Computed to get isStuck value from GameBoard
+const isPlayerStuck = computed(() => {
+	const gameBoard = gameBoardRef.value;
+	if (!gameBoard) return false;
+	// Access isStuck - TypeScript thinks it's a boolean but it's actually a ComputedRef
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const isStuckRef = (gameBoard as any).isStuck;
+	if (typeof isStuckRef === "boolean") return isStuckRef;
+	return isStuckRef?.value ?? false;
+});
+
+// Watch for stuck state in tutorial mode to show stuck dialogues
+watch(isPlayerStuck, (isStuck) => {
+	if (!isInTutorial.value || !isStuck) return;
+	if (currentDialogue.value) return; // Already showing a dialogue
+	if (isFading.value) return; // Don't show during transitions
+
+	const puzzleIndex = tutorialPuzzleIndex.value;
+	if (puzzleIndex >= 0 && puzzleIndex < tutorialStuckShown.value.length) {
+		// Only show stuck dialogue once per puzzle
+		if (!tutorialStuckShown.value[puzzleIndex]) {
+			tutorialStuckShown.value[puzzleIndex] = true;
+			const stuckDialogue = tutorialStuckDialogues[puzzleIndex];
+			if (stuckDialogue) {
+				currentDialogue.value = stuckDialogue;
+			}
+		}
+	}
+});
 </script>
 
 <template>
@@ -514,7 +745,7 @@ async function handleDialogueComplete() {
   </Transition>
 
   <!-- Start Screen -->
-  <StartScreen v-if="!gameStarted && !showMusicPlayer && !currentDialogue" @begin="handleBegin" @open-music-player="showMusicPlayer = true" />
+  <StartScreen v-if="!gameStarted && !showMusicPlayer && !currentDialogue" @begin="handleBegin" @open-music-player="showMusicPlayer = true" @start-tutorial="handleStartTutorial" />
 
   <!-- Music Player -->
   <MusicPlayer v-if="showMusicPlayer && !currentDialogue" @close="showMusicPlayer = false" />
@@ -526,6 +757,11 @@ async function handleDialogueComplete() {
       <p class="loading-text">{{ loadingMessage }}</p>
     </div>
   </div>
+
+  <!-- First Time Modal (shown after intro dialogue for new players) -->
+  <Transition name="modal">
+    <FirstTimeModal v-if="showFirstTimeModal" @choose="handleFirstTimeChoice" />
+  </Transition>
 
   <!-- Game (stays visible for overlay dialogues) -->
   <div v-if="gameStarted && (!currentDialogue || currentDialogue.overlay)" class="layout">

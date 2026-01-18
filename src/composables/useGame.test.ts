@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { useGame } from "./useGame";
-import { TileType } from "../types/game";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FlowDirection, Level } from "../types/game";
+import { TileType } from "../types/game";
+import { useGame } from "./useGame";
 
 // Helper to create a simple test level
 function createTestLevel(

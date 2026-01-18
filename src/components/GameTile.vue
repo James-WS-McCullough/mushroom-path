@@ -21,14 +21,18 @@ const emit = defineEmits<{
 
 // Check if tile is a portal type
 const isPortal = computed(() => {
-	return props.tile.type === TileType.PORTAL_PINK ||
+	return (
+		props.tile.type === TileType.PORTAL_PINK ||
 		props.tile.type === TileType.PORTAL_BLUE ||
-		props.tile.type === TileType.PORTAL_YELLOW;
+		props.tile.type === TileType.PORTAL_YELLOW
+	);
 });
 
 const tileClass = computed(() => {
 	// Shimmer applies to grass and dirt tiles when hints are active and player is not here
-	const canShimmer = props.shouldShimmer && !props.isPlayerHere &&
+	const canShimmer =
+		props.shouldShimmer &&
+		!props.isPlayerHere &&
 		(props.tile.type === TileType.GRASS || props.tile.type === TileType.DIRT);
 
 	return {
@@ -51,22 +55,38 @@ const tileClass = computed(() => {
 		"tile--shimmer": canShimmer,
 		// Ice biome takes priority over swamp
 		"tile--frosty": props.hasIceElement && props.tile.type === TileType.GRASS,
-		"tile--frosty-mushroom": props.hasIceElement && props.tile.type === TileType.MUSHROOM,
-		"tile--frosty-dirt": props.hasIceElement && props.tile.type === TileType.DIRT,
-		"tile--swamp": !props.hasIceElement && props.hasDirtElement && props.tile.type === TileType.GRASS,
-		"tile--swamp-mushroom": !props.hasIceElement && props.hasDirtElement && props.tile.type === TileType.MUSHROOM,
-		"tile--swamp-dirt": !props.hasIceElement && props.hasDirtElement && props.tile.type === TileType.DIRT,
+		"tile--frosty-mushroom":
+			props.hasIceElement && props.tile.type === TileType.MUSHROOM,
+		"tile--frosty-dirt":
+			props.hasIceElement && props.tile.type === TileType.DIRT,
+		"tile--swamp":
+			!props.hasIceElement &&
+			props.hasDirtElement &&
+			props.tile.type === TileType.GRASS,
+		"tile--swamp-mushroom":
+			!props.hasIceElement &&
+			props.hasDirtElement &&
+			props.tile.type === TileType.MUSHROOM,
+		"tile--swamp-dirt":
+			!props.hasIceElement &&
+			props.hasDirtElement &&
+			props.tile.type === TileType.DIRT,
 	};
 });
 
 const arrowRotation = computed(() => {
 	// Chevrons point down at 0deg, so rotate to match flow direction
 	switch (props.flowDirection) {
-		case "down": return "0deg";
-		case "left": return "90deg";
-		case "up": return "180deg";
-		case "right": return "270deg";
-		default: return "0deg";
+		case "down":
+			return "0deg";
+		case "left":
+			return "90deg";
+		case "up":
+			return "180deg";
+		case "right":
+			return "270deg";
+		default:
+			return "0deg";
 	}
 });
 

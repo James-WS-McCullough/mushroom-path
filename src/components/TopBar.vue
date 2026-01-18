@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import { isMusicMuted, isSfxMuted, toggleMusicMute, toggleSfxMute } from "../composables/useSound";
+import {
+	isMusicMuted,
+	isSfxMuted,
+	toggleMusicMute,
+	toggleSfxMute,
+} from "../composables/useSound";
 import type { WorldElement } from "../types/game";
 import { WorldElement as WE } from "../types/game";
 

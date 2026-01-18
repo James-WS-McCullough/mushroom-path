@@ -321,6 +321,27 @@ export function startBackgroundMusic(): void {
 	});
 }
 
+// Start with a specific track (used for tutorial)
+export function startTutorialMusic(): void {
+	if (musicStarted) return;
+	musicStarted = true;
+
+	// Use Dewdrop Dawn (BGM 01) for tutorial
+	const tutorialTrack = "/music/BGM 01.mp3";
+
+	currentBgm = new Audio(tutorialTrack);
+	currentBgm.loop = true;
+	currentBgm.volume = BGM_VOLUME;
+	currentBgm.muted = isMusicMuted.value;
+
+	currentBgm.play().catch(() => {
+		musicStarted = false;
+	});
+
+	// Pre-shuffle playlist for when we transition out of tutorial
+	shufflePlaylist();
+}
+
 export async function changeWorldBGM(): Promise<void> {
 	if (!musicStarted) return;
 
@@ -331,6 +352,22 @@ export async function changeWorldBGM(): Promise<void> {
 	}
 
 	currentBgm = new Audio(nextTrack);
+	currentBgm.loop = true;
+	currentBgm.muted = isMusicMuted.value;
+	fadeInAudio(currentBgm, BGM_VOLUME, FADE_DURATION);
+}
+
+// Switch to tutorial music (Dewdrop Dawn)
+export async function switchToTutorialMusic(): Promise<void> {
+	if (!musicStarted) return;
+
+	const tutorialTrack = "/music/BGM 01.mp3";
+
+	if (currentBgm) {
+		await fadeOutAudio(currentBgm, FADE_DURATION);
+	}
+
+	currentBgm = new Audio(tutorialTrack);
 	currentBgm.loop = true;
 	currentBgm.muted = isMusicMuted.value;
 	fadeInAudio(currentBgm, BGM_VOLUME, FADE_DURATION);

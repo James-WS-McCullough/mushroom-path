@@ -57,7 +57,11 @@ function isGrassConnected(level: Level): boolean {
 				waterTiles.push({ x, y });
 			} else if (tile === TileType.ICE) {
 				iceTiles.push({ x, y });
-			} else if (tile === TileType.PORTAL_PINK || tile === TileType.PORTAL_BLUE || tile === TileType.PORTAL_YELLOW) {
+			} else if (
+				tile === TileType.PORTAL_PINK ||
+				tile === TileType.PORTAL_BLUE ||
+				tile === TileType.PORTAL_YELLOW
+			) {
 				portalTiles.push({ x, y });
 			}
 		}
@@ -76,7 +80,13 @@ function isGrassConnected(level: Level): boolean {
 	const waterSet = new Set(waterTiles.map((t) => posKey(t.x, t.y)));
 	const iceSet = new Set(iceTiles.map((t) => posKey(t.x, t.y)));
 	const portalSet = new Set(portalTiles.map((t) => posKey(t.x, t.y)));
-	const walkableSet = new Set([...grassSet, ...stoneSet, ...waterSet, ...iceSet, ...portalSet]);
+	const walkableSet = new Set([
+		...grassSet,
+		...stoneSet,
+		...waterSet,
+		...iceSet,
+		...portalSet,
+	]);
 	const brambleSet = new Set<string>();
 
 	for (let y = 0; y < level.height; y++) {
@@ -116,7 +126,11 @@ function isGrassConnected(level: Level): boolean {
 				queue.push({ x: current.x + dx, y: current.y + dy });
 			}
 			// Jump over bramble to walkable tile
-			else if (brambleSet.has(adjKey) && walkableSet.has(jumpKey) && !visited.has(jumpKey)) {
+			else if (
+				brambleSet.has(adjKey) &&
+				walkableSet.has(jumpKey) &&
+				!visited.has(jumpKey)
+			) {
 				queue.push({ x: current.x + dx * 2, y: current.y + dy * 2 });
 			}
 		}
@@ -171,7 +185,11 @@ describe("levelGenerator", () => {
 			expect(level).not.toBeNull();
 			if (!level) return;
 
-			const startTile = getTile(level, level.startPosition.x, level.startPosition.y);
+			const startTile = getTile(
+				level,
+				level.startPosition.x,
+				level.startPosition.y,
+			);
 			expect(startTile).toBe(TileType.GRASS);
 		});
 
@@ -191,7 +209,16 @@ describe("levelGenerator", () => {
 			expect(level).not.toBeNull();
 			if (!level) return;
 
-			const validTypes = [TileType.GRASS, TileType.BRAMBLE, TileType.VOID, TileType.MUSHROOM, TileType.STONE, TileType.WATER, TileType.DIRT, TileType.ICE];
+			const validTypes = [
+				TileType.GRASS,
+				TileType.BRAMBLE,
+				TileType.VOID,
+				TileType.MUSHROOM,
+				TileType.STONE,
+				TileType.WATER,
+				TileType.DIRT,
+				TileType.ICE,
+			];
 			for (const row of level.grid) {
 				for (const tile of row) {
 					expect(validTypes).toContain(tile);
@@ -215,9 +242,7 @@ describe("levelGenerator", () => {
 			}
 
 			// At least some levels should be different
-			const uniqueGrids = new Set(
-				levels.map((l) => JSON.stringify(l.grid)),
-			);
+			const uniqueGrids = new Set(levels.map((l) => JSON.stringify(l.grid)));
 			expect(uniqueGrids.size).toBeGreaterThan(1);
 		}, 15000);
 
@@ -306,7 +331,10 @@ describe("levelGenerator", () => {
 							if (adjTile === TileType.BRAMBLE) {
 								const jumpX = adj.x + (adj.x - x);
 								const jumpY = adj.y + (adj.y - y);
-								if (isInBounds(level, jumpX, jumpY) && getTile(level, jumpX, jumpY) === TileType.GRASS) {
+								if (
+									isInBounds(level, jumpX, jumpY) &&
+									getTile(level, jumpX, jumpY) === TileType.GRASS
+								) {
 									hasPath = true;
 									break;
 								}
@@ -331,7 +359,9 @@ describe("levelGenerator", () => {
 				expect(level).not.toBeNull();
 				if (!level) continue;
 
-				expect(getTile(level, level.startPosition.x, level.startPosition.y)).toBe(TileType.GRASS);
+				expect(
+					getTile(level, level.startPosition.x, level.startPosition.y),
+				).toBe(TileType.GRASS);
 				// Count grass + dirt tiles (dirt tiles are walkable and need to be visited)
 				const grassCount = countTiles(level, TileType.GRASS);
 				const dirtCount = countTiles(level, TileType.DIRT);
@@ -439,7 +469,11 @@ describe("levelGenerator", () => {
 				const level = generateLevel({ stoneChance: 0.15, riverChance: 0 });
 				if (!level) continue;
 
-				const startTile = getTile(level, level.startPosition.x, level.startPosition.y);
+				const startTile = getTile(
+					level,
+					level.startPosition.x,
+					level.startPosition.y,
+				);
 				expect(startTile).toBe(TileType.GRASS);
 			}
 		}, 10000); // Increased timeout
@@ -500,7 +534,9 @@ describe("levelGenerator", () => {
 
 				// Level should still be connected and solvable
 				expect(isGrassConnected(level)).toBe(true);
-				expect(getTile(level, level.startPosition.x, level.startPosition.y)).toBe(TileType.GRASS);
+				expect(
+					getTile(level, level.startPosition.x, level.startPosition.y),
+				).toBe(TileType.GRASS);
 				break;
 			}
 		}, 10000);
@@ -596,7 +632,11 @@ describe("levelGenerator", () => {
 			if (!level) return;
 
 			// Start position should be the beginning of the Hamiltonian path
-			const startTile = getTile(level, level.startPosition.x, level.startPosition.y);
+			const startTile = getTile(
+				level,
+				level.startPosition.x,
+				level.startPosition.y,
+			);
 			expect(startTile).toBe(TileType.GRASS);
 
 			// All grass tiles should be reachable from start
@@ -661,7 +701,9 @@ describe("levelGenerator", () => {
 			// Generate levels with ice and check that ice tiles tend to be adjacent
 			let foundCluster = false;
 			for (let i = 0; i < 20; i++) {
-				const level = generateLevel({ iceChance: 0.15, iceClusterSize: 4 }, [WorldElement.ICE]);
+				const level = generateLevel({ iceChance: 0.15, iceClusterSize: 4 }, [
+					WorldElement.ICE,
+				]);
 				if (!level) continue;
 
 				const iceCount = countTiles(level, TileType.ICE);
@@ -675,7 +717,10 @@ describe("levelGenerator", () => {
 
 						const adjacent = getAdjacent(x, y);
 						for (const adj of adjacent) {
-							if (isInBounds(level, adj.x, adj.y) && getTile(level, adj.x, adj.y) === TileType.ICE) {
+							if (
+								isInBounds(level, adj.x, adj.y) &&
+								getTile(level, adj.x, adj.y) === TileType.ICE
+							) {
 								adjacentIceCount++;
 								break;
 							}
@@ -706,7 +751,11 @@ describe("levelGenerator", () => {
 				const level = generateLevel({ iceChance: 0.15 }, [WorldElement.ICE]);
 				if (!level) continue;
 
-				const startTile = getTile(level, level.startPosition.x, level.startPosition.y);
+				const startTile = getTile(
+					level,
+					level.startPosition.x,
+					level.startPosition.y,
+				);
 				expect(startTile).toBe(TileType.GRASS);
 			}
 		}, 10000);
@@ -717,7 +766,9 @@ describe("levelGenerator", () => {
 				if (!level) continue;
 
 				expect(isGrassConnected(level)).toBe(true);
-				expect(getTile(level, level.startPosition.x, level.startPosition.y)).toBe(TileType.GRASS);
+				expect(
+					getTile(level, level.startPosition.x, level.startPosition.y),
+				).toBe(TileType.GRASS);
 			}
 		}, 15000);
 	});
@@ -802,7 +853,11 @@ describe("levelGenerator", () => {
 				const level = generateLevel({}, [WorldElement.FAIRY]);
 				if (!level) continue;
 
-				const startTile = getTile(level, level.startPosition.x, level.startPosition.y);
+				const startTile = getTile(
+					level,
+					level.startPosition.x,
+					level.startPosition.y,
+				);
 				expect(startTile).toBe(TileType.GRASS);
 			}
 		}, 15000);
