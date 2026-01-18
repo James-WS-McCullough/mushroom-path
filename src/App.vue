@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import BottomBar from "./components/BottomBar.vue";
+import ConfirmModal from "./components/ConfirmModal.vue";
 import CustomWorldModal from "./components/CustomWorldModal.vue";
 import DialogueScene from "./components/DialogueScene.vue";
 import FirstTimeModal from "./components/FirstTimeModal.vue";
@@ -139,6 +140,7 @@ const showMusicPlayer = ref(false);
 const currentDialogue = ref<DialogueSceneType | null>(null);
 const hasSeenIntro = localStorage.getItem("mushroom-path-intro-seen");
 const isFading = ref(false);
+const confirmAction = ref<"skip" | "restart" | null>(null);
 
 // Tutorial world state
 const showFirstTimeModal = ref(false);
@@ -640,6 +642,10 @@ function handleSkip() {
 	if (isFading.value) return;
 	// Don't allow skipping during tutorial
 	if (isInTutorial.value) return;
+	confirmAction.value = "skip";
+}
+
+function doSkip() {
 	isFading.value = true;
 	skipModalText.value = "Level Skipped";
 	randomizeWinMushrooms();
@@ -689,10 +695,28 @@ function clearHintState() {
 
 function handleRestart() {
 	if (isFading.value) return;
+	confirmAction.value = "restart";
+}
+
+function doRestart() {
 	playUndo();
 	clearHintState();
 	// Trigger restart in the GameBoard component
 	levelKey.value++;
+}
+
+function handleConfirmAction() {
+	const action = confirmAction.value;
+	confirmAction.value = null;
+	if (action === "skip") {
+		doSkip();
+	} else if (action === "restart") {
+		doRestart();
+	}
+}
+
+function handleCancelAction() {
+	confirmAction.value = null;
 }
 
 function handleUndo() {
@@ -1172,6 +1196,17 @@ watch(isPlayerStuck, (isStuck) => {
   <!-- First Time Modal (shown after intro dialogue for new players) -->
   <Transition name="modal">
     <FirstTimeModal v-if="showFirstTimeModal" @choose="handleFirstTimeChoice" />
+  </Transition>
+
+  <!-- Confirmation Modal for Skip/Restart -->
+  <Transition name="modal">
+    <ConfirmModal
+      v-if="confirmAction"
+      :title="confirmAction === 'skip' ? 'Skip Level?' : 'Restart Level?'"
+      :message="confirmAction === 'skip' ? 'Are you sure you want to skip this level?' : 'Are you sure you want to restart?'"
+      @confirm="handleConfirmAction"
+      @cancel="handleCancelAction"
+    />
   </Transition>
 
   <!-- Game (stays visible for overlay dialogues) -->
