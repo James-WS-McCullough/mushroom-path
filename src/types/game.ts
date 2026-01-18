@@ -44,6 +44,7 @@ export interface Level {
 	startPosition: Position;
 	rooms?: Room[];
 	waterFlow?: Record<string, FlowDirection>; // key: "x,y" -> flow direction
+	solutionPath?: Position[]; // Pre-computed winning path from level generation
 }
 
 export interface GameState {

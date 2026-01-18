@@ -2,12 +2,15 @@
 defineProps<{
 	disabled: boolean;
 	canUndo: boolean;
+	undoGlow: boolean;
+	restartGlow?: boolean;
 }>();
 
 const emit = defineEmits<{
 	restart: [];
 	undo: [];
 	skip: [];
+	hint: [];
 	customWorld: [];
 }>();
 
@@ -18,14 +21,29 @@ const isDev = import.meta.env.DEV;
   <div class="bottom-bar">
     <div class="wood-texture"></div>
     <div class="bar-content">
-      <button class="bar-btn" @click="emit('restart')" :disabled="disabled">
+      <button
+        class="bar-btn"
+        :class="{ 'bar-btn--glow': restartGlow }"
+        @click="emit('restart')"
+        :disabled="disabled"
+      >
         <span class="btn-icon">↺</span>
         <span class="btn-label">Restart</span>
       </button>
       <div class="bar-divider"></div>
-      <button class="bar-btn" @click="emit('undo')" :disabled="disabled || !canUndo">
+      <button
+        class="bar-btn"
+        :class="{ 'bar-btn--glow': undoGlow }"
+        @click="emit('undo')"
+        :disabled="disabled || !canUndo"
+      >
         <span class="btn-icon">↩</span>
         <span class="btn-label">Undo</span>
+      </button>
+      <div class="bar-divider"></div>
+      <button class="bar-btn bar-btn--hint" @click="emit('hint')" :disabled="disabled">
+        <span class="btn-icon">💡</span>
+        <span class="btn-label">Hint</span>
       </button>
       <div class="bar-divider"></div>
       <button class="bar-btn" @click="emit('skip')" :disabled="disabled">
@@ -109,17 +127,17 @@ const isDev = import.meta.env.DEV;
   align-items: center;
   justify-content: center;
   height: 100%;
-  padding: 0 16px;
-  gap: 8px;
+  padding: 0 8px;
+  gap: 4px;
 }
 
 .bar-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   background: linear-gradient(180deg, rgba(255, 248, 230, 0.95) 0%, rgba(240, 230, 210, 0.95) 100%);
   border: none;
-  padding: 10px 20px;
+  padding: 10px 14px;
   border-radius: 8px;
   font-size: 15px;
   color: #5a4a3a;
@@ -163,7 +181,48 @@ const isDev = import.meta.env.DEV;
   height: 28px;
   background: linear-gradient(180deg, rgba(93, 65, 40, 0.3) 0%, rgba(93, 65, 40, 0.6) 50%, rgba(93, 65, 40, 0.3) 100%);
   border-radius: 1px;
-  margin: 0 8px;
+  margin: 0 4px;
+}
+
+.bar-btn--hint {
+  background: linear-gradient(180deg, rgba(255, 245, 220, 0.95) 0%, rgba(250, 235, 200, 0.95) 100%);
+}
+
+.bar-btn--hint:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(255, 250, 230, 0.98) 0%, rgba(255, 245, 215, 0.98) 100%);
+}
+
+.bar-btn--glow {
+  animation: buttonGlow 0.6s ease-in-out infinite;
+  box-shadow:
+    0 0 12px rgba(255, 100, 80, 0.9),
+    0 0 24px rgba(255, 80, 60, 0.6),
+    0 0 40px rgba(255, 60, 40, 0.3),
+    0 2px 4px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  transform: scale(1.08);
+  z-index: 10;
+}
+
+@keyframes buttonGlow {
+  0%, 100% {
+    box-shadow:
+      0 0 12px rgba(255, 100, 80, 0.9),
+      0 0 24px rgba(255, 80, 60, 0.6),
+      0 0 40px rgba(255, 60, 40, 0.3),
+      0 2px 4px rgba(0, 0, 0, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    transform: scale(1.08);
+  }
+  50% {
+    box-shadow:
+      0 0 20px rgba(255, 120, 100, 1),
+      0 0 40px rgba(255, 100, 80, 0.8),
+      0 0 60px rgba(255, 80, 60, 0.5),
+      0 2px 4px rgba(0, 0, 0, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    transform: scale(1.15);
+  }
 }
 
 .bar-btn--dev {
@@ -181,14 +240,14 @@ const isDev = import.meta.env.DEV;
   }
 
   .bar-content {
-    gap: 8px;
-    padding: 0 12px;
+    gap: 4px;
+    padding: 0 6px;
   }
 
   .bar-btn {
-    padding: 14px 16px;
+    padding: 14px 12px;
     font-size: 15px;
-    gap: 6px;
+    gap: 5px;
     border-radius: 10px;
   }
 
@@ -197,7 +256,7 @@ const isDev = import.meta.env.DEV;
   }
 
   .bar-divider {
-    margin: 0 4px;
+    margin: 0 2px;
     height: 32px;
   }
 }

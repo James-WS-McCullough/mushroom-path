@@ -251,6 +251,462 @@ export function useGame(level: Level) {
 		return lilypadState.value.get(key);
 	}
 
+	// ============================================================================
+	// GRAPH CONNECTIVITY APPROACH FOR HINTS
+	// ============================================================================
+	// Instead of computing full solution paths, we use graph connectivity:
+	// - Model unvisited tiles as nodes, edges connect reachable tiles
+	// - A move is valid if it doesn't disconnect any tiles from the graph
+	// - Player is stuck if any unvisited tiles become unreachable
+	// ============================================================================
+
+	// Get all positions reachable from a given position via BFS
+	// Accounts for walking, jumping over obstacles, and traversal tiles
+	function getReachableTiles(
+		fromPos: Position,
+		tileStates: TileType[][],
+		lilypads: Map<string, LilypadState>
+	): Set<string> {
+		const reachable = new Set<string>();
+		const queue: Position[] = [fromPos];
+		reachable.add(`${fromPos.x},${fromPos.y}`);
+
+		while (queue.length > 0) {
+			const current = queue.shift()!;
+			const directions = [
+				{ x: 0, y: -1 },
+				{ x: 0, y: 1 },
+				{ x: -1, y: 0 },
+				{ x: 1, y: 0 },
+			];
+
+			for (const dir of directions) {
+				const adjacent = { x: current.x + dir.x, y: current.y + dir.y };
+
+				if (adjacent.x < 0 || adjacent.x >= level.width ||
+					adjacent.y < 0 || adjacent.y >= level.height) continue;
+
+				const adjKey = `${adjacent.x},${adjacent.y}`;
+				const adjType = tileStates[adjacent.y]?.[adjacent.x];
+				if (!adjType) continue;
+
+				// Check if adjacent tile is walkable
+				const isWalkable =
+					adjType === TileType.GRASS ||
+					adjType === TileType.DIRT ||
+					adjType === TileType.STONE ||
+					adjType === TileType.ICE ||
+					adjType === TileType.WATER ||
+					isPortalTile(adjType) ||
+					(adjType === TileType.POND && !lilypads.get(adjKey)?.submerged);
+
+				if (isWalkable && !reachable.has(adjKey)) {
+					reachable.add(adjKey);
+					queue.push(adjacent);
+				}
+
+				// Check if we can jump over an obstacle
+				const isObstacle =
+					adjType === TileType.BRAMBLE ||
+					adjType === TileType.MUSHROOM ||
+					adjType === TileType.POND_WATER ||
+					(adjType === TileType.POND && lilypads.get(adjKey)?.submerged);
+
+				if (isObstacle) {
+					const jumpTarget = { x: current.x + dir.x * 2, y: current.y + dir.y * 2 };
+					if (jumpTarget.x < 0 || jumpTarget.x >= level.width ||
+						jumpTarget.y < 0 || jumpTarget.y >= level.height) continue;
+
+					const jumpKey = `${jumpTarget.x},${jumpTarget.y}`;
+					if (reachable.has(jumpKey)) continue;
+
+					const jumpType = tileStates[jumpTarget.y]?.[jumpTarget.x];
+					if (!jumpType) continue;
+
+					const isJumpLandable =
+						jumpType === TileType.GRASS ||
+						jumpType === TileType.DIRT ||
+						jumpType === TileType.STONE ||
+						jumpType === TileType.ICE ||
+						jumpType === TileType.WATER ||
+						isPortalTile(jumpType) ||
+						(jumpType === TileType.POND && !lilypads.get(jumpKey)?.submerged);
+
+					if (isJumpLandable) {
+						reachable.add(jumpKey);
+						queue.push(jumpTarget);
+					}
+				}
+			}
+		}
+
+		return reachable;
+	}
+
+	// Check if all unvisited grass/dirt tiles are reachable from player position
+	function isGraphConnected(
+		playerPos: Position,
+		tileStates: TileType[][],
+		lilypads: Map<string, LilypadState>
+	): boolean {
+		const reachable = getReachableTiles(playerPos, tileStates, lilypads);
+
+		// Check every grass/dirt tile is reachable
+		for (let y = 0; y < tileStates.length; y++) {
+			const row = tileStates[y];
+			if (!row) continue;
+			for (let x = 0; x < row.length; x++) {
+				const t = row[x];
+				if (t === TileType.GRASS || t === TileType.DIRT) {
+					if (!reachable.has(`${x},${y}`)) {
+						return false; // Found unreachable tile - graph is disconnected
+					}
+				}
+			}
+		}
+		return true;
+	}
+
+	// Check if the given state is a win (all grass/dirt converted, player on last grass)
+	function isWinState(tileStates: TileType[][], playerPos: Position): boolean {
+		let grassCount = 0;
+		let dirtCount = 0;
+		let lastGrassPos: Position | null = null;
+
+		for (let y = 0; y < tileStates.length; y++) {
+			const row = tileStates[y];
+			if (!row) continue;
+			for (let x = 0; x < row.length; x++) {
+				const t = row[x];
+				if (t === TileType.GRASS) {
+					grassCount++;
+					lastGrassPos = { x, y };
+				} else if (t === TileType.DIRT) {
+					dirtCount++;
+				}
+			}
+		}
+
+		// Win when exactly 1 grass remains (player standing on it) and no dirt
+		return grassCount === 1 && dirtCount === 0 && lastGrassPos !== null &&
+			lastGrassPos.x === playerPos.x && lastGrassPos.y === playerPos.y;
+	}
+
+	// Count remaining grass and dirt tiles
+	function countRemainingTiles(tileStates: TileType[][]): number {
+		let count = 0;
+		for (let y = 0; y < tileStates.length; y++) {
+			const row = tileStates[y];
+			if (!row) continue;
+			for (let x = 0; x < row.length; x++) {
+				const t = row[x];
+				if (t === TileType.GRASS || t === TileType.DIRT) {
+					count++;
+				}
+			}
+		}
+		return count;
+	}
+
+	// DFS search for a Hamiltonian path (visiting all grass/dirt tiles)
+	// Returns: { path, timedOut } where path is null if no solution found
+	const MAX_PATHFINDING_ITERATIONS = 5000;
+
+	function findHamiltonianPath(
+		pos: Position,
+		tileStates: TileType[][],
+		lilypads: Map<string, LilypadState>,
+		path: Position[],
+		maxDepth: number,
+		iterations: { count: number }
+	): { path: Position[] | null; timedOut: boolean } {
+		// Check iteration limit
+		iterations.count++;
+		if (iterations.count > MAX_PATHFINDING_ITERATIONS) {
+			return { path: null, timedOut: true };
+		}
+
+		// Check win condition
+		if (isWinState(tileStates, pos)) {
+			return { path, timedOut: false };
+		}
+
+		// Depth limit to prevent infinite loops
+		if (path.length >= maxDepth) {
+			return { path: null, timedOut: false };
+		}
+
+		// Get valid moves
+		const moves = getValidMovesForPathfinding(pos, tileStates, lilypads);
+
+		// Filter to moves that preserve connectivity
+		const validMoves: { move: { target: Position; direction: Direction }; simResult: { finalPos: Position; newTiles: TileType[][]; newLilypads: Map<string, LilypadState> } }[] = [];
+
+		for (const move of moves) {
+			const simResult = simulateMoveForPathfinding(pos, move, tileStates, lilypads);
+
+			// Check if graph remains connected
+			if (isGraphConnected(simResult.finalPos, simResult.newTiles, simResult.newLilypads)) {
+				validMoves.push({ move, simResult });
+			}
+		}
+
+		// Prioritize moves that go to required tiles (grass/dirt) and moves to tiles with fewer neighbors (forced moves)
+		validMoves.sort((a, b) => {
+			const aType = tileStates[a.move.target.y]?.[a.move.target.x];
+			const bType = tileStates[b.move.target.y]?.[b.move.target.x];
+			const aRequired = aType === TileType.GRASS || aType === TileType.DIRT;
+			const bRequired = bType === TileType.GRASS || bType === TileType.DIRT;
+
+			// Prioritize required tiles
+			if (aRequired && !bRequired) return -1;
+			if (!aRequired && bRequired) return 1;
+
+			// Among required tiles, prioritize those with fewer escape routes (forced moves)
+			if (aRequired && bRequired) {
+				const aNeighbors = getValidMovesForPathfinding(a.move.target, a.simResult.newTiles, a.simResult.newLilypads).length;
+				const bNeighbors = getValidMovesForPathfinding(b.move.target, b.simResult.newTiles, b.simResult.newLilypads).length;
+				return aNeighbors - bNeighbors; // Prefer tiles with fewer exits (more constrained)
+			}
+
+			return 0;
+		});
+
+		// Try each move recursively
+		for (const { move, simResult } of validMoves) {
+			const newPath = [...path, move.target];
+			const result = findHamiltonianPath(
+				simResult.finalPos,
+				simResult.newTiles,
+				simResult.newLilypads,
+				newPath,
+				maxDepth,
+				iterations
+			);
+
+			if (result.timedOut) {
+				return result; // Propagate timeout
+			}
+
+			if (result.path !== null) {
+				return result;
+			}
+		}
+
+		// No valid path found from this state
+		return { path: null, timedOut: false };
+	}
+
+	// Find a winning path and return the first few moves as hints
+	function findWinningPath(): { path: Position[] | null; timedOut: boolean } {
+		const currentTiles = tiles.value.map(row => row.map(tile => tile.type));
+		const currentLilypads = cloneLilypadState();
+		const currentPos = playerPosition.value;
+
+		// Count tiles to set reasonable depth limit
+		const remaining = countRemainingTiles(currentTiles);
+		const iterations = { count: 0 };
+
+		return findHamiltonianPath(currentPos, currentTiles, currentLilypads, [], remaining + 10, iterations);
+	}
+
+	// Check if the current state has any unreachable tiles (player is stuck)
+	function hasUnreachableTiles(): boolean {
+		const currentTiles = tiles.value.map(row => row.map(tile => tile.type));
+		const currentLilypads = cloneLilypadState();
+		return !isGraphConnected(playerPosition.value, currentTiles, currentLilypads);
+	}
+
+	// Get valid moves for pathfinding
+	function getValidMovesForPathfinding(
+		pos: Position,
+		tileStates: TileType[][],
+		lilypads: Map<string, LilypadState>,
+	): { target: Position; direction: Direction }[] {
+		const moves: { target: Position; direction: Direction }[] = [];
+		const directions: Direction[] = ["up", "down", "left", "right"];
+
+		for (const direction of directions) {
+			const delta = getDirectionDelta(direction);
+			const adjacentPos = { x: pos.x + delta.x, y: pos.y + delta.y };
+
+			if (adjacentPos.x >= 0 && adjacentPos.x < level.width &&
+				adjacentPos.y >= 0 && adjacentPos.y < level.height) {
+				const adjTileType = tileStates[adjacentPos.y]?.[adjacentPos.x];
+
+				// Check if pond with submerged lilypad
+				if (adjTileType === TileType.POND) {
+					const key = `${adjacentPos.x},${adjacentPos.y}`;
+					const state = lilypads.get(key);
+					if (state && !state.submerged) {
+						moves.push({ target: adjacentPos, direction });
+						continue;
+					}
+				} else if (
+					adjTileType === TileType.GRASS ||
+					adjTileType === TileType.STONE ||
+					adjTileType === TileType.WATER ||
+					adjTileType === TileType.DIRT ||
+					adjTileType === TileType.ICE ||
+					(adjTileType && isPortalTile(adjTileType))
+				) {
+					moves.push({ target: adjacentPos, direction });
+					continue;
+				}
+
+				// Check jump over obstacle
+				const isAdjacentObstacle =
+					adjTileType === TileType.BRAMBLE ||
+					adjTileType === TileType.MUSHROOM ||
+					adjTileType === TileType.POND_WATER ||
+					(adjTileType === TileType.POND && lilypads.get(`${adjacentPos.x},${adjacentPos.y}`)?.submerged);
+
+				if (isAdjacentObstacle) {
+					const jumpPos = { x: pos.x + delta.x * 2, y: pos.y + delta.y * 2 };
+					if (jumpPos.x >= 0 && jumpPos.x < level.width &&
+						jumpPos.y >= 0 && jumpPos.y < level.height) {
+						const jumpTileType = tileStates[jumpPos.y]?.[jumpPos.x];
+
+						if (jumpTileType === TileType.POND) {
+							const key = `${jumpPos.x},${jumpPos.y}`;
+							const state = lilypads.get(key);
+							if (state && !state.submerged) {
+								moves.push({ target: jumpPos, direction });
+							}
+						} else if (
+							jumpTileType === TileType.GRASS ||
+							jumpTileType === TileType.STONE ||
+							jumpTileType === TileType.WATER ||
+							jumpTileType === TileType.DIRT ||
+							jumpTileType === TileType.ICE ||
+							(jumpTileType && isPortalTile(jumpTileType))
+						) {
+							moves.push({ target: jumpPos, direction });
+						}
+					}
+				}
+			}
+		}
+
+		// Prioritize moves to grass/dirt tiles
+		moves.sort((a, b) => {
+			const aType = tileStates[a.target.y]?.[a.target.x];
+			const bType = tileStates[b.target.y]?.[b.target.x];
+			const aPriority = (aType === TileType.GRASS || aType === TileType.DIRT) ? 0 : 1;
+			const bPriority = (bType === TileType.GRASS || bType === TileType.DIRT) ? 0 : 1;
+			return aPriority - bPriority;
+		});
+
+		return moves;
+	}
+
+	// Simulate a move for pathfinding
+	function simulateMoveForPathfinding(
+		pos: Position,
+		move: { target: Position; direction: Direction },
+		tileStates: TileType[][],
+		lilypads: Map<string, LilypadState>,
+	): { finalPos: Position; newTiles: TileType[][]; newLilypads: Map<string, LilypadState> } {
+		// Clone state
+		const newTileStates = tileStates.map((row) => [...row]);
+		const newLilypads = new Map<string, LilypadState>();
+		for (const [key, state] of lilypads) {
+			newLilypads.set(key, { ...state });
+		}
+
+		// Simulate leaving current tile
+		const currentTileType = newTileStates[pos.y]?.[pos.x];
+		if (currentTileType === TileType.GRASS) {
+			const row = newTileStates[pos.y];
+			if (row) row[pos.x] = TileType.MUSHROOM;
+		} else if (currentTileType === TileType.DIRT) {
+			const row = newTileStates[pos.y];
+			if (row) row[pos.x] = TileType.GRASS;
+		} else if (currentTileType === TileType.POND) {
+			const key = `${pos.x},${pos.y}`;
+			const state = newLilypads.get(key);
+			if (state && !state.submerged) {
+				state.submerged = true;
+				state.cooldown = 4;
+			}
+		}
+
+		// Decrement lily-pad cooldowns
+		for (const [, state] of newLilypads) {
+			if (state.submerged && state.cooldown > 0) {
+				state.cooldown--;
+				if (state.cooldown === 0) {
+					state.submerged = false;
+				}
+			}
+		}
+
+		// Handle special tiles
+		let finalPos = move.target;
+		const nextTileType = newTileStates[move.target.y]?.[move.target.x];
+
+		if (nextTileType === TileType.WATER) {
+			// Simulate water slide
+			let current = move.target;
+			while (true) {
+				const flow = getWaterFlow(current);
+				if (!flow) break;
+				const delta = getDirectionDelta(flow);
+				const next = { x: current.x + delta.x, y: current.y + delta.y };
+				if (next.x < 0 || next.x >= level.width || next.y < 0 || next.y >= level.height) break;
+				const nextType = newTileStates[next.y]?.[next.x];
+				if (nextType === TileType.WATER) {
+					current = next;
+				} else if (nextType === TileType.STONE) {
+					current = next;
+					break;
+				} else {
+					break;
+				}
+			}
+			finalPos = current;
+		} else if (nextTileType === TileType.ICE) {
+			// Simulate ice slide
+			const delta = getDirectionDelta(move.direction);
+			let current = move.target;
+			while (true) {
+				const next = { x: current.x + delta.x, y: current.y + delta.y };
+				if (next.x < 0 || next.x >= level.width || next.y < 0 || next.y >= level.height) break;
+				const nextType = newTileStates[next.y]?.[next.x];
+				if (nextType === TileType.BRAMBLE || nextType === TileType.MUSHROOM ||
+					nextType === TileType.VOID || nextType === TileType.POND_WATER) {
+					break;
+				}
+				if (nextType === TileType.POND) {
+					const key = `${next.x},${next.y}`;
+					const state = newLilypads.get(key);
+					if (state?.submerged) break;
+				}
+				if (nextType === TileType.ICE) {
+					current = next;
+				} else {
+					current = next;
+					break;
+				}
+			}
+			finalPos = current;
+		} else if (nextTileType && isPortalTile(nextTileType)) {
+			// Find matching portal
+			for (let y = 0; y < newTileStates.length; y++) {
+				const row = newTileStates[y];
+				if (!row) continue;
+				for (let x = 0; x < row.length; x++) {
+					if (row[x] === nextTileType && (x !== move.target.x || y !== move.target.y)) {
+						finalPos = { x, y };
+						break;
+					}
+				}
+			}
+		}
+
+		return { finalPos, newTiles: newTileStates, newLilypads };
+	}
+
 	function computeSlideDestination(startPos: Position): {
 		destination: Position;
 		path: Position[];
@@ -1018,6 +1474,74 @@ export function useGame(level: Level) {
 
 	const canUndo = computed(() => moveHistory.value.length > 0);
 
+	// Hint system - uses graph connectivity to find valid moves
+	interface HintResult {
+		hintTiles?: Position[];
+		needsUndo?: boolean;
+		stuckTiles?: Position[];
+		unsure?: boolean; // Pathfinding took too long, not sure if current state is solvable
+	}
+
+	function getHint(): HintResult {
+		// Check if player has already stranded some tiles (disconnected graph)
+		if (hasUnreachableTiles()) {
+			// Player is stuck - some tiles are unreachable, need to undo
+			const pos = playerPosition.value;
+			const adjacentTiles: Position[] = [];
+			const dirs = [
+				{ x: 0, y: -1 },
+				{ x: 0, y: 1 },
+				{ x: -1, y: 0 },
+				{ x: 1, y: 0 },
+			];
+			for (const d of dirs) {
+				const adjPos = { x: pos.x + d.x, y: pos.y + d.y };
+				if (adjPos.x >= 0 && adjPos.x < level.width &&
+					adjPos.y >= 0 && adjPos.y < level.height) {
+					const tile = getTile(adjPos);
+					if (tile && tile.type !== TileType.VOID) {
+						adjacentTiles.push(adjPos);
+					}
+				}
+			}
+			return { needsUndo: true, stuckTiles: adjacentTiles };
+		}
+
+		// Find a complete winning path using DFS
+		const { path: winningPath, timedOut } = findWinningPath();
+
+		if (timedOut) {
+			// Pathfinding took too long - we're not sure if the current state is solvable
+			return { unsure: true };
+		}
+
+		if (winningPath && winningPath.length > 0) {
+			// Return first 3 moves of the winning path as hints
+			return { hintTiles: winningPath.slice(0, 3) };
+		}
+
+		// No valid path found - player is stuck and needs to undo
+		const pos = playerPosition.value;
+		const adjacentTiles: Position[] = [];
+		const dirs = [
+			{ x: 0, y: -1 },
+			{ x: 0, y: 1 },
+			{ x: -1, y: 0 },
+			{ x: 1, y: 0 },
+		];
+		for (const d of dirs) {
+			const adjPos = { x: pos.x + d.x, y: pos.y + d.y };
+			if (adjPos.x >= 0 && adjPos.x < level.width &&
+				adjPos.y >= 0 && adjPos.y < level.height) {
+				const tile = getTile(adjPos);
+				if (tile && tile.type !== TileType.VOID) {
+					adjacentTiles.push(adjPos);
+				}
+			}
+		}
+		return { needsUndo: true, stuckTiles: adjacentTiles };
+	}
+
 	// Check if player is stuck (can't move in any direction)
 	const isStuck = computed(() => {
 		if (hasWon.value) return false;
@@ -1122,6 +1646,7 @@ export function useGame(level: Level) {
 		grassTilesRemaining,
 		canUndo,
 		undo,
+		getHint,
 		getWaterFlow,
 		getLilypadState,
 		lilypadState,

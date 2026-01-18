@@ -17,6 +17,8 @@ const props = defineProps<{
 	hasDirtElement?: boolean;
 	hasPondElement?: boolean;
 	disabled?: boolean;
+	hintTiles?: Position[];
+	stuckTiles?: Position[];
 }>();
 
 const emit = defineEmits<{
@@ -302,6 +304,20 @@ function shouldShimmer(): boolean {
 	return game.showHints.value;
 }
 
+function isHintTile(tilePos: Position): boolean {
+	if (!props.hintTiles || props.hintTiles.length === 0) return false;
+	return props.hintTiles.some(
+		(hint) => hint.x === tilePos.x && hint.y === tilePos.y,
+	);
+}
+
+function isStuckTile(tilePos: Position): boolean {
+	if (!props.stuckTiles || props.stuckTiles.length === 0) return false;
+	return props.stuckTiles.some(
+		(stuck) => stuck.x === tilePos.x && stuck.y === tilePos.y,
+	);
+}
+
 function getPoofStyle(position: Position) {
 	const boardPadding = hasRooms.value ? 0 : 3;
 	// Match character positioning: boardPadding + position * 67, then add half tile for center
@@ -389,7 +405,7 @@ onUnmounted(() => {
 	game.cleanupIdleTimer();
 });
 
-// Expose undo functionality and stuck state for parent component
+// Expose undo functionality, stuck state, and hint for parent component
 defineExpose({
 	canUndo: game.canUndo,
 	isStuck: game.isStuck,
@@ -399,6 +415,7 @@ defineExpose({
 			game.undo();
 		}
 	},
+	getHint: game.getHint,
 });
 </script>
 
@@ -428,6 +445,8 @@ defineExpose({
             :is-reachable="isReachable(tile.position)"
             :is-just-planted="isJustPlanted(tile.position)"
             :is-just-cleaned="isJustCleaned(tile.position)"
+            :is-hinted="isHintTile(tile.position)"
+            :is-stuck-highlight="isStuckTile(tile.position)"
             :flow-direction="game.getWaterFlow(tile.position)"
             :has-ice-element="hasIceElement"
             :has-dirt-element="hasDirtElement"

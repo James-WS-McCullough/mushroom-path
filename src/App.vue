@@ -207,6 +207,77 @@ const canUndo = computed(() => {
 	return gameBoardRef.value?.canUndo ?? false;
 });
 
+// Hint system state
+const hintTiles = ref<{ x: number; y: number }[]>([]);
+const stuckTiles = ref<{ x: number; y: number }[]>([]);
+const undoGlow = ref(false);
+const restartGlow = ref(false);
+const hintMessage = ref<string | null>(null);
+const hintSprite = ref<string>("BlueGirl-Normal");
+let hintTimeouts: ReturnType<typeof setTimeout>[] = [];
+
+// Hint messages for success
+const successHintMessages = [
+	"over here, sprout!",
+	"try this way~",
+	"hop hop hop!",
+	"this looks good!",
+	"follow me~",
+	"this one next!",
+	"ooh, go here!",
+	"jump this way!",
+	"i think it's this one",
+	"here here here!",
+	"try hopping over there~",
+	"that tile looks nice!",
+];
+
+// Hint messages for stuck/undo
+const stuckHintMessages = [
+	"hmm, let's go back...",
+	"oops, undo that one!",
+	"backtrack time~",
+	"that's not it...",
+	"wrong way, sprout!",
+	"let's try that again",
+	"mmm, go back a bit",
+	"not quite right...",
+	"undo undo!",
+	"oopsie, backtrack!",
+	"that path's no good",
+	"hmm, retrace your steps~",
+];
+
+// Hint messages for when pathfinding times out (unsure)
+const unsureHintMessages = [
+	"hmm, i'm not sure...",
+	"this one's tricky!",
+	"let me think...",
+	"i can't tell right now~",
+	"hmm, you're on your own!",
+	"this puzzle is hard!",
+	"i need a moment...",
+	"you got this, sprout!",
+	"my brain is fuzzy~",
+	"too many paths to check!",
+];
+
+// Hint messages for stuck/restart (when undo not available)
+const restartHintMessages = [
+	"let's start over!",
+	"fresh start~",
+	"try again from the top!",
+	"hmm, restart maybe?",
+	"new attempt time!",
+	"let's reset this one",
+	"from the beginning~",
+	"clean slate!",
+	"one more try!",
+	"restart and retry~",
+	"back to the start!",
+	"let's try a new approach",
+];
+
 // World and level tracking
 const currentWorldIndex = ref(0);
 const currentLevelNumber = ref(1);
@@ -347,6 +418,9 @@ const pendingWorldDialogue = ref<DialogueSceneType | null>(null);
 const showWelcomeAfterDialogue = ref(false);
 
 function handleWin() {
+	// Clear hint state
+	clearHintState();
+
 	// Use tutorial-specific handler when in tutorial mode
 	if (isInTutorial.value) {
 		handleTutorialWin();
@@ -505,9 +579,23 @@ function handleSkip() {
 	}, 1000);
 }
 
+function clearHintState() {
+	// Clear all pending hint timeouts
+	hintTimeouts.forEach(clearTimeout);
+	hintTimeouts = [];
+
+	hintTiles.value = [];
+	stuckTiles.value = [];
+	undoGlow.value = false;
+	restartGlow.value = false;
+	hintMessage.value = null;
+	hintSprite.value = "BlueGirl-Normal";
+}
+
 function handleRestart() {
 	if (isFading.value) return;
 	playUndo();
+	clearHintState();
 	// Trigger restart in the GameBoard component
 	levelKey.value++;
 }
@@ -515,6 +603,75 @@ function handleRestart() {
 function handleUndo() {
 	if (isFading.value) return;
 	gameBoardRef.value?.undo();
+	clearHintState();
+}
+
+function handleHint() {
+	if (isFading.value) return;
+
+	// Clear previous hints
+	clearHintState();
+
+	// Get hint from game board
+	const hint = gameBoardRef.value?.getHint?.();
+	if (!hint) return;
+
+	if (hint.hintTiles && hint.hintTiles.length > 0) {
+		// Show hint tiles with happy Dew - stagger them to show the route
+		const tiles = hint.hintTiles;
+		hintSprite.value = "BlueGirl-Normal";
+		hintMessage.value = successHintMessages[Math.floor(Math.random() * successHintMessages.length)] ?? "Go this way!";
+
+		// Show tiles one by one with delay
+		const TILE_DELAY = 400; // ms between each tile
+		tiles.forEach((tile, index) => {
+			const timeoutId = setTimeout(() => {
+				hintTiles.value = [...hintTiles.value, tile];
+			}, index * TILE_DELAY);
+			hintTimeouts.push(timeoutId);
+		});
+
+		// Auto-clear hint after all tiles shown + 2.5 seconds viewing time
+		const totalShowTime = (tiles.length - 1) * TILE_DELAY + 2500;
+		const clearTimeoutId = setTimeout(() => {
+			hintTiles.value = [];
+			hintMessage.value = null;
+		}, totalShowTime);
+		hintTimeouts.push(clearTimeoutId);
+	} else if (hint.unsure) {
+		// Pathfinding timed out - show unsure message
+		hintSprite.value = "BlueGirl-Nervous";
+		hintMessage.value = unsureHintMessages[Math.floor(Math.random() * unsureHintMessages.length)] ?? "I'm not sure...";
+
+		// Auto-clear after 3 seconds
+		const clearTimeoutId = setTimeout(() => {
+			hintMessage.value = null;
+		}, 3000);
+		hintTimeouts.push(clearTimeoutId);
+	} else if (hint.needsUndo) {
+		// Check if undo is available
+		stuckTiles.value = hint.stuckTiles ?? [];
+		hintSprite.value = "BlueGirl-Nervous";
+
+		if (canUndo.value) {
+			// Glow the undo button
+			undoGlow.value = true;
+			hintMessage.value = stuckHintMessages[Math.floor(Math.random() * stuckHintMessages.length)] ?? "We need to go back...";
+		} else {
+			// Glow the restart button instead
+			restartGlow.value = true;
+			hintMessage.value = restartHintMessages[Math.floor(Math.random() * restartHintMessages.length)] ?? "Let's start fresh!";
+		}
+
+		// Auto-clear glow after 3 seconds
+		const clearTimeoutId = setTimeout(() => {
+			undoGlow.value = false;
+			restartGlow.value = false;
+			stuckTiles.value = [];
+			hintMessage.value = null;
+		}, 3000);
+		hintTimeouts.push(clearTimeoutId);
+	}
 }
 
 async function handleBegin() {
@@ -887,6 +1044,8 @@ watch(isPlayerStuck, (isStuck) => {
         :has-ice-element="currentWorldElements.includes(WE.ICE)"
         :has-dirt-element="currentWorldElements.includes(WE.DIRT)"
         :has-pond-element="currentWorldElements.includes(WE.POND)"
+        :hint-tiles="hintTiles"
+        :stuck-tiles="stuckTiles"
         :disabled="!!currentDialogue"
         @win="handleWin"
       />
@@ -897,12 +1056,29 @@ watch(isPlayerStuck, (isStuck) => {
       </div>
     </main>
 
+    <!-- Dew Hint Message -->
+    <Transition name="hint-message">
+      <div v-if="hintMessage" class="hint-message">
+        <img
+          :src="`/art/DialogueSprites/${hintSprite}.webp`"
+          alt="Dew"
+          class="hint-sprite"
+        />
+        <div class="hint-message-content">
+          <span class="hint-message-text">{{ hintMessage }}</span>
+        </div>
+      </div>
+    </Transition>
+
     <BottomBar
       :disabled="isFading"
       :can-undo="canUndo"
+      :undo-glow="undoGlow"
+      :restart-glow="restartGlow"
       @restart="handleRestart"
       @undo="handleUndo"
       @skip="handleSkip"
+      @hint="handleHint"
       @custom-world="openCustomWorldModal"
     />
 
@@ -973,6 +1149,109 @@ watch(isPlayerStuck, (isStuck) => {
   overflow: hidden;
   width: 100%;
   box-sizing: border-box;
+}
+
+/* Dew Hint Message */
+.hint-message {
+  position: fixed;
+  bottom: 68px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 150;
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
+}
+
+.hint-sprite {
+  width: 100px;
+  height: auto;
+  margin-bottom: -8px;
+  margin-right: -12px;
+  z-index: 1;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+  transform: scaleX(-1);
+}
+
+.hint-message-content {
+  background: linear-gradient(180deg, rgba(255, 248, 230, 0.98) 0%, rgba(245, 235, 210, 0.98) 100%);
+  padding: 10px 16px;
+  border-radius: 16px;
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.25),
+    0 0 0 2px rgba(139, 107, 74, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  position: relative;
+}
+
+.hint-message-content::before {
+  content: "";
+  position: absolute;
+  left: -10px;
+  bottom: 16px;
+  width: 0;
+  height: 0;
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+  border-right: 12px solid rgba(255, 248, 230, 0.98);
+  filter: drop-shadow(-2px 0 2px rgba(0, 0, 0, 0.1));
+}
+
+.hint-message-text {
+  font-family: 'Georgia', serif;
+  font-size: 17px;
+  color: #4a3a2a;
+}
+
+/* Hint message transition */
+.hint-message-enter-active {
+  animation: hintMessageIn 0.3s ease-out;
+}
+
+.hint-message-leave-active {
+  animation: hintMessageOut 0.2s ease-in;
+}
+
+@keyframes hintMessageIn {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(20px) scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+@keyframes hintMessageOut {
+  0% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(10px) scale(0.95);
+  }
+}
+
+@media (max-width: 480px) {
+  .hint-message {
+    bottom: 84px;
+  }
+
+  .hint-sprite {
+    width: 80px;
+    margin-bottom: -6px;
+    margin-right: -10px;
+  }
+
+  .hint-message-content {
+    padding: 10px 14px;
+  }
+
+  .hint-message-text {
+    font-size: 15px;
+  }
 }
 
 /* Win Modal Styles */

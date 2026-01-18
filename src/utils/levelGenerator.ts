@@ -1638,6 +1638,8 @@ function placePortalPairs(
 }
 
 // Build level from path
+// The path parameter is the solution path from findHamiltonianPath
+// It will be stored in the Level with adjusted coordinates
 function buildLevelFromPath(
 	path: Position[],
 	allShapeTiles: Set<string>,
@@ -1722,6 +1724,12 @@ function buildLevelFromPath(
 		adjustedWaterFlow[adjustedKey] = dir;
 	}
 
+	// Adjust solution path coordinates relative to grid
+	const adjustedPath: Position[] = path.map((pos) => ({
+		x: pos.x - minX,
+		y: pos.y - minY,
+	}));
+
 	return {
 		name: "Generated",
 		width,
@@ -1731,6 +1739,7 @@ function buildLevelFromPath(
 		rooms: adjustedRooms.length > 0 ? adjustedRooms : undefined,
 		waterFlow:
 			Object.keys(adjustedWaterFlow).length > 0 ? adjustedWaterFlow : undefined,
+		solutionPath: adjustedPath,
 	};
 }
 

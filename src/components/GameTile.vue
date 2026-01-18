@@ -15,6 +15,8 @@ const props = defineProps<{
 	isReachable: boolean;
 	isJustPlanted: boolean;
 	isJustCleaned?: boolean;
+	isHinted?: boolean;
+	isStuckHighlight?: boolean;
 	flowDirection?: FlowDirection | null;
 	hasIceElement?: boolean;
 	hasDirtElement?: boolean;
@@ -66,6 +68,8 @@ const tileClass = computed(() => {
 		"tile--reachable": props.isReachable && !props.isPlayerHere,
 		"tile--has-player": props.isPlayerHere,
 		"tile--just-cleaned": props.isJustCleaned,
+		"tile--hinted": props.isHinted,
+		"tile--stuck-highlight": props.isStuckHighlight,
 		"tile--shimmer": canShimmer,
 		// Ice biome takes priority over swamp and night
 		"tile--frosty":
@@ -2560,6 +2564,48 @@ function handleClick() {
     box-shadow:
       inset 0 -4px 0 rgba(0, 0, 0, 0.1),
       0 0 12px 2px rgba(255, 255, 200, 0.5);
+  }
+}
+
+/* Hint highlight for suggested moves */
+.tile--hinted {
+  animation: hintGlow 1.2s ease-in-out infinite;
+  z-index: 5;
+}
+
+@keyframes hintGlow {
+  0%, 100% {
+    box-shadow:
+      0 0 0 4px rgba(255, 220, 100, 0.7),
+      0 0 12px 4px rgba(255, 200, 50, 0.4),
+      inset 0 -4px 0 rgba(0, 0, 0, 0.1);
+  }
+  50% {
+    box-shadow:
+      0 0 0 5px rgba(255, 230, 120, 0.9),
+      0 0 20px 8px rgba(255, 210, 80, 0.6),
+      inset 0 -4px 0 rgba(0, 0, 0, 0.1);
+  }
+}
+
+/* Stuck highlight - red glow for tiles around player when no path */
+.tile--stuck-highlight {
+  animation: stuckGlow 0.8s ease-in-out infinite;
+  z-index: 5;
+}
+
+@keyframes stuckGlow {
+  0%, 100% {
+    box-shadow:
+      0 0 0 3px rgba(255, 80, 60, 0.6),
+      0 0 10px 3px rgba(255, 60, 40, 0.4),
+      inset 0 -4px 0 rgba(0, 0, 0, 0.1);
+  }
+  50% {
+    box-shadow:
+      0 0 0 4px rgba(255, 100, 80, 0.8),
+      0 0 16px 6px rgba(255, 80, 60, 0.5),
+      inset 0 -4px 0 rgba(0, 0, 0, 0.1);
   }
 }
 
