@@ -1,21 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { TileType } from "../types/game";
-import { tutorialLevels } from "./tutorialLevels";
 import {
-	tutorialIntroDialogues,
-	tutorialStuckDialogues,
 	tutorialGoodbye,
 	tutorialIntro1,
 	tutorialIntro2,
 	tutorialIntro3,
 	tutorialIntro4,
 	tutorialIntro5,
+	tutorialIntroDialogues,
 	tutorialStuck1,
 	tutorialStuck2,
 	tutorialStuck3,
 	tutorialStuck4,
 	tutorialStuck5,
+	tutorialStuckDialogues,
 } from "./tutorialDialogues";
+import { tutorialLevels } from "./tutorialLevels";
 
 describe("tutorialLevels", () => {
 	it("should have exactly 5 tutorial levels", () => {
@@ -158,7 +158,10 @@ describe("tutorialDialogues", () => {
 
 				it("should have valid lines with required properties", () => {
 					dialogue.lines.forEach((line, lineIndex) => {
-						expect(line.speaker, `Line ${lineIndex} missing speaker`).toBeTruthy();
+						expect(
+							line.speaker,
+							`Line ${lineIndex} missing speaker`,
+						).toBeTruthy();
 						expect(line.name, `Line ${lineIndex} missing name`).toBeTruthy();
 						expect(line.text, `Line ${lineIndex} missing text`).toBeTruthy();
 						expect(

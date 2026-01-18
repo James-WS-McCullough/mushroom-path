@@ -5,6 +5,7 @@ import CustomWorldModal from "./components/CustomWorldModal.vue";
 import DialogueScene from "./components/DialogueScene.vue";
 import FirstTimeModal from "./components/FirstTimeModal.vue";
 import GameBoard from "./components/GameBoard.vue";
+import MapScreen from "./components/MapScreen.vue";
 import MusicPlayer from "./components/MusicPlayer.vue";
 import StartScreen from "./components/StartScreen.vue";
 import TopBar from "./components/TopBar.vue";
@@ -150,6 +151,9 @@ const hasTutorialComplete = localStorage.getItem(
 const hasFirstTimeAsked = localStorage.getItem(
 	"mushroom-path-first-time-asked",
 );
+const hasMetDew = ref(
+	localStorage.getItem("mushroom-path-met-dew") === "true",
+);
 
 // Mechanic intro tracking
 function hasSeenMechanic(mechanic: string): boolean {
@@ -278,10 +282,49 @@ const restartHintMessages = [
 	"let's try a new approach",
 ];
 
+// Sprout's hint messages (used before meeting Dew)
+const sproutSuccessMessages = [
+	"maybe here?",
+	"ooh this one!",
+	"let's try this~",
+	"hop hop!",
+	"this way!",
+];
+
+const sproutStuckMessages = [
+	"oops...",
+	"hmm, go back?",
+	"that wasn't right~",
+	"uh oh!",
+];
+
+const sproutUnsureMessages = [
+	"hmm...",
+	"i dunno~",
+	"this is hard!",
+	"let me think...",
+];
+
+const sproutRestartMessages = [
+	"start over!",
+	"try again~",
+	"one more time!",
+	"from the top!",
+];
+
 // World and level tracking
 const currentWorldIndex = ref(0);
 const currentLevelNumber = ref(1);
 const currentWorldElements = ref<WorldElement[]>([]);
+
+// Map screen state
+const showMapScreen = ref(false);
+const worldElementHistory = ref<WorldElement[][]>([]);
+const worldNameHistory = ref<string[]>([]);
+const mapTransitionData = ref<{
+	fromWorld: number;
+	toWorld: number;
+} | null>(null);
 // Random offsets for world names so first world isn't always the same
 const forestNameOffset = Math.floor(Math.random() * forestWorldNames.length);
 const iceNameOffset = Math.floor(Math.random() * iceWorldNames.length);
@@ -289,7 +332,13 @@ const swampNameOffset = Math.floor(Math.random() * swampWorldNames.length);
 const nightNameOffset = Math.floor(Math.random() * nightWorldNames.length);
 
 // All available world elements
-const allElements: WorldElement[] = [WE.RIVERS, WE.DIRT, WE.ICE, WE.FAIRY, WE.POND];
+const allElements: WorldElement[] = [
+	WE.RIVERS,
+	WE.DIRT,
+	WE.ICE,
+	WE.FAIRY,
+	WE.POND,
+];
 
 // Update body class based on current biome (ice takes priority, then pond/night, then swamp)
 watch(
@@ -345,7 +394,7 @@ function generateWorldElements(): WorldElement[] {
 	// Handle incompatible elements
 	const incompatiblePairs: [WE, WE][] = [
 		[WE.RIVERS, WE.POND], // Both water-based, conflicting mechanics
-		[WE.ICE, WE.POND],    // Vibes don't match (frozen vs lily-pads)
+		[WE.ICE, WE.POND], // Vibes don't match (frozen vs lily-pads)
 	];
 
 	for (const [a, b] of incompatiblePairs) {
@@ -400,6 +449,12 @@ function getNewLevel(): Level {
 function advanceLevel(): boolean {
 	currentLevelNumber.value++;
 	if (currentLevelNumber.value > LEVELS_PER_WORLD) {
+		// Track current world elements and name before moving to next world
+		worldElementHistory.value[currentWorldIndex.value] = [
+			...currentWorldElements.value,
+		];
+		worldNameHistory.value[currentWorldIndex.value] = currentWorldName.value;
+
 		// Move to next world
 		currentWorldIndex.value++;
 		currentLevelNumber.value = 1;
@@ -439,7 +494,9 @@ function handleWin() {
 	// Check for level-specific dialogue first (e.g., meeting Dew at world 1 level 4)
 	const levelKey = `${currentWorldIndex.value}-${currentLevelNumber.value}`;
 	const levelDialogue = levelDialogues[levelKey];
-	if (levelDialogue) {
+	// Only show level dialogue if it's not the "meet Dew" scene or we haven't met Dew yet
+	const isMeetDewScene = levelKey === "0-3";
+	if (levelDialogue && (!isMeetDewScene || !hasMetDew.value)) {
 		pendingWorldDialogue.value = levelDialogue;
 	} else {
 		// Check if this is the last level of the world and if there's a dialogue
@@ -449,8 +506,8 @@ function handleWin() {
 			const worldDialogue = worldEndDialogues[currentWorldIndex.value];
 			if (worldDialogue) {
 				pendingWorldDialogue.value = worldDialogue;
-			} else if (currentWorldIndex.value > 0 && adventureScenes.length > 0) {
-				// After meeting Dew, play random adventure scenes
+			} else if (adventureScenes.length > 0) {
+				// Play random adventure scenes (Dew is met at world 1 level 4)
 				const randomScene =
 					adventureScenes[Math.floor(Math.random() * adventureScenes.length)]!;
 				pendingWorldDialogue.value = randomScene;
@@ -467,6 +524,28 @@ function handleWin() {
 
 function startTransition() {
 	showWinModal.value = false;
+
+	// If entering a new world, show the map screen instead of normal fade
+	if (pendingNewWorld.value) {
+		// Set up map transition data
+		mapTransitionData.value = {
+			fromWorld: currentWorldIndex.value - 1,
+			toWorld: currentWorldIndex.value,
+		};
+		// Store the new world's elements and name in history
+		worldElementHistory.value[currentWorldIndex.value] = [
+			...currentWorldElements.value,
+		];
+		worldNameHistory.value[currentWorldIndex.value] = currentWorldName.value;
+		showMapScreen.value = true;
+		return;
+	}
+
+	// Same world - use existing fade transition
+	performFadeTransition();
+}
+
+function performFadeTransition() {
 	isFading.value = true;
 
 	// Start fade to black immediately
@@ -528,6 +607,20 @@ function startTransition() {
 	}, 500);
 }
 
+function handleMapComplete() {
+	showMapScreen.value = false;
+	mapTransitionData.value = null;
+
+	// Clear the world dialogue since it was shown on the map screen
+	pendingWorldDialogue.value = null;
+
+	// Note: Don't call changeWorldBGM() here - performFadeTransition() will handle it
+	// since pendingNewWorld is still true
+
+	// Now do the normal fade transition to generate and show the new level
+	performFadeTransition();
+}
+
 const skipModalText = ref("");
 
 // Random mushroom types for win modal
@@ -555,7 +648,9 @@ function handleSkip() {
 	// Check for level-specific dialogue first
 	const levelKey = `${currentWorldIndex.value}-${currentLevelNumber.value}`;
 	const levelDialogue = levelDialogues[levelKey];
-	if (levelDialogue) {
+	// Only show level dialogue if it's not the "meet Dew" scene or we haven't met Dew yet
+	const isMeetDewScene = levelKey === "0-3";
+	if (levelDialogue && (!isMeetDewScene || !hasMetDew.value)) {
 		pendingWorldDialogue.value = levelDialogue;
 	} else {
 		// Check if this is the last level of the world and if there's a dialogue
@@ -564,7 +659,7 @@ function handleSkip() {
 			const worldDialogue = worldEndDialogues[currentWorldIndex.value];
 			if (worldDialogue) {
 				pendingWorldDialogue.value = worldDialogue;
-			} else if (currentWorldIndex.value > 0 && adventureScenes.length > 0) {
+			} else if (adventureScenes.length > 0) {
 				const randomScene =
 					adventureScenes[Math.floor(Math.random() * adventureScenes.length)]!;
 				pendingWorldDialogue.value = randomScene;
@@ -616,11 +711,17 @@ function handleHint() {
 	const hint = gameBoardRef.value?.getHint?.();
 	if (!hint) return;
 
+	// Use Sprout's messages/sprite if we haven't met Dew yet
+	// After meeting Dew, 30% chance Sprout gives the hint instead
+	const useSprout = !hasMetDew.value || Math.random() < 0.3;
+
 	if (hint.hintTiles && hint.hintTiles.length > 0) {
-		// Show hint tiles with happy Dew - stagger them to show the route
+		// Show hint tiles - stagger them to show the route
 		const tiles = hint.hintTiles;
-		hintSprite.value = "BlueGirl-Normal";
-		hintMessage.value = successHintMessages[Math.floor(Math.random() * successHintMessages.length)] ?? "Go this way!";
+		hintSprite.value = useSprout ? "MushroomGirl-Happy" : "BlueGirl-Normal";
+		const messages = useSprout ? sproutSuccessMessages : successHintMessages;
+		hintMessage.value =
+			messages[Math.floor(Math.random() * messages.length)] ?? "Go this way!";
 
 		// Show tiles one by one with delay
 		const TILE_DELAY = 400; // ms between each tile
@@ -640,8 +741,11 @@ function handleHint() {
 		hintTimeouts.push(clearTimeoutId);
 	} else if (hint.unsure) {
 		// Pathfinding timed out - show unsure message
-		hintSprite.value = "BlueGirl-Nervous";
-		hintMessage.value = unsureHintMessages[Math.floor(Math.random() * unsureHintMessages.length)] ?? "I'm not sure...";
+		hintSprite.value = useSprout ? "MushroomGirl-Confused" : "BlueGirl-Nervous";
+		const messages = useSprout ? sproutUnsureMessages : unsureHintMessages;
+		hintMessage.value =
+			messages[Math.floor(Math.random() * messages.length)] ??
+			"I'm not sure...";
 
 		// Auto-clear after 3 seconds
 		const clearTimeoutId = setTimeout(() => {
@@ -651,16 +755,22 @@ function handleHint() {
 	} else if (hint.needsUndo) {
 		// Check if undo is available
 		stuckTiles.value = hint.stuckTiles ?? [];
-		hintSprite.value = "BlueGirl-Nervous";
+		hintSprite.value = useSprout ? "MushroomGirl-Nervous" : "BlueGirl-Nervous";
 
 		if (canUndo.value) {
 			// Glow the undo button
 			undoGlow.value = true;
-			hintMessage.value = stuckHintMessages[Math.floor(Math.random() * stuckHintMessages.length)] ?? "We need to go back...";
+			const messages = useSprout ? sproutStuckMessages : stuckHintMessages;
+			hintMessage.value =
+				messages[Math.floor(Math.random() * messages.length)] ??
+				"We need to go back...";
 		} else {
 			// Glow the restart button instead
 			restartGlow.value = true;
-			hintMessage.value = restartHintMessages[Math.floor(Math.random() * restartHintMessages.length)] ?? "Let's start fresh!";
+			const messages = useSprout ? sproutRestartMessages : restartHintMessages;
+			hintMessage.value =
+				messages[Math.floor(Math.random() * messages.length)] ??
+				"Let's start fresh!";
 		}
 
 		// Auto-clear glow after 3 seconds
@@ -710,6 +820,10 @@ async function startGame() {
 	currentWorldElements.value = [];
 	levelQueue.setWorldElements([]);
 
+	// Record first world's elements and name in history for map screen
+	worldElementHistory.value[0] = [];
+	worldNameHistory.value[0] = currentWorldName.value;
+
 	currentLevel.value = getNewLevel();
 	gameStarted.value = true;
 	isLoading.value = false;
@@ -750,11 +864,21 @@ function startCustomWorld(elements: WorldElement[]) {
 	// Ensure game is started
 	gameStarted.value = true;
 
+	// Track current world elements and name before incrementing
+	worldElementHistory.value[currentWorldIndex.value] = [
+		...currentWorldElements.value,
+	];
+	worldNameHistory.value[currentWorldIndex.value] = currentWorldName.value;
+
 	// Set up custom world state
 	currentWorldIndex.value++;
 	currentLevelNumber.value = 1;
 	currentWorldElements.value = elements;
 	levelQueue.setWorldElements(elements);
+
+	// Track new world elements and name in history (name updates after elements change)
+	worldElementHistory.value[currentWorldIndex.value] = [...elements];
+	worldNameHistory.value[currentWorldIndex.value] = currentWorldName.value;
 
 	// Queue mechanic intro dialogues for any new mechanics
 	queueUnseenMechanicDialogues(elements);
@@ -819,6 +943,10 @@ async function handleDialogueComplete() {
 		} else {
 			await startGame();
 		}
+	} else if (dialogueId === "meet-dew") {
+		// Mark Dew as met so the scene doesn't replay
+		localStorage.setItem("mushroom-path-met-dew", "true");
+		hasMetDew.value = true;
 	} else if (dialogueId?.startsWith("tutorial-intro-")) {
 		// Tutorial intro dialogue finished, player can now play the puzzle
 		// Game is already loaded, just let them play
@@ -840,6 +968,10 @@ async function handleDialogueComplete() {
 			currentLevelNumber.value = 1;
 			currentWorldElements.value = [];
 			levelQueue.setWorldElements([]);
+
+			// Record first world's elements and name in history for map screen
+			worldElementHistory.value[0] = [];
+			worldNameHistory.value[0] = currentWorldName.value;
 
 			// Generate first level
 			currentLevel.value = getNewLevel();
@@ -997,6 +1129,20 @@ watch(isPlayerStuck, (isStuck) => {
 </script>
 
 <template>
+  <!-- Map Screen (shown at world transitions) -->
+  <Transition name="map-screen">
+    <MapScreen
+      v-if="showMapScreen && mapTransitionData"
+      :current-world-index="mapTransitionData.toWorld"
+      :previous-world-index="mapTransitionData.fromWorld"
+      :world-element-history="worldElementHistory"
+      :world-names="worldNameHistory"
+      :is-animating="true"
+      :dialogue="pendingWorldDialogue"
+      @complete="handleMapComplete"
+    />
+  </Transition>
+
   <!-- Dialogue Scene (intro and story events) -->
   <Transition name="dialogue-fade">
     <DialogueScene
@@ -1607,6 +1753,17 @@ watch(isPlayerStuck, (isStuck) => {
 
 .dialogue-fade-enter-from,
 .dialogue-fade-leave-to {
+  opacity: 0;
+}
+
+/* Map Screen Transition */
+.map-screen-enter-active,
+.map-screen-leave-active {
+  transition: opacity 0.5s ease;
+}
+
+.map-screen-enter-from,
+.map-screen-leave-to {
   opacity: 0;
 }
 </style>

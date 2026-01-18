@@ -367,9 +367,9 @@ export const riverIntroDialogue: DialogueScene = {
 		{
 			speaker: "dew",
 			name: "Dew",
-			text: "the water looks pretty deep... i dont think we can walk through it",
+			text: "careful sprout! the current looks strong... you might get carried away!",
 			leftSprite: "MushroomGirl-Excited",
-			rightSprite: "BlueGirl-Normal",
+			rightSprite: "BlueGirl-Nervous",
 			rightHighlight: true,
 		},
 		{

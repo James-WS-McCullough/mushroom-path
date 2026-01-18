@@ -46,7 +46,7 @@ const DEFAULT_CONFIG: GeneratorConfig = {
 	iceChance: 0.12,
 	iceClusterSize: 4,
 	portalPairs: 2, // 1-3 pairs when FAIRY element is active
-	pondChance: 0.10,
+	pondChance: 0.1,
 	pondClusterSize: 3,
 };
 
@@ -951,14 +951,26 @@ function findHamiltonianPath(
 				});
 
 				for (const stoneNeighbor of shuffleArray(stoneNeighbors)) {
-					const result = dfs(stoneNeighbor, visitedOnce, visitedTwice, depth + 1, newRecentPath);
+					const result = dfs(
+						stoneNeighbor,
+						visitedOnce,
+						visitedTwice,
+						depth + 1,
+						newRecentPath,
+					);
 					if (result) {
 						return [current, neighbor, ...result];
 					}
 				}
 			} else {
 				// Regular tile (grass or dirt needing revisit)
-				const result = dfs(neighbor, visitedOnce, visitedTwice, depth + 1, newRecentPath);
+				const result = dfs(
+					neighbor,
+					visitedOnce,
+					visitedTwice,
+					depth + 1,
+					newRecentPath,
+				);
 				if (result) {
 					return [current, ...result];
 				}
@@ -985,7 +997,13 @@ function findHamiltonianPath(
 			});
 
 			for (const stoneNeighbor of shuffleArray(stoneNeighbors)) {
-				const result = dfs(stoneNeighbor, visitedOnce, visitedTwice, depth + 1, newRecentPath);
+				const result = dfs(
+					stoneNeighbor,
+					visitedOnce,
+					visitedTwice,
+					depth + 1,
+					newRecentPath,
+				);
 				if (result) {
 					return [current, destination, ...result];
 				}
@@ -1016,14 +1034,26 @@ function findHamiltonianPath(
 				});
 
 				for (const stoneNeighbor of shuffleArray(stoneNeighbors)) {
-					const result = dfs(stoneNeighbor, visitedOnce, visitedTwice, depth + 1, newRecentPath);
+					const result = dfs(
+						stoneNeighbor,
+						visitedOnce,
+						visitedTwice,
+						depth + 1,
+						newRecentPath,
+					);
 					if (result) {
 						return [current, destination, ...result];
 					}
 				}
 			} else {
 				// Landed on grass/dirt - continue path from there
-				const result = dfs(destination, visitedOnce, visitedTwice, depth + 1, newRecentPath);
+				const result = dfs(
+					destination,
+					visitedOnce,
+					visitedTwice,
+					depth + 1,
+					newRecentPath,
+				);
 				if (result) {
 					return [current, ...result];
 				}
@@ -1188,7 +1218,13 @@ function addPondStrip(
 	water: Set<string>,
 	ice: Set<string>,
 	chance: number,
-): { grass: Set<string>; brambles: Set<string>; stones: Set<string>; pond: Set<string>; pondWater: Set<string> } {
+): {
+	grass: Set<string>;
+	brambles: Set<string>;
+	stones: Set<string>;
+	pond: Set<string>;
+	pondWater: Set<string>;
+} {
 	const remainingGrass = new Set(grass);
 	const remainingBrambles = new Set(brambles);
 	const remainingStones = new Set(stones);
@@ -1196,12 +1232,21 @@ function addPondStrip(
 	const pondWater = new Set<string>();
 
 	if (chance <= 0) {
-		return { grass: remainingGrass, brambles: remainingBrambles, stones: remainingStones, pond, pondWater };
+		return {
+			grass: remainingGrass,
+			brambles: remainingBrambles,
+			stones: remainingStones,
+			pond,
+			pondWater,
+		};
 	}
 
 	// Find bounding box of all tiles (grass, brambles, stones)
 	const allTiles = new Set([...grass, ...brambles, ...stones]);
-	let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+	let minX = Infinity,
+		maxX = -Infinity,
+		minY = Infinity,
+		maxY = -Infinity;
 	for (const key of allTiles) {
 		const pos = parseKey(key);
 		minX = Math.min(minX, pos.x);
@@ -1225,7 +1270,8 @@ function addPondStrip(
 			// Tall levels prefer horizontal strips, wide levels prefer vertical strips
 			// But allow 30% chance of the other orientation for variety
 			const preferHorizontal = gridHeight >= gridWidth;
-			const isHorizontal = Math.random() < 0.7 ? preferHorizontal : !preferHorizontal;
+			const isHorizontal =
+				Math.random() < 0.7 ? preferHorizontal : !preferHorizontal;
 			const stripWidth = randomInt(2, 4); // Width/height of the strip
 
 			let stripTiles: Set<string>;
@@ -1265,113 +1311,103 @@ function addPondStrip(
 				// Vertical strip - divides left from right
 				const minStripX = minX + 1;
 				const maxStripX = maxX - stripWidth;
-			if (maxStripX < minStripX) continue;
+				if (maxStripX < minStripX) continue;
 
-			const stripX = randomInt(minStripX, maxStripX);
-			stripTiles = new Set<string>();
-			leftSide = new Set<string>(); // tiles left of strip
-			rightSide = new Set<string>(); // tiles right of strip
+				const stripX = randomInt(minStripX, maxStripX);
+				stripTiles = new Set<string>();
+				leftSide = new Set<string>(); // tiles left of strip
+				rightSide = new Set<string>(); // tiles right of strip
 
-			// Collect all tiles (grass, brambles, stones) that would be in the strip
-			for (const key of allTiles) {
-				const pos = parseKey(key);
-				if (pos.x >= stripX && pos.x < stripX + stripWidth) {
-					stripTiles.add(key);
-				}
-			}
-
-			// Collect grass tiles on each side (for connectivity check)
-			for (const key of remainingGrass) {
-				const pos = parseKey(key);
-				if (pos.x < stripX) {
-					leftSide.add(key);
-				} else if (pos.x >= stripX + stripWidth) {
-					rightSide.add(key);
-				}
-			}
-		}
-
-		// Need grass on both sides and enough strip tiles
-		if (leftSide.size < 3 || rightSide.size < 3) continue;
-		if (stripTiles.size < 4) continue;
-
-		// Find connection points - strip tiles adjacent to left side grass
-		const bridgeStarts: Position[] = [];
-		for (const key of stripTiles) {
-			const pos = parseKey(key);
-			const neighbors = [
-				posKey(pos.x + 1, pos.y),
-				posKey(pos.x - 1, pos.y),
-				posKey(pos.x, pos.y + 1),
-				posKey(pos.x, pos.y - 1),
-			];
-
-			// Check if this tile is adjacent to left side grass
-			const touchesLeft = neighbors.some(n => leftSide.has(n));
-			if (touchesLeft) {
-				bridgeStarts.push(pos);
-			}
-		}
-
-		if (bridgeStarts.length === 0) continue;
-
-		// Create lily-pad bridges connecting left to right side
-		const lilypadTiles = new Set<string>();
-		const usedBridgeStarts = new Set<string>();
-
-		// Try to create 1-2 bridges
-		const numBridges = randomInt(1, Math.min(2, bridgeStarts.length));
-		const shuffledStarts = shuffleArray(bridgeStarts);
-
-		for (let b = 0; b < numBridges && b < shuffledStarts.length; b++) {
-			const start = shuffledStarts[b]!;
-			const startKey = posKey(start.x, start.y);
-			if (usedBridgeStarts.has(startKey)) continue;
-
-			// Build a path across the strip
-			const bridgePath: Position[] = [start];
-			let current = start;
-			let reachedOtherSide = false;
-
-			// Move across the strip (in the perpendicular direction)
-			for (let step = 0; step < stripWidth + 2; step++) {
-				// Check if we've reached the other side
-				const neighbors = [
-					posKey(current.x + 1, current.y),
-					posKey(current.x - 1, current.y),
-					posKey(current.x, current.y + 1),
-					posKey(current.x, current.y - 1),
-				];
-
-				if (neighbors.some(n => rightSide.has(n))) {
-					reachedOtherSide = true;
-					break;
-				}
-
-				// Move towards the other side (perpendicular to strip)
-				let moved = false;
-				const moveOptions = isHorizontal
-					? [{ x: current.x, y: current.y + 1 }, { x: current.x, y: current.y - 1 }]
-					: [{ x: current.x + 1, y: current.y }, { x: current.x - 1, y: current.y }];
-
-				// Prefer moving towards right side
-				for (const move of moveOptions) {
-					const moveKey = posKey(move.x, move.y);
-					if (stripTiles.has(moveKey) && !lilypadTiles.has(moveKey)) {
-						bridgePath.push(move);
-						current = move;
-						moved = true;
-						break;
+				// Collect all tiles (grass, brambles, stones) that would be in the strip
+				for (const key of allTiles) {
+					const pos = parseKey(key);
+					if (pos.x >= stripX && pos.x < stripX + stripWidth) {
+						stripTiles.add(key);
 					}
 				}
 
-				// If can't move perpendicular, try lateral movement
-				if (!moved) {
-					const lateralOptions = isHorizontal
-						? [{ x: current.x + 1, y: current.y }, { x: current.x - 1, y: current.y }]
-						: [{ x: current.x, y: current.y + 1 }, { x: current.x, y: current.y - 1 }];
+				// Collect grass tiles on each side (for connectivity check)
+				for (const key of remainingGrass) {
+					const pos = parseKey(key);
+					if (pos.x < stripX) {
+						leftSide.add(key);
+					} else if (pos.x >= stripX + stripWidth) {
+						rightSide.add(key);
+					}
+				}
+			}
 
-					for (const move of shuffleArray(lateralOptions)) {
+			// Need grass on both sides and enough strip tiles
+			if (leftSide.size < 3 || rightSide.size < 3) continue;
+			if (stripTiles.size < 4) continue;
+
+			// Find connection points - strip tiles adjacent to left side grass
+			const bridgeStarts: Position[] = [];
+			for (const key of stripTiles) {
+				const pos = parseKey(key);
+				const neighbors = [
+					posKey(pos.x + 1, pos.y),
+					posKey(pos.x - 1, pos.y),
+					posKey(pos.x, pos.y + 1),
+					posKey(pos.x, pos.y - 1),
+				];
+
+				// Check if this tile is adjacent to left side grass
+				const touchesLeft = neighbors.some((n) => leftSide.has(n));
+				if (touchesLeft) {
+					bridgeStarts.push(pos);
+				}
+			}
+
+			if (bridgeStarts.length === 0) continue;
+
+			// Create lily-pad bridges connecting left to right side
+			const lilypadTiles = new Set<string>();
+			const usedBridgeStarts = new Set<string>();
+
+			// Try to create 1-2 bridges
+			const numBridges = randomInt(1, Math.min(2, bridgeStarts.length));
+			const shuffledStarts = shuffleArray(bridgeStarts);
+
+			for (let b = 0; b < numBridges && b < shuffledStarts.length; b++) {
+				const start = shuffledStarts[b]!;
+				const startKey = posKey(start.x, start.y);
+				if (usedBridgeStarts.has(startKey)) continue;
+
+				// Build a path across the strip
+				const bridgePath: Position[] = [start];
+				let current = start;
+				let reachedOtherSide = false;
+
+				// Move across the strip (in the perpendicular direction)
+				for (let step = 0; step < stripWidth + 2; step++) {
+					// Check if we've reached the other side
+					const neighbors = [
+						posKey(current.x + 1, current.y),
+						posKey(current.x - 1, current.y),
+						posKey(current.x, current.y + 1),
+						posKey(current.x, current.y - 1),
+					];
+
+					if (neighbors.some((n) => rightSide.has(n))) {
+						reachedOtherSide = true;
+						break;
+					}
+
+					// Move towards the other side (perpendicular to strip)
+					let moved = false;
+					const moveOptions = isHorizontal
+						? [
+								{ x: current.x, y: current.y + 1 },
+								{ x: current.x, y: current.y - 1 },
+							]
+						: [
+								{ x: current.x + 1, y: current.y },
+								{ x: current.x - 1, y: current.y },
+							];
+
+					// Prefer moving towards right side
+					for (const move of moveOptions) {
 						const moveKey = posKey(move.x, move.y);
 						if (stripTiles.has(moveKey) && !lilypadTiles.has(moveKey)) {
 							bridgePath.push(move);
@@ -1380,76 +1416,98 @@ function addPondStrip(
 							break;
 						}
 					}
+
+					// If can't move perpendicular, try lateral movement
+					if (!moved) {
+						const lateralOptions = isHorizontal
+							? [
+									{ x: current.x + 1, y: current.y },
+									{ x: current.x - 1, y: current.y },
+								]
+							: [
+									{ x: current.x, y: current.y + 1 },
+									{ x: current.x, y: current.y - 1 },
+								];
+
+						for (const move of shuffleArray(lateralOptions)) {
+							const moveKey = posKey(move.x, move.y);
+							if (stripTiles.has(moveKey) && !lilypadTiles.has(moveKey)) {
+								bridgePath.push(move);
+								current = move;
+								moved = true;
+								break;
+							}
+						}
+					}
+
+					if (!moved) break;
 				}
 
-				if (!moved) break;
-			}
-
-			if (reachedOtherSide && bridgePath.length >= 2) {
-				for (const pos of bridgePath) {
-					lilypadTiles.add(posKey(pos.x, pos.y));
+				if (reachedOtherSide && bridgePath.length >= 2) {
+					for (const pos of bridgePath) {
+						lilypadTiles.add(posKey(pos.x, pos.y));
+					}
+					usedBridgeStarts.add(startKey);
 				}
-				usedBridgeStarts.add(startKey);
 			}
-		}
 
-		// Need at least one successful bridge
-		if (lilypadTiles.size < 2) continue;
+			// Need at least one successful bridge
+			if (lilypadTiles.size < 2) continue;
 
-		// Create water tiles from remaining strip tiles
-		const waterTiles = new Set<string>();
-		for (const key of stripTiles) {
-			if (!lilypadTiles.has(key)) {
-				waterTiles.add(key);
+			// Create water tiles from remaining strip tiles
+			const waterTiles = new Set<string>();
+			for (const key of stripTiles) {
+				if (!lilypadTiles.has(key)) {
+					waterTiles.add(key);
+				}
 			}
-		}
 
-		// Validate connectivity - check grass on both sides can still connect
-		const testGrass = new Set(remainingGrass);
-		for (const tile of stripTiles) {
-			testGrass.delete(tile);
-		}
-
-		// Need at least 8 grass tiles remaining
-		if (testGrass.size < 8) continue;
-
-		// Remove brambles that are in the strip for connectivity check
-		const testBrambles = new Set(remainingBrambles);
-		for (const tile of stripTiles) {
-			testBrambles.delete(tile);
-		}
-
-		// Remove stones that are in the strip
-		const testStones = new Set(remainingStones);
-		for (const tile of stripTiles) {
-			testStones.delete(tile);
-		}
-
-		// Lily-pad tiles act as walkable bridges
-		const walkableBridges = new Set([
-			...testStones,
-			...water,
-			...ice,
-			...lilypadTiles,
-		]);
-
-		if (isConnectedWithJumps(testGrass, testBrambles, walkableBridges)) {
-			// Valid pond strip! Remove tiles from their original sets
+			// Validate connectivity - check grass on both sides can still connect
+			const testGrass = new Set(remainingGrass);
 			for (const tile of stripTiles) {
-				remainingGrass.delete(tile);
-				remainingBrambles.delete(tile);
-				remainingStones.delete(tile);
+				testGrass.delete(tile);
 			}
 
-			// Add lily-pad tiles as POND type
-			for (const tile of lilypadTiles) {
-				pond.add(tile);
+			// Need at least 8 grass tiles remaining
+			if (testGrass.size < 8) continue;
+
+			// Remove brambles that are in the strip for connectivity check
+			const testBrambles = new Set(remainingBrambles);
+			for (const tile of stripTiles) {
+				testBrambles.delete(tile);
 			}
 
-			// Add water tiles as POND_WATER
-			for (const tile of waterTiles) {
-				pondWater.add(tile);
+			// Remove stones that are in the strip
+			const testStones = new Set(remainingStones);
+			for (const tile of stripTiles) {
+				testStones.delete(tile);
 			}
+
+			// Lily-pad tiles act as walkable bridges
+			const walkableBridges = new Set([
+				...testStones,
+				...water,
+				...ice,
+				...lilypadTiles,
+			]);
+
+			if (isConnectedWithJumps(testGrass, testBrambles, walkableBridges)) {
+				// Valid pond strip! Remove tiles from their original sets
+				for (const tile of stripTiles) {
+					remainingGrass.delete(tile);
+					remainingBrambles.delete(tile);
+					remainingStones.delete(tile);
+				}
+
+				// Add lily-pad tiles as POND type
+				for (const tile of lilypadTiles) {
+					pond.add(tile);
+				}
+
+				// Add water tiles as POND_WATER
+				for (const tile of waterTiles) {
+					pondWater.add(tile);
+				}
 
 				break;
 			}
@@ -1537,7 +1595,13 @@ function addPondStrip(
 		placePuddles(randomInt(1, 2));
 	}
 
-	return { grass: remainingGrass, brambles: remainingBrambles, stones: remainingStones, pond, pondWater };
+	return {
+		grass: remainingGrass,
+		brambles: remainingBrambles,
+		stones: remainingStones,
+		pond,
+		pondWater,
+	};
 }
 
 // Compute where a player slides to when entering ice from a given direction
@@ -1876,7 +1940,7 @@ export function generateLevel(
 			brambles: bramblesAfterPond,
 			stones: stonesAfterPond,
 			pond,
-			pondWater
+			pondWater,
 		} = addPondStrip(
 			grassAfterIce,
 			brambles,

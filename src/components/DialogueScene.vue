@@ -346,4 +346,37 @@ onUnmounted(() => {
     max-height: 300px;
   }
 }
+
+/* Larger screens - bigger portraits */
+@media (min-width: 800px) {
+  .character-sprite {
+    height: 75vh;
+    max-height: 700px;
+  }
+
+  .dialogue-scene--overlay .character-sprite {
+    height: 55vh;
+    max-height: 500px;
+  }
+}
+
+@media (min-width: 1200px) {
+  .character-sprite {
+    height: 80vh;
+    max-height: 850px;
+  }
+
+  .dialogue-scene--overlay .character-sprite {
+    height: 60vh;
+    max-height: 600px;
+  }
+
+  .character--left {
+    left: 5%;
+  }
+
+  .character--right {
+    right: 5%;
+  }
+}
 </style>

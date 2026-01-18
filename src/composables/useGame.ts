@@ -93,7 +93,10 @@ export function useGame(level: Level) {
 			if (!row) continue;
 			for (let x = 0; x < row.length; x++) {
 				if (row[x] === TileType.POND) {
-					lilypadState.value.set(`${x},${y}`, { submerged: false, cooldown: 0 });
+					lilypadState.value.set(`${x},${y}`, {
+						submerged: false,
+						cooldown: 0,
+					});
 				}
 			}
 		}
@@ -190,7 +193,11 @@ export function useGame(level: Level) {
 			const state = getLilypadState(position);
 			if (state?.submerged) return true;
 		}
-		return tile.type === TileType.BRAMBLE || tile.type === TileType.MUSHROOM || tile.type === TileType.POND_WATER;
+		return (
+			tile.type === TileType.BRAMBLE ||
+			tile.type === TileType.MUSHROOM ||
+			tile.type === TileType.POND_WATER
+		);
 	}
 
 	function isAdjacent(from: Position, to: Position): boolean {
@@ -265,7 +272,7 @@ export function useGame(level: Level) {
 	function getReachableTiles(
 		fromPos: Position,
 		tileStates: TileType[][],
-		lilypads: Map<string, LilypadState>
+		lilypads: Map<string, LilypadState>,
 	): Set<string> {
 		const reachable = new Set<string>();
 		const queue: Position[] = [fromPos];
@@ -283,8 +290,13 @@ export function useGame(level: Level) {
 			for (const dir of directions) {
 				const adjacent = { x: current.x + dir.x, y: current.y + dir.y };
 
-				if (adjacent.x < 0 || adjacent.x >= level.width ||
-					adjacent.y < 0 || adjacent.y >= level.height) continue;
+				if (
+					adjacent.x < 0 ||
+					adjacent.x >= level.width ||
+					adjacent.y < 0 ||
+					adjacent.y >= level.height
+				)
+					continue;
 
 				const adjKey = `${adjacent.x},${adjacent.y}`;
 				const adjType = tileStates[adjacent.y]?.[adjacent.x];
@@ -313,9 +325,17 @@ export function useGame(level: Level) {
 					(adjType === TileType.POND && lilypads.get(adjKey)?.submerged);
 
 				if (isObstacle) {
-					const jumpTarget = { x: current.x + dir.x * 2, y: current.y + dir.y * 2 };
-					if (jumpTarget.x < 0 || jumpTarget.x >= level.width ||
-						jumpTarget.y < 0 || jumpTarget.y >= level.height) continue;
+					const jumpTarget = {
+						x: current.x + dir.x * 2,
+						y: current.y + dir.y * 2,
+					};
+					if (
+						jumpTarget.x < 0 ||
+						jumpTarget.x >= level.width ||
+						jumpTarget.y < 0 ||
+						jumpTarget.y >= level.height
+					)
+						continue;
 
 					const jumpKey = `${jumpTarget.x},${jumpTarget.y}`;
 					if (reachable.has(jumpKey)) continue;
@@ -347,7 +367,7 @@ export function useGame(level: Level) {
 	function isGraphConnected(
 		playerPos: Position,
 		tileStates: TileType[][],
-		lilypads: Map<string, LilypadState>
+		lilypads: Map<string, LilypadState>,
 	): boolean {
 		const reachable = getReachableTiles(playerPos, tileStates, lilypads);
 
@@ -388,8 +408,13 @@ export function useGame(level: Level) {
 		}
 
 		// Win when exactly 1 grass remains (player standing on it) and no dirt
-		return grassCount === 1 && dirtCount === 0 && lastGrassPos !== null &&
-			lastGrassPos.x === playerPos.x && lastGrassPos.y === playerPos.y;
+		return (
+			grassCount === 1 &&
+			dirtCount === 0 &&
+			lastGrassPos !== null &&
+			lastGrassPos.x === playerPos.x &&
+			lastGrassPos.y === playerPos.y
+		);
 	}
 
 	// Count remaining grass and dirt tiles
@@ -418,7 +443,7 @@ export function useGame(level: Level) {
 		lilypads: Map<string, LilypadState>,
 		path: Position[],
 		maxDepth: number,
-		iterations: { count: number }
+		iterations: { count: number },
 	): { path: Position[] | null; timedOut: boolean } {
 		// Check iteration limit
 		iterations.count++;
@@ -440,13 +465,31 @@ export function useGame(level: Level) {
 		const moves = getValidMovesForPathfinding(pos, tileStates, lilypads);
 
 		// Filter to moves that preserve connectivity
-		const validMoves: { move: { target: Position; direction: Direction }; simResult: { finalPos: Position; newTiles: TileType[][]; newLilypads: Map<string, LilypadState> } }[] = [];
+		const validMoves: {
+			move: { target: Position; direction: Direction };
+			simResult: {
+				finalPos: Position;
+				newTiles: TileType[][];
+				newLilypads: Map<string, LilypadState>;
+			};
+		}[] = [];
 
 		for (const move of moves) {
-			const simResult = simulateMoveForPathfinding(pos, move, tileStates, lilypads);
+			const simResult = simulateMoveForPathfinding(
+				pos,
+				move,
+				tileStates,
+				lilypads,
+			);
 
 			// Check if graph remains connected
-			if (isGraphConnected(simResult.finalPos, simResult.newTiles, simResult.newLilypads)) {
+			if (
+				isGraphConnected(
+					simResult.finalPos,
+					simResult.newTiles,
+					simResult.newLilypads,
+				)
+			) {
 				validMoves.push({ move, simResult });
 			}
 		}
@@ -464,8 +507,16 @@ export function useGame(level: Level) {
 
 			// Among required tiles, prioritize those with fewer escape routes (forced moves)
 			if (aRequired && bRequired) {
-				const aNeighbors = getValidMovesForPathfinding(a.move.target, a.simResult.newTiles, a.simResult.newLilypads).length;
-				const bNeighbors = getValidMovesForPathfinding(b.move.target, b.simResult.newTiles, b.simResult.newLilypads).length;
+				const aNeighbors = getValidMovesForPathfinding(
+					a.move.target,
+					a.simResult.newTiles,
+					a.simResult.newLilypads,
+				).length;
+				const bNeighbors = getValidMovesForPathfinding(
+					b.move.target,
+					b.simResult.newTiles,
+					b.simResult.newLilypads,
+				).length;
 				return aNeighbors - bNeighbors; // Prefer tiles with fewer exits (more constrained)
 			}
 
@@ -481,7 +532,7 @@ export function useGame(level: Level) {
 				simResult.newLilypads,
 				newPath,
 				maxDepth,
-				iterations
+				iterations,
 			);
 
 			if (result.timedOut) {
@@ -499,7 +550,7 @@ export function useGame(level: Level) {
 
 	// Find a winning path and return the first few moves as hints
 	function findWinningPath(): { path: Position[] | null; timedOut: boolean } {
-		const currentTiles = tiles.value.map(row => row.map(tile => tile.type));
+		const currentTiles = tiles.value.map((row) => row.map((tile) => tile.type));
 		const currentLilypads = cloneLilypadState();
 		const currentPos = playerPosition.value;
 
@@ -507,14 +558,25 @@ export function useGame(level: Level) {
 		const remaining = countRemainingTiles(currentTiles);
 		const iterations = { count: 0 };
 
-		return findHamiltonianPath(currentPos, currentTiles, currentLilypads, [], remaining + 10, iterations);
+		return findHamiltonianPath(
+			currentPos,
+			currentTiles,
+			currentLilypads,
+			[],
+			remaining + 10,
+			iterations,
+		);
 	}
 
 	// Check if the current state has any unreachable tiles (player is stuck)
 	function hasUnreachableTiles(): boolean {
-		const currentTiles = tiles.value.map(row => row.map(tile => tile.type));
+		const currentTiles = tiles.value.map((row) => row.map((tile) => tile.type));
 		const currentLilypads = cloneLilypadState();
-		return !isGraphConnected(playerPosition.value, currentTiles, currentLilypads);
+		return !isGraphConnected(
+			playerPosition.value,
+			currentTiles,
+			currentLilypads,
+		);
 	}
 
 	// Get valid moves for pathfinding
@@ -530,8 +592,12 @@ export function useGame(level: Level) {
 			const delta = getDirectionDelta(direction);
 			const adjacentPos = { x: pos.x + delta.x, y: pos.y + delta.y };
 
-			if (adjacentPos.x >= 0 && adjacentPos.x < level.width &&
-				adjacentPos.y >= 0 && adjacentPos.y < level.height) {
+			if (
+				adjacentPos.x >= 0 &&
+				adjacentPos.x < level.width &&
+				adjacentPos.y >= 0 &&
+				adjacentPos.y < level.height
+			) {
 				const adjTileType = tileStates[adjacentPos.y]?.[adjacentPos.x];
 
 				// Check if pond with submerged lilypad
@@ -559,12 +625,17 @@ export function useGame(level: Level) {
 					adjTileType === TileType.BRAMBLE ||
 					adjTileType === TileType.MUSHROOM ||
 					adjTileType === TileType.POND_WATER ||
-					(adjTileType === TileType.POND && lilypads.get(`${adjacentPos.x},${adjacentPos.y}`)?.submerged);
+					(adjTileType === TileType.POND &&
+						lilypads.get(`${adjacentPos.x},${adjacentPos.y}`)?.submerged);
 
 				if (isAdjacentObstacle) {
 					const jumpPos = { x: pos.x + delta.x * 2, y: pos.y + delta.y * 2 };
-					if (jumpPos.x >= 0 && jumpPos.x < level.width &&
-						jumpPos.y >= 0 && jumpPos.y < level.height) {
+					if (
+						jumpPos.x >= 0 &&
+						jumpPos.x < level.width &&
+						jumpPos.y >= 0 &&
+						jumpPos.y < level.height
+					) {
 						const jumpTileType = tileStates[jumpPos.y]?.[jumpPos.x];
 
 						if (jumpTileType === TileType.POND) {
@@ -592,8 +663,10 @@ export function useGame(level: Level) {
 		moves.sort((a, b) => {
 			const aType = tileStates[a.target.y]?.[a.target.x];
 			const bType = tileStates[b.target.y]?.[b.target.x];
-			const aPriority = (aType === TileType.GRASS || aType === TileType.DIRT) ? 0 : 1;
-			const bPriority = (bType === TileType.GRASS || bType === TileType.DIRT) ? 0 : 1;
+			const aPriority =
+				aType === TileType.GRASS || aType === TileType.DIRT ? 0 : 1;
+			const bPriority =
+				bType === TileType.GRASS || bType === TileType.DIRT ? 0 : 1;
 			return aPriority - bPriority;
 		});
 
@@ -606,7 +679,11 @@ export function useGame(level: Level) {
 		move: { target: Position; direction: Direction },
 		tileStates: TileType[][],
 		lilypads: Map<string, LilypadState>,
-	): { finalPos: Position; newTiles: TileType[][]; newLilypads: Map<string, LilypadState> } {
+	): {
+		finalPos: Position;
+		newTiles: TileType[][];
+		newLilypads: Map<string, LilypadState>;
+	} {
 		// Clone state
 		const newTileStates = tileStates.map((row) => [...row]);
 		const newLilypads = new Map<string, LilypadState>();
@@ -653,7 +730,13 @@ export function useGame(level: Level) {
 				if (!flow) break;
 				const delta = getDirectionDelta(flow);
 				const next = { x: current.x + delta.x, y: current.y + delta.y };
-				if (next.x < 0 || next.x >= level.width || next.y < 0 || next.y >= level.height) break;
+				if (
+					next.x < 0 ||
+					next.x >= level.width ||
+					next.y < 0 ||
+					next.y >= level.height
+				)
+					break;
 				const nextType = newTileStates[next.y]?.[next.x];
 				if (nextType === TileType.WATER) {
 					current = next;
@@ -671,10 +754,20 @@ export function useGame(level: Level) {
 			let current = move.target;
 			while (true) {
 				const next = { x: current.x + delta.x, y: current.y + delta.y };
-				if (next.x < 0 || next.x >= level.width || next.y < 0 || next.y >= level.height) break;
+				if (
+					next.x < 0 ||
+					next.x >= level.width ||
+					next.y < 0 ||
+					next.y >= level.height
+				)
+					break;
 				const nextType = newTileStates[next.y]?.[next.x];
-				if (nextType === TileType.BRAMBLE || nextType === TileType.MUSHROOM ||
-					nextType === TileType.VOID || nextType === TileType.POND_WATER) {
+				if (
+					nextType === TileType.BRAMBLE ||
+					nextType === TileType.MUSHROOM ||
+					nextType === TileType.VOID ||
+					nextType === TileType.POND_WATER
+				) {
 					break;
 				}
 				if (nextType === TileType.POND) {
@@ -696,7 +789,10 @@ export function useGame(level: Level) {
 				const row = newTileStates[y];
 				if (!row) continue;
 				for (let x = 0; x < row.length; x++) {
-					if (row[x] === nextTileType && (x !== move.target.x || y !== move.target.y)) {
+					if (
+						row[x] === nextTileType &&
+						(x !== move.target.x || y !== move.target.y)
+					) {
 						finalPos = { x, y };
 						break;
 					}
@@ -1496,8 +1592,12 @@ export function useGame(level: Level) {
 			];
 			for (const d of dirs) {
 				const adjPos = { x: pos.x + d.x, y: pos.y + d.y };
-				if (adjPos.x >= 0 && adjPos.x < level.width &&
-					adjPos.y >= 0 && adjPos.y < level.height) {
+				if (
+					adjPos.x >= 0 &&
+					adjPos.x < level.width &&
+					adjPos.y >= 0 &&
+					adjPos.y < level.height
+				) {
 					const tile = getTile(adjPos);
 					if (tile && tile.type !== TileType.VOID) {
 						adjacentTiles.push(adjPos);
@@ -1531,8 +1631,12 @@ export function useGame(level: Level) {
 		];
 		for (const d of dirs) {
 			const adjPos = { x: pos.x + d.x, y: pos.y + d.y };
-			if (adjPos.x >= 0 && adjPos.x < level.width &&
-				adjPos.y >= 0 && adjPos.y < level.height) {
+			if (
+				adjPos.x >= 0 &&
+				adjPos.x < level.width &&
+				adjPos.y >= 0 &&
+				adjPos.y < level.height
+			) {
 				const tile = getTile(adjPos);
 				if (tile && tile.type !== TileType.VOID) {
 					adjacentTiles.push(adjPos);

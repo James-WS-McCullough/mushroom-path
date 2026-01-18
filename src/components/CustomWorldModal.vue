@@ -22,7 +22,7 @@ const canSelectMore = computed(() => selectedElements.value.size < 2);
 // Incompatible element pairs
 const incompatiblePairs: [WorldElement, WorldElement][] = [
 	[WE.RIVERS, WE.POND], // Both water-based, conflicting mechanics
-	[WE.ICE, WE.POND],    // Vibes don't match (frozen vs lily-pads)
+	[WE.ICE, WE.POND], // Vibes don't match (frozen vs lily-pads)
 ];
 
 function isIncompatible(element: WorldElement): boolean {

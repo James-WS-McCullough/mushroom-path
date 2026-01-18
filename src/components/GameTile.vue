@@ -59,7 +59,8 @@ const tileClass = computed(() => {
 		"tile--dirt": props.tile.type === TileType.DIRT,
 		"tile--ice": props.tile.type === TileType.ICE,
 		"tile--pond": props.tile.type === TileType.POND,
-		"tile--pond-submerged": props.tile.type === TileType.POND && props.lilypadState?.submerged,
+		"tile--pond-submerged":
+			props.tile.type === TileType.POND && props.lilypadState?.submerged,
 		"tile--pond-water": props.tile.type === TileType.POND_WATER,
 		"tile--portal": isPortal.value,
 		"tile--portal-pink": props.tile.type === TileType.PORTAL_PINK,
@@ -81,12 +82,10 @@ const tileClass = computed(() => {
 			props.hasIceElement && props.tile.type === TileType.DIRT,
 		// Night biome (pond element) - dark blues
 		"tile--night":
-			isNightBiome &&
-			(props.tile.type === TileType.GRASS || isPortal.value),
+			isNightBiome && (props.tile.type === TileType.GRASS || isPortal.value),
 		"tile--night-mushroom":
 			isNightBiome && props.tile.type === TileType.MUSHROOM,
-		"tile--night-dirt":
-			isNightBiome && props.tile.type === TileType.DIRT,
+		"tile--night-dirt": isNightBiome && props.tile.type === TileType.DIRT,
 		// Swamp biome (fallback when no ice or night)
 		"tile--swamp":
 			!props.hasIceElement &&
