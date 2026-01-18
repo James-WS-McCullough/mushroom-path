@@ -32,7 +32,7 @@ const emit = defineEmits<{
           :key="element"
           class="element-icon"
           :class="{ 'element-icon--dirt': element === WE.DIRT }"
-          :title="element === WE.RIVERS ? 'Rivers' : element === WE.DIRT ? 'Dirt Patches' : element === WE.ICE ? 'Ice' : element === WE.FAIRY ? 'Fairy Rings' : element"
+          :title="element === WE.RIVERS ? 'Rivers' : element === WE.DIRT ? 'Dirt Patches' : element === WE.ICE ? 'Ice' : element === WE.FAIRY ? 'Fairy Rings' : element === WE.POND ? 'Lily Pads' : element"
         >
           <!-- Water droplet icon for rivers -->
           <svg v-if="element === WE.RIVERS" viewBox="0 0 24 24" class="element-svg element-svg--water">
@@ -58,6 +58,14 @@ const emit = defineEmits<{
             <ellipse cx="16" cy="17.5" rx="2.5" ry="4" fill="currentColor" transform="rotate(144 16 17.5)"/>
             <ellipse cx="8" cy="17.5" rx="2.5" ry="4" fill="currentColor" transform="rotate(-144 8 17.5)"/>
             <ellipse cx="5.5" cy="9.5" rx="2.5" ry="4" fill="currentColor" transform="rotate(-72 5.5 9.5)"/>
+          </svg>
+          <!-- Lily-pad icon for pond -->
+          <svg v-else-if="element === WE.POND" viewBox="0 0 24 24" class="element-svg element-svg--pond">
+            <!-- Lily pad with notch -->
+            <path d="M12 3C6.5 3 2 7.5 2 12s4.5 9 10 9 10-4.5 10-9S17.5 3 12 3zm0 16c-4.4 0-8-3.1-8-7s3.6-7 8-7l-3 4 3 3z" fill="currentColor"/>
+            <!-- Small flower -->
+            <circle cx="14" cy="8" r="2.5" fill="#ff9eb5"/>
+            <circle cx="14" cy="8" r="1" fill="#ffeb3b"/>
           </svg>
         </div>
       </div>
@@ -302,6 +310,10 @@ const emit = defineEmits<{
 
 .element-svg--fairy {
   color: #e091c9;
+}
+
+.element-svg--pond {
+  color: #4a9a6a;
 }
 
 .sound-controls {

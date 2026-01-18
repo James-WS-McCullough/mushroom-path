@@ -11,6 +11,8 @@ import { PortalTypes, TileType } from "../types/game";
 import {
 	playJump,
 	playLand,
+	playLilypadSink,
+	playLilypadSurface,
 	playRandomDirt,
 	playRandomPop,
 	playShovelDirt,
@@ -26,10 +28,17 @@ interface ChangedTile {
 	originalType: TileType;
 }
 
+interface LilypadState {
+	submerged: boolean;
+	cooldown: number;
+	resurfacing?: boolean;
+}
+
 interface MoveHistory {
 	playerPosition: Position;
 	tileState: TileType; // The tile type at the position player left (before mushroom planted)
 	additionalChanges?: ChangedTile[]; // For tracking portal conversions, etc.
+	lilypadSnapshot?: Map<string, LilypadState>; // Snapshot of lily-pad state for undo
 }
 
 export type FacingDirection = "left" | "right";
@@ -50,6 +59,7 @@ export function useGame(level: Level) {
 	const lastCleanedPosition = ref<Position | null>(null);
 	const moveHistory = ref<MoveHistory[]>([]);
 	const waterFlow = level.waterFlow ?? {};
+	const lilypadState = ref<Map<string, LilypadState>>(new Map());
 
 	// Idle hint tracking
 	const lastMoveTime = ref(Date.now());
@@ -75,6 +85,18 @@ export function useGame(level: Level) {
 		lastPlantedPosition.value = null;
 		lastCleanedPosition.value = null;
 		moveHistory.value = [];
+
+		// Initialize lily-pad state for all pond tiles
+		lilypadState.value = new Map();
+		for (let y = 0; y < level.grid.length; y++) {
+			const row = level.grid[y];
+			if (!row) continue;
+			for (let x = 0; x < row.length; x++) {
+				if (row[x] === TileType.POND) {
+					lilypadState.value.set(`${x},${y}`, { submerged: false, cooldown: 0 });
+				}
+			}
+		}
 
 		// Reset idle tracking
 		lastMoveTime.value = Date.now();
@@ -115,6 +137,14 @@ export function useGame(level: Level) {
 	function canLandOn(position: Position): boolean {
 		const tile = getTile(position);
 		if (!tile) return false;
+
+		// Pond tiles are landable only if lily-pad is surfaced
+		if (tile.type === TileType.POND) {
+			const key = `${position.x},${position.y}`;
+			const state = lilypadState.value.get(key);
+			return state ? !state.submerged : false;
+		}
+
 		// Can land on grass, stone, water, dirt, ice, or portal tiles
 		return (
 			tile.type === TileType.GRASS ||
@@ -155,7 +185,12 @@ export function useGame(level: Level) {
 	function isObstacle(position: Position): boolean {
 		const tile = getTile(position);
 		if (!tile) return true;
-		return tile.type === TileType.BRAMBLE || tile.type === TileType.MUSHROOM;
+		// Submerged lily-pads count as obstacles (can be jumped over)
+		if (tile.type === TileType.POND) {
+			const state = getLilypadState(position);
+			if (state?.submerged) return true;
+		}
+		return tile.type === TileType.BRAMBLE || tile.type === TileType.MUSHROOM || tile.type === TileType.POND_WATER;
 	}
 
 	function isAdjacent(from: Position, to: Position): boolean {
@@ -180,6 +215,40 @@ export function useGame(level: Level) {
 	function getWaterFlow(position: Position): FlowDirection | null {
 		const key = `${position.x},${position.y}`;
 		return waterFlow[key] ?? null;
+	}
+
+	// Clone lilypad state for undo snapshots
+	function cloneLilypadState(): Map<string, LilypadState> {
+		const clone = new Map<string, LilypadState>();
+		for (const [key, state] of lilypadState.value) {
+			clone.set(key, { ...state });
+		}
+		return clone;
+	}
+
+	// Decrement lily-pad cooldowns after each move - resurface when cooldown hits 0
+	function decrementLilypadCooldowns(): void {
+		for (const [, state] of lilypadState.value) {
+			// Clear resurfacing flag from previous moves
+			if (state.resurfacing) {
+				state.resurfacing = false;
+			}
+
+			if (state.submerged && state.cooldown > 0) {
+				state.cooldown--;
+				if (state.cooldown === 0) {
+					state.submerged = false;
+					state.resurfacing = true;
+					playLilypadSurface();
+				}
+			}
+		}
+	}
+
+	// Get lily-pad state for a position
+	function getLilypadState(position: Position): LilypadState | undefined {
+		const key = `${position.x},${position.y}`;
+		return lilypadState.value.get(key);
 	}
 
 	function computeSlideDestination(startPos: Position): {
@@ -240,11 +309,12 @@ export function useGame(level: Level) {
 				break;
 			}
 
-			// Stop if we hit an obstacle (bramble, mushroom) or void
+			// Stop if we hit an obstacle (bramble, mushroom, deep pond water) or void
 			if (
 				nextTile.type === TileType.BRAMBLE ||
 				nextTile.type === TileType.MUSHROOM ||
-				nextTile.type === TileType.VOID
+				nextTile.type === TileType.VOID ||
+				nextTile.type === TileType.POND_WATER
 			) {
 				break;
 			}
@@ -318,8 +388,20 @@ export function useGame(level: Level) {
 			setTimeout(() => {
 				lastCleanedPosition.value = null;
 			}, 500);
+		} else if (tile.type === TileType.POND) {
+			// Pond lily-pad sinks when left, resurfaces after 4 moves
+			const key = `${position.x},${position.y}`;
+			const state = lilypadState.value.get(key);
+			if (state && !state.submerged) {
+				state.submerged = true;
+				state.cooldown = 4;
+				playLilypadSink();
+			}
 		}
 		// Portal tiles stay as portals - they can be used multiple times
+
+		// Decrement lily-pad cooldowns after each move
+		decrementLilypadCooldowns();
 	}
 
 	function checkWinCondition(): boolean {
@@ -379,6 +461,7 @@ export function useGame(level: Level) {
 		moveHistory.value.push({
 			playerPosition: currentPos,
 			tileState: currentTile?.type ?? TileType.GRASS,
+			lilypadSnapshot: cloneLilypadState(),
 		});
 
 		isHopping.value = true;
@@ -526,6 +609,8 @@ export function useGame(level: Level) {
 								playRandomDirt();
 							} else if (finalTile?.type === TileType.STONE) {
 								playStone();
+							} else if (finalTile?.type === TileType.POND) {
+								playWater();
 							}
 
 							if (checkWinCondition()) {
@@ -598,6 +683,8 @@ export function useGame(level: Level) {
 					playRandomDirt();
 				} else if (landingTile?.type === TileType.STONE) {
 					playStone();
+				} else if (landingTile?.type === TileType.POND) {
+					playWater();
 				}
 			}, 200);
 
@@ -653,6 +740,7 @@ export function useGame(level: Level) {
 		moveHistory.value.push({
 			playerPosition: currentPos,
 			tileState: currentTile?.type ?? TileType.GRASS,
+			lilypadSnapshot: cloneLilypadState(),
 		});
 
 		isHopping.value = true;
@@ -816,6 +904,8 @@ export function useGame(level: Level) {
 								playRandomDirt();
 							} else if (finalTile?.type === TileType.STONE) {
 								playStone();
+							} else if (finalTile?.type === TileType.POND) {
+								playWater();
 							}
 
 							if (checkWinCondition()) {
@@ -888,6 +978,8 @@ export function useGame(level: Level) {
 					playRandomDirt();
 				} else if (landingTile?.type === TileType.STONE) {
 					playStone();
+				} else if (landingTile?.type === TileType.POND) {
+					playWater();
 				}
 			}, 200);
 
@@ -981,6 +1073,11 @@ export function useGame(level: Level) {
 			}
 		}
 
+		// Restore lily-pad state from snapshot
+		if (lastMove.lilypadSnapshot) {
+			lilypadState.value = lastMove.lilypadSnapshot;
+		}
+
 		// Restore the tile at current position (remove mushroom if it was planted)
 		// Stone tiles never have mushrooms planted, so only restore MUSHROOM -> GRASS
 		const currentPos = playerPosition.value;
@@ -1026,6 +1123,8 @@ export function useGame(level: Level) {
 		canUndo,
 		undo,
 		getWaterFlow,
+		getLilypadState,
+		lilypadState,
 		showHints,
 		cleanupIdleTimer,
 		levelWidth: level.width,

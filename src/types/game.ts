@@ -7,6 +7,8 @@ export const TileType = {
 	WATER: "water",
 	DIRT: "dirt",
 	ICE: "ice",
+	POND: "pond", // Lily-pad tiles (walkable bridge)
+	POND_WATER: "pond_water", // Deep pond water (impassable obstacle)
 	// Fairy ring portal flowers - each color pairs with its match
 	PORTAL_PINK: "portal_pink",
 	PORTAL_BLUE: "portal_blue",
@@ -58,6 +60,7 @@ export const WorldElement = {
 	DIRT: "dirt",
 	ICE: "ice",
 	FAIRY: "fairy",
+	POND: "pond",
 } as const;
 
 export type WorldElement = (typeof WorldElement)[keyof typeof WorldElement];

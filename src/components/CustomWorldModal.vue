@@ -12,18 +12,40 @@ const allElements: { id: WorldElement; name: string; icon: string }[] = [
 	{ id: WE.DIRT, name: "Dirt", icon: "🟫" },
 	{ id: WE.ICE, name: "Ice", icon: "🧊" },
 	{ id: WE.FAIRY, name: "Fairy Rings", icon: "🍄" },
+	{ id: WE.POND, name: "Lily Pads", icon: "🌙" },
 ];
 
 const selectedElements = ref<Set<WorldElement>>(new Set());
 
 const canSelectMore = computed(() => selectedElements.value.size < 2);
 
+// Incompatible element pairs
+const incompatiblePairs: [WorldElement, WorldElement][] = [
+	[WE.RIVERS, WE.POND], // Both water-based, conflicting mechanics
+	[WE.ICE, WE.POND],    // Vibes don't match (frozen vs lily-pads)
+];
+
+function isIncompatible(element: WorldElement): boolean {
+	for (const [a, b] of incompatiblePairs) {
+		if (element === a && selectedElements.value.has(b)) return true;
+		if (element === b && selectedElements.value.has(a)) return true;
+	}
+	return false;
+}
+
+function isDisabled(element: WorldElement): boolean {
+	if (selectedElements.value.has(element)) return false;
+	if (isIncompatible(element)) return true;
+	if (!canSelectMore.value) return true;
+	return false;
+}
+
 function toggleElement(element: WorldElement) {
 	if (selectedElements.value.has(element)) {
 		selectedElements.value.delete(element);
 		// Trigger reactivity
 		selectedElements.value = new Set(selectedElements.value);
-	} else if (canSelectMore.value) {
+	} else if (!isDisabled(element)) {
 		selectedElements.value.add(element);
 		// Trigger reactivity
 		selectedElements.value = new Set(selectedElements.value);
@@ -56,7 +78,7 @@ function startWorld() {
             'element-btn',
             {
               'element-btn--selected': isSelected(element.id),
-              'element-btn--disabled': !isSelected(element.id) && !canSelectMore,
+              'element-btn--disabled': isDisabled(element.id),
             },
           ]"
           @click="toggleElement(element.id)"

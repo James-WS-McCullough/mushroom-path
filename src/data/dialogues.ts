@@ -231,7 +231,13 @@ export const meetDewDialogue: DialogueScene = {
 
 // Map of world index to dialogue that plays after completing it
 export const worldEndDialogues: Record<number, DialogueScene> = {
-	0: meetDewDialogue, // After completing World 1 (index 0)
+	// World end dialogues (after all levels in a world)
+};
+
+// Map of specific levels to dialogues that play after completing them
+// Key format: "worldIndex-levelNumber" (0-indexed world, 1-indexed level)
+export const levelDialogues: Record<string, DialogueScene> = {
+	"0-3": meetDewDialogue, // After level 3 of World 1 - Sprout meets Dew (before level 4)
 };
 
 // Mechanic introduction dialogues - play as overlay when encountering new mechanics
@@ -459,12 +465,64 @@ export const fairyIntroDialogue: DialogueScene = {
 	],
 };
 
+// Pond/night intro - lily-pads in a moonlit marsh
+export const pondIntroDialogue: DialogueScene = {
+	id: "pond-intro",
+	background: "",
+	leftCharacter: "sprout",
+	rightCharacter: "dew",
+	overlay: true,
+	lines: [
+		{
+			speaker: "sprout",
+			name: "Sprout",
+			text: "ooooh its so sparkly here~! look at all the little lights!",
+			leftSprite: "MushroomGirl-Excited",
+			rightSprite: "BlueGirl-Normal",
+			leftHighlight: true,
+		},
+		{
+			speaker: "dew",
+			name: "Dew",
+			text: "theyre fireflies... and theres a pond up ahead!",
+			leftSprite: "MushroomGirl-Excited",
+			rightSprite: "BlueGirl-Thinking",
+			rightHighlight: true,
+		},
+		{
+			speaker: "sprout",
+			name: "Sprout",
+			text: "oooh lily pads!! i wanna hop on them!!",
+			leftSprite: "MushroomGirl-Excited",
+			rightSprite: "BlueGirl-Thinking",
+			leftHighlight: true,
+		},
+		{
+			speaker: "dew",
+			name: "Dew",
+			text: "be careful! they sink after you step off... but they come back up after a few moves~",
+			leftSprite: "MushroomGirl-Happy",
+			rightSprite: "BlueGirl-Normal",
+			rightHighlight: true,
+		},
+		{
+			speaker: "sprout",
+			name: "Sprout",
+			text: "so i can use them again!! just gotta wait a bit~",
+			leftSprite: "MushroomGirl-Confident",
+			rightSprite: "BlueGirl-Normal",
+			leftHighlight: true,
+		},
+	],
+};
+
 // Map mechanic types to their intro dialogues
 export const mechanicDialogues: Record<string, DialogueScene> = {
 	ice: iceIntroDialogue,
 	dirt: dirtIntroDialogue,
 	rivers: riverIntroDialogue,
 	fairy: fairyIntroDialogue,
+	pond: pondIntroDialogue,
 };
 
 // Random adventure scenes - short moments between Sprout and Dew

@@ -15,6 +15,7 @@ const props = defineProps<{
 	level: Level;
 	hasIceElement?: boolean;
 	hasDirtElement?: boolean;
+	hasPondElement?: boolean;
 	disabled?: boolean;
 }>();
 
@@ -430,6 +431,8 @@ defineExpose({
             :flow-direction="game.getWaterFlow(tile.position)"
             :has-ice-element="hasIceElement"
             :has-dirt-element="hasDirtElement"
+            :has-pond-element="hasPondElement"
+            :lilypad-state="game.getLilypadState(tile.position)"
             :should-shimmer="shouldShimmer()"
             @click="handleTileClick(tile.position)"
           />

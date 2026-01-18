@@ -3,6 +3,12 @@ import { computed } from "vue";
 import type { FlowDirection, Tile } from "../types/game";
 import { TileType } from "../types/game";
 
+interface LilypadState {
+	submerged: boolean;
+	cooldown: number;
+	resurfacing?: boolean;
+}
+
 const props = defineProps<{
 	tile: Tile;
 	isPlayerHere: boolean;
@@ -12,7 +18,9 @@ const props = defineProps<{
 	flowDirection?: FlowDirection | null;
 	hasIceElement?: boolean;
 	hasDirtElement?: boolean;
+	hasPondElement?: boolean;
 	shouldShimmer?: boolean;
+	lilypadState?: LilypadState;
 }>();
 
 const emit = defineEmits<{
@@ -35,6 +43,9 @@ const tileClass = computed(() => {
 		!props.isPlayerHere &&
 		(props.tile.type === TileType.GRASS || props.tile.type === TileType.DIRT);
 
+	// Night biome (pond element) overrides other biomes
+	const isNightBiome = props.hasPondElement && !props.hasIceElement;
+
 	return {
 		tile: true,
 		"tile--grass": props.tile.type === TileType.GRASS,
@@ -45,6 +56,9 @@ const tileClass = computed(() => {
 		"tile--water": props.tile.type === TileType.WATER,
 		"tile--dirt": props.tile.type === TileType.DIRT,
 		"tile--ice": props.tile.type === TileType.ICE,
+		"tile--pond": props.tile.type === TileType.POND,
+		"tile--pond-submerged": props.tile.type === TileType.POND && props.lilypadState?.submerged,
+		"tile--pond-water": props.tile.type === TileType.POND_WATER,
 		"tile--portal": isPortal.value,
 		"tile--portal-pink": props.tile.type === TileType.PORTAL_PINK,
 		"tile--portal-blue": props.tile.type === TileType.PORTAL_BLUE,
@@ -53,22 +67,36 @@ const tileClass = computed(() => {
 		"tile--has-player": props.isPlayerHere,
 		"tile--just-cleaned": props.isJustCleaned,
 		"tile--shimmer": canShimmer,
-		// Ice biome takes priority over swamp
-		"tile--frosty": props.hasIceElement && props.tile.type === TileType.GRASS,
+		// Ice biome takes priority over swamp and night
+		"tile--frosty":
+			props.hasIceElement &&
+			(props.tile.type === TileType.GRASS || isPortal.value),
 		"tile--frosty-mushroom":
 			props.hasIceElement && props.tile.type === TileType.MUSHROOM,
 		"tile--frosty-dirt":
 			props.hasIceElement && props.tile.type === TileType.DIRT,
+		// Night biome (pond element) - dark blues
+		"tile--night":
+			isNightBiome &&
+			(props.tile.type === TileType.GRASS || isPortal.value),
+		"tile--night-mushroom":
+			isNightBiome && props.tile.type === TileType.MUSHROOM,
+		"tile--night-dirt":
+			isNightBiome && props.tile.type === TileType.DIRT,
+		// Swamp biome (fallback when no ice or night)
 		"tile--swamp":
 			!props.hasIceElement &&
+			!isNightBiome &&
 			props.hasDirtElement &&
-			props.tile.type === TileType.GRASS,
+			(props.tile.type === TileType.GRASS || isPortal.value),
 		"tile--swamp-mushroom":
 			!props.hasIceElement &&
+			!isNightBiome &&
 			props.hasDirtElement &&
 			props.tile.type === TileType.MUSHROOM,
 		"tile--swamp-dirt":
 			!props.hasIceElement &&
+			!isNightBiome &&
 			props.hasDirtElement &&
 			props.tile.type === TileType.DIRT,
 	};
@@ -100,6 +128,13 @@ const mushroomVariant = computed(() => {
 const brambleVariant = computed(() => {
 	const hash = props.tile.position.x * 11 + props.tile.position.y * 17;
 	return hash % 6;
+});
+
+// Deterministic pond water variant based on position (0-4)
+// 0: just ripples, 1: mini lily-pads, 2: reeds, 3: frog, 4: just ripples
+const pondWaterVariant = computed(() => {
+	const hash = props.tile.position.x * 19 + props.tile.position.y * 23;
+	return hash % 5;
 });
 
 function handleClick() {
@@ -252,6 +287,71 @@ function handleClick() {
         <div class="sparkle sparkle--1"></div>
         <div class="sparkle sparkle--2"></div>
         <div class="sparkle sparkle--3"></div>
+      </div>
+    </div>
+
+    <!-- Pond tile with lily-pad -->
+    <div v-if="tile.type === TileType.POND" class="pond-detail">
+      <!-- Gentle pond ripples (slower than river) -->
+      <div class="pond-ripples">
+        <div class="pond-ripple pond-ripple--1"></div>
+        <div class="pond-ripple pond-ripple--2"></div>
+      </div>
+      <!-- Lily-pad (always present, animated on state change) -->
+      <div class="lilypad" :class="{
+        'lilypad--submerged': lilypadState?.submerged,
+        'lilypad--resurfacing': lilypadState?.resurfacing
+      }">
+        <div class="lilypad-pad"></div>
+        <div class="lilypad-flower">
+          <div class="lilypad-petal lilypad-petal--1"></div>
+          <div class="lilypad-petal lilypad-petal--2"></div>
+          <div class="lilypad-petal lilypad-petal--3"></div>
+          <div class="lilypad-center"></div>
+        </div>
+      </div>
+      <!-- Bubble hints when submerged -->
+      <div v-if="lilypadState?.submerged" class="pond-bubbles">
+        <div class="bubble bubble--1"></div>
+        <div class="bubble bubble--2"></div>
+        <div class="bubble bubble--3"></div>
+        <!-- Cooldown indicator -->
+        <div v-if="lilypadState?.cooldown > 0" class="cooldown-indicator">
+          {{ lilypadState.cooldown }}
+        </div>
+      </div>
+    </div>
+
+    <!-- Deep pond water (impassable) -->
+    <div v-if="tile.type === TileType.POND_WATER" class="pond-water-detail">
+      <!-- Slow ambient ripples (always shown) -->
+      <div class="pond-water-ripples">
+        <div class="pond-water-ripple pond-water-ripple--1"></div>
+        <div class="pond-water-ripple pond-water-ripple--2"></div>
+        <div class="pond-water-ripple pond-water-ripple--3"></div>
+      </div>
+
+      <!-- Variant 0 & 4: Just ripples, no decoration -->
+
+      <!-- Variant 1: Mini decorative lily-pads -->
+      <div v-if="pondWaterVariant === 1" class="mini-lilypads">
+        <div class="mini-lilypad mini-lilypad--1"></div>
+        <div class="mini-lilypad mini-lilypad--2"></div>
+      </div>
+
+      <!-- Variant 2: Reeds/cattails -->
+      <div v-if="pondWaterVariant === 2" class="pond-reeds">
+        <div class="reed reed--1"></div>
+        <div class="reed reed--2"></div>
+      </div>
+
+      <!-- Variant 3: Frog chilling -->
+      <div v-if="pondWaterVariant === 3" class="pond-frog">
+        <div class="frog-body"></div>
+        <div class="frog-eye frog-eye--left"></div>
+        <div class="frog-eye frog-eye--right"></div>
+        <div class="frog-leg frog-leg--left"></div>
+        <div class="frog-leg frog-leg--right"></div>
       </div>
     </div>
 
@@ -1809,6 +1909,621 @@ function handleClick() {
 
 .mushroom-cluster--triple .mushroom:nth-child(3) {
   transform: rotate(10deg);
+}
+
+/* Pond tile - dark calm water */
+.tile--pond {
+  background:
+    radial-gradient(circle at 30% 30%, rgba(60, 100, 120, 0.4) 0%, transparent 40%),
+    radial-gradient(circle at 70% 70%, rgba(40, 80, 100, 0.3) 0%, transparent 35%),
+    linear-gradient(135deg, #2a5a70 0%, #1a4a5a 50%, #103a48 100%);
+  overflow: hidden;
+}
+
+.tile--pond-submerged {
+  background:
+    radial-gradient(circle at 30% 30%, rgba(40, 80, 100, 0.4) 0%, transparent 40%),
+    radial-gradient(circle at 70% 70%, rgba(30, 60, 80, 0.3) 0%, transparent 35%),
+    linear-gradient(135deg, #1a4a58 0%, #103848 50%, #082830 100%);
+}
+
+.pond-detail {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Gentle pond ripples - slower than river */
+.pond-ripples {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.pond-ripple {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  animation: pondRipple 5s ease-out infinite;
+}
+
+.pond-ripple--1 {
+  top: 30%;
+  left: 40%;
+  animation-delay: 0s;
+}
+
+.pond-ripple--2 {
+  top: 60%;
+  left: 55%;
+  animation-delay: 2.5s;
+}
+
+@keyframes pondRipple {
+  0% {
+    width: 0;
+    height: 0;
+    opacity: 0.3;
+    transform: translate(-50%, -50%);
+  }
+  100% {
+    width: 40px;
+    height: 40px;
+    opacity: 0;
+    transform: translate(-50%, -50%);
+  }
+}
+
+/* Lily-pad - large, nearly edge-to-edge */
+.lilypad {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 60px;
+  height: 60px;
+  opacity: 1;
+  animation: lilypadFloat 4s ease-in-out infinite;
+  /* Transition for resurface - cubic-bezier gives a bounce effect */
+  transition: transform 0.7s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.5s ease-out;
+}
+
+.lilypad-pad {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 54px;
+  height: 50px;
+  background: linear-gradient(135deg, #5a9a58 0%, #4a8548 40%, #3a7038 100%);
+  border-radius: 50%;
+  /* Notch cutout using clip-path - V-shaped notch pointing to center */
+  clip-path: polygon(
+    50% 5%,
+    95% 25%,
+    100% 55%,
+    95% 85%,
+    50% 100%,
+    5% 85%,
+    0% 55%,
+    5% 25%,
+    38% 25%,
+    50% 45%,
+    62% 25%
+  );
+  box-shadow:
+    inset 0 3px 6px rgba(120, 180, 120, 0.4),
+    inset 0 -3px 6px rgba(0, 0, 0, 0.25),
+    0 3px 6px rgba(0, 0, 0, 0.35);
+}
+
+.lilypad-pad::before {
+  content: "";
+  position: absolute;
+  top: 25%;
+  left: 25%;
+  width: 35%;
+  height: 45%;
+  background: linear-gradient(135deg, rgba(140, 200, 140, 0.5) 0%, transparent 60%);
+  border-radius: 50%;
+}
+
+/* Vein lines on the pad */
+.lilypad-pad::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 80%;
+  height: 80%;
+  transform: translate(-50%, -50%);
+  background:
+    linear-gradient(0deg, transparent 48%, rgba(60, 100, 60, 0.2) 49%, rgba(60, 100, 60, 0.2) 51%, transparent 52%),
+    linear-gradient(60deg, transparent 48%, rgba(60, 100, 60, 0.15) 49%, rgba(60, 100, 60, 0.15) 51%, transparent 52%),
+    linear-gradient(-60deg, transparent 48%, rgba(60, 100, 60, 0.15) 49%, rgba(60, 100, 60, 0.15) 51%, transparent 52%);
+  border-radius: 50%;
+}
+
+/* Lily-pad flower */
+.lilypad-flower {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 18px;
+  height: 18px;
+}
+
+.lilypad-petal {
+  position: absolute;
+  width: 9px;
+  height: 12px;
+  background: linear-gradient(135deg, #ffc0cb 0%, #ff9aaa 50%, #ff7088 100%);
+  border-radius: 50% 50% 50% 50%;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+}
+
+.lilypad-petal--1 {
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%) rotate(0deg);
+}
+
+.lilypad-petal--2 {
+  top: 5px;
+  left: -1px;
+  transform: rotate(-35deg);
+}
+
+.lilypad-petal--3 {
+  top: 5px;
+  right: -1px;
+  transform: rotate(35deg);
+}
+
+.lilypad-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 7px;
+  height: 7px;
+  background: radial-gradient(circle, #fffde0 0%, #ffe135 60%, #ffc107 100%);
+  border-radius: 50%;
+  box-shadow: 0 0 3px rgba(255, 200, 0, 0.5);
+}
+
+@keyframes lilypadFloat {
+  0%, 100% {
+    transform: translate(-50%, -50%) translateY(0) rotate(0deg);
+  }
+  25% {
+    transform: translate(-50%, -50%) translateY(-2px) rotate(1deg);
+  }
+  75% {
+    transform: translate(-50%, -50%) translateY(-1px) rotate(-1deg);
+  }
+}
+
+/* Lily-pad submerged state - sinks down and fades */
+.lilypad--submerged {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.4) translateY(20px);
+  animation: lilypadSink 0.6s ease-in forwards;
+}
+
+/* Lily-pad resurfacing state - pops up with bounce */
+.lilypad--resurfacing {
+  animation: lilypadResurface 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) forwards, lilypadFloat 4s ease-in-out 0.7s infinite;
+}
+
+@keyframes lilypadSink {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1) translateY(0);
+  }
+  30% {
+    opacity: 0.8;
+    transform: translate(-50%, -50%) scale(0.95) translateY(3px) rotate(-2deg);
+  }
+  60% {
+    opacity: 0.5;
+    transform: translate(-50%, -50%) scale(0.7) translateY(10px) rotate(2deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.4) translateY(20px);
+  }
+}
+
+/* Resurface animation when lily-pad comes back */
+@keyframes lilypadResurface {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.4) translateY(20px);
+  }
+  40% {
+    opacity: 0.6;
+    transform: translate(-50%, -50%) scale(0.9) translateY(-2px);
+  }
+  70% {
+    opacity: 0.9;
+    transform: translate(-50%, -50%) scale(1.08) translateY(-3px);
+  }
+  85% {
+    transform: translate(-50%, -50%) scale(0.98) translateY(1px);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1) translateY(0);
+  }
+}
+
+/* Bubbles when lily-pad is submerged */
+.pond-bubbles {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bubble {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 50%;
+  animation: bubbleRise 2s ease-in-out infinite;
+}
+
+.bubble--1 {
+  width: 6px;
+  height: 6px;
+  left: 35%;
+  animation-delay: 0s;
+}
+
+.bubble--2 {
+  width: 4px;
+  height: 4px;
+  left: 50%;
+  animation-delay: 0.6s;
+}
+
+.bubble--3 {
+  width: 5px;
+  height: 5px;
+  left: 60%;
+  animation-delay: 1.2s;
+}
+
+@keyframes bubbleRise {
+  0% {
+    bottom: 20%;
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.6;
+  }
+  80% {
+    opacity: 0.6;
+  }
+  100% {
+    bottom: 70%;
+    opacity: 0;
+  }
+}
+
+/* Cooldown indicator */
+.cooldown-indicator {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 18px;
+  font-weight: bold;
+  color: rgba(255, 255, 255, 0.7);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* Deep pond water tile (impassable) - same water color as lily-pad tiles */
+.tile--pond-water {
+  background:
+    radial-gradient(circle at 30% 30%, rgba(60, 100, 120, 0.4) 0%, transparent 40%),
+    radial-gradient(circle at 70% 70%, rgba(40, 80, 100, 0.3) 0%, transparent 35%),
+    linear-gradient(135deg, #2a5a70 0%, #1a4a5a 50%, #103a48 100%);
+  overflow: hidden;
+  cursor: not-allowed;
+}
+
+.pond-water-detail {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Ambient ripples for deep water - slow and visible */
+.pond-water-ripples {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.pond-water-ripple {
+  position: absolute;
+  border-radius: 50%;
+  border: 2px solid rgba(140, 200, 230, 0.4);
+  animation: pondWaterRipple 8s ease-out infinite;
+}
+
+.pond-water-ripple--1 {
+  top: 30%;
+  left: 35%;
+  animation-delay: 0s;
+}
+
+.pond-water-ripple--2 {
+  top: 50%;
+  left: 65%;
+  animation-delay: 2.5s;
+}
+
+.pond-water-ripple--3 {
+  top: 65%;
+  left: 30%;
+  animation-delay: 5s;
+}
+
+@keyframes pondWaterRipple {
+  0% {
+    width: 0;
+    height: 0;
+    opacity: 0.6;
+    transform: translate(-50%, -50%);
+  }
+  50% {
+    opacity: 0.3;
+  }
+  100% {
+    width: 40px;
+    height: 40px;
+    opacity: 0;
+    transform: translate(-50%, -50%);
+  }
+}
+
+/* Mini decorative lily-pads (not walkable) */
+.mini-lilypads {
+  position: absolute;
+  inset: 0;
+}
+
+.mini-lilypad {
+  position: absolute;
+  width: 12px;
+  height: 10px;
+  background: radial-gradient(ellipse at 40% 40%, #5a9a60 0%, #3a7a40 60%, #2a6a30 100%);
+  border-radius: 50%;
+  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%, 50% 50%);
+}
+
+.mini-lilypad--1 {
+  top: 20%;
+  left: 15%;
+  transform: rotate(-15deg);
+}
+
+.mini-lilypad--2 {
+  top: 55%;
+  right: 20%;
+  width: 10px;
+  height: 8px;
+  transform: rotate(25deg);
+}
+
+/* Reeds/cattails decoration */
+.pond-reeds {
+  position: absolute;
+  bottom: 4px;
+  left: 6px;
+  display: flex;
+  gap: 4px;
+}
+
+.reed {
+  width: 3px;
+  height: 18px;
+  background: linear-gradient(to top, #2a4a40 0%, #4a6a50 50%, #3a5a45 100%);
+  border-radius: 2px 2px 0 0;
+  position: relative;
+}
+
+.reed::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 6px;
+  height: 8px;
+  background: linear-gradient(to top, #3a5a45 0%, #5a7a55 100%);
+  border-radius: 3px 3px 0 0;
+}
+
+.reed--1 {
+  height: 20px;
+  transform: rotate(-3deg);
+}
+
+.reed--2 {
+  height: 16px;
+  transform: rotate(5deg);
+}
+
+/* Frog chilling on the water */
+.pond-frog {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  animation: frogBob 4s ease-in-out infinite;
+}
+
+.frog-body {
+  width: 16px;
+  height: 12px;
+  background: radial-gradient(ellipse at 50% 40%, #6a9a50 0%, #4a8a40 50%, #3a7a30 100%);
+  border-radius: 50% 50% 40% 40%;
+  position: relative;
+}
+
+.frog-eye {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  background: radial-gradient(circle at 40% 40%, #2a2a2a 30%, #1a1a1a 100%);
+  border-radius: 50%;
+  top: -2px;
+}
+
+.frog-eye--left {
+  left: 1px;
+}
+
+.frog-eye--right {
+  right: 1px;
+}
+
+.frog-eye::before {
+  content: "";
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 50%;
+  top: 1px;
+  left: 1px;
+}
+
+.frog-leg {
+  position: absolute;
+  width: 6px;
+  height: 3px;
+  background: #4a8a40;
+  border-radius: 0 50% 50% 0;
+  top: 8px;
+}
+
+.frog-leg--left {
+  left: -4px;
+  transform: rotate(20deg);
+}
+
+.frog-leg--right {
+  right: -4px;
+  transform: rotate(-20deg) scaleX(-1);
+}
+
+@keyframes frogBob {
+  0%, 100% {
+    transform: translate(-50%, -50%) translateY(0);
+  }
+  50% {
+    transform: translate(-50%, -50%) translateY(-2px);
+  }
+}
+
+/* Night biome grass - dark teal-green tones (distinct from blue water) */
+.tile--night {
+  background:
+    radial-gradient(circle at 20% 80%, rgba(50, 90, 70, 0.4) 0%, transparent 30%),
+    radial-gradient(circle at 80% 20%, rgba(60, 100, 80, 0.3) 0%, transparent 25%),
+    linear-gradient(135deg, #2a5848 0%, #1e4838 100%);
+}
+
+.tile--night .grass-blade {
+  background: linear-gradient(to top, #1e4838, #3a6858);
+}
+
+/* Night biome mushroom - darker green tones */
+.tile--night-mushroom {
+  background:
+    radial-gradient(circle at 20% 80%, rgba(40, 70, 50, 0.4) 0%, transparent 30%),
+    linear-gradient(135deg, #1e4838 0%, #153828 100%);
+}
+
+/* Night biome dirt - darker earthy tones */
+.tile--night-dirt {
+  background:
+    radial-gradient(circle at 20% 80%, rgba(50, 90, 70, 0.4) 0%, transparent 30%),
+    radial-gradient(circle at 80% 20%, rgba(60, 100, 80, 0.3) 0%, transparent 25%),
+    linear-gradient(135deg, #2a5848 0%, #1e4838 100%);
+}
+
+.tile--night-dirt .dirt-clump {
+  /* More contrast: earthy brown that stands out against dark teal grass */
+  background: linear-gradient(135deg, #5a4a38 0%, #4a3a28 100%);
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.25);
+}
+
+.tile--night-dirt .dirt-rock {
+  background: linear-gradient(135deg, #4a3a28 0%, #3a2a18 100%);
+}
+
+/* Night biome portal - dark teal-green grass */
+.tile--night.tile--portal {
+  background:
+    radial-gradient(circle at 50% 50%, rgba(100, 180, 150, 0.3) 0%, transparent 50%),
+    radial-gradient(circle at 20% 80%, rgba(50, 90, 70, 0.4) 0%, transparent 30%),
+    linear-gradient(135deg, #2a5848 0%, #1e4838 100%);
+}
+
+.tile--night .portal-sparkle {
+  background: #5ae8a8;
+  box-shadow: 0 0 6px #3ac888, 0 0 12px rgba(90, 232, 168, 0.5);
+}
+
+.tile--night .ring-flower {
+  filter: brightness(0.8) saturate(0.9);
+}
+
+.tile--night .flower-center {
+  background: radial-gradient(circle, #a8ffd8 0%, #5ae8a8 100%);
+  box-shadow: 0 0 8px rgba(90, 232, 168, 0.8);
+}
+
+/* Frosty biome portal - icy blue-gray grass */
+.tile--frosty.tile--portal {
+  background:
+    radial-gradient(circle at 50% 50%, rgba(220, 235, 255, 0.4) 0%, transparent 50%),
+    radial-gradient(circle at 20% 80%, rgba(180, 200, 230, 0.4) 0%, transparent 30%),
+    linear-gradient(135deg, #c8d0e8 0%, #b0b8d0 100%);
+}
+
+.tile--frosty .portal-sparkle {
+  background: #e8f4ff;
+  box-shadow: 0 0 6px #b0d0f0, 0 0 12px rgba(200, 220, 255, 0.6);
+}
+
+.tile--frosty .ring-flower {
+  filter: brightness(1.1) saturate(0.8);
+}
+
+.tile--frosty .flower-center {
+  background: radial-gradient(circle, #e8f4ff 0%, #a0d0f0 100%);
+  box-shadow: 0 0 8px rgba(160, 208, 240, 0.8);
+}
+
+/* Swamp biome portal - murky dark green grass */
+.tile--swamp.tile--portal {
+  background:
+    radial-gradient(circle at 50% 50%, rgba(100, 140, 80, 0.3) 0%, transparent 50%),
+    radial-gradient(circle at 20% 80%, rgba(60, 90, 50, 0.4) 0%, transparent 30%),
+    linear-gradient(135deg, #4a6b3a 0%, #3a5a2a 100%);
+}
+
+.tile--swamp .portal-sparkle {
+  background: #8bc878;
+  box-shadow: 0 0 6px #6aa858, 0 0 12px rgba(106, 168, 88, 0.5);
 }
 
 /* Adjacent tile highlight */

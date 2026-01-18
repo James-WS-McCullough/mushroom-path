@@ -367,3 +367,125 @@ body.biome-swamp::after {
 		radial-gradient(ellipse 20px 15px at 30% 98%, #253818 0%, transparent 70%),
 		radial-gradient(ellipse 22px 14px at 70% 96%, #253818 0%, transparent 70%);
 }
+
+/* Night biome - dark blues and purples with fireflies */
+body.biome-night {
+	background:
+		radial-gradient(
+			ellipse 80% 50% at 30% 20%,
+			rgba(30, 40, 60, 0.4) 0%,
+			transparent 50%
+		),
+		radial-gradient(
+			ellipse 60% 40% at 70% 30%,
+			rgba(20, 30, 50, 0.3) 0%,
+			transparent 45%
+		),
+		/* Main night gradient */
+		linear-gradient(
+			180deg,
+			#1a1a2e 0%,
+			#16182a 15%,
+			#121626 30%,
+			#0e1420 50%,
+			#0a101a 70%,
+			#080c14 85%,
+			#050810 100%
+		);
+}
+
+/* Fireflies instead of forest particles */
+body.biome-night::before {
+	background-image:
+		radial-gradient(
+			circle at 20% 30%,
+			rgba(255, 255, 150, 0.8) 0%,
+			rgba(200, 255, 100, 0.4) 2px,
+			transparent 3px
+		),
+		radial-gradient(
+			circle at 80% 20%,
+			rgba(255, 255, 150, 0.7) 0%,
+			rgba(200, 255, 100, 0.3) 2px,
+			transparent 3px
+		),
+		radial-gradient(
+			circle at 60% 70%,
+			rgba(255, 255, 150, 0.6) 0%,
+			rgba(200, 255, 100, 0.3) 2px,
+			transparent 3px
+		),
+		radial-gradient(
+			circle at 10% 80%,
+			rgba(255, 255, 150, 0.7) 0%,
+			rgba(200, 255, 100, 0.4) 2px,
+			transparent 3px
+		),
+		radial-gradient(
+			circle at 90% 60%,
+			rgba(255, 255, 150, 0.5) 0%,
+			rgba(200, 255, 100, 0.2) 2px,
+			transparent 3px
+		),
+		radial-gradient(
+			circle at 40% 90%,
+			rgba(255, 255, 150, 0.6) 0%,
+			rgba(200, 255, 100, 0.3) 2px,
+			transparent 3px
+		),
+		radial-gradient(
+			circle at 70% 40%,
+			rgba(255, 255, 150, 0.7) 0%,
+			rgba(200, 255, 100, 0.4) 2px,
+			transparent 3px
+		),
+		radial-gradient(
+			circle at 30% 55%,
+			rgba(255, 255, 150, 0.5) 0%,
+			rgba(200, 255, 100, 0.2) 2px,
+			transparent 3px
+		),
+		radial-gradient(
+			circle at 85% 85%,
+			rgba(255, 255, 150, 0.6) 0%,
+			rgba(200, 255, 100, 0.3) 2px,
+			transparent 3px
+		);
+	animation: fireflies 6s ease-in-out infinite;
+}
+
+@keyframes fireflies {
+	0%,
+	100% {
+		transform: translateY(0) translateX(0);
+		opacity: 0.5;
+	}
+	20% {
+		transform: translateY(-8px) translateX(4px);
+		opacity: 0.9;
+	}
+	40% {
+		transform: translateY(-4px) translateX(-6px);
+		opacity: 0.6;
+	}
+	60% {
+		transform: translateY(-12px) translateX(2px);
+		opacity: 0.85;
+	}
+	80% {
+		transform: translateY(-6px) translateX(-3px);
+		opacity: 0.7;
+	}
+}
+
+/* Night floor - dark vegetation silhouettes */
+body.biome-night::after {
+	background:
+		radial-gradient(ellipse 30px 20px at 10% 100%, #0a1015 0%, transparent 70%),
+		radial-gradient(ellipse 25px 18px at 15% 95%, #101820 0%, transparent 70%),
+		radial-gradient(ellipse 35px 22px at 85% 100%, #0a1015 0%, transparent 70%),
+		radial-gradient(ellipse 28px 16px at 90% 92%, #101820 0%, transparent 70%),
+		radial-gradient(ellipse 40px 25px at 50% 100%, #0a1015 0%, transparent 70%),
+		radial-gradient(ellipse 20px 15px at 30% 98%, #101820 0%, transparent 70%),
+		radial-gradient(ellipse 22px 14px at 70% 96%, #101820 0%, transparent 70%);
+}

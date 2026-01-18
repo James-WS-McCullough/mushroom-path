@@ -25,6 +25,7 @@ import type { DialogueScene as DialogueSceneType } from "./data/dialogues";
 import {
 	adventureScenes,
 	introDialogue,
+	levelDialogues,
 	mechanicDialogues,
 	worldEndDialogues,
 } from "./data/dialogues";
@@ -109,6 +110,22 @@ const swampWorldNames = [
 	"Quagmire Quarter",
 ];
 
+const nightWorldNames = [
+	"Moonlit Marsh",
+	"Twilight Thicket",
+	"Firefly Fen",
+	"Starspore Sanctuary",
+	"Duskshroom Dell",
+	"Midnight Meadow",
+	"Glowcap Glade",
+	"Nocturne Nook",
+	"Shadowed Shallows",
+	"Luminous Lagoon",
+	"Dreamspore Dale",
+	"Starglow Springs",
+	"Mystic Moonpond",
+];
+
 const gameStarted = ref(false);
 const currentLevel = ref<Level>(level1);
 const levelKey = ref(0);
@@ -157,6 +174,8 @@ function getMechanicKey(element: WorldElement): string {
 			return "rivers";
 		case WE.FAIRY:
 			return "fairy";
+		case WE.POND:
+			return "pond";
 		default:
 			return "";
 	}
@@ -196,17 +215,20 @@ const currentWorldElements = ref<WorldElement[]>([]);
 const forestNameOffset = Math.floor(Math.random() * forestWorldNames.length);
 const iceNameOffset = Math.floor(Math.random() * iceWorldNames.length);
 const swampNameOffset = Math.floor(Math.random() * swampWorldNames.length);
+const nightNameOffset = Math.floor(Math.random() * nightWorldNames.length);
 
 // All available world elements
-const allElements: WorldElement[] = [WE.RIVERS, WE.DIRT, WE.ICE, WE.FAIRY];
+const allElements: WorldElement[] = [WE.RIVERS, WE.DIRT, WE.ICE, WE.FAIRY, WE.POND];
 
-// Update body class based on current biome (ice takes priority)
+// Update body class based on current biome (ice takes priority, then pond/night, then swamp)
 watch(
 	currentWorldElements,
 	(elements) => {
-		document.body.classList.remove("biome-ice", "biome-swamp");
+		document.body.classList.remove("biome-ice", "biome-swamp", "biome-night");
 		if (elements.includes(WE.ICE)) {
 			document.body.classList.add("biome-ice");
+		} else if (elements.includes(WE.POND)) {
+			document.body.classList.add("biome-night");
 		} else if (elements.includes(WE.DIRT)) {
 			document.body.classList.add("biome-swamp");
 		}
@@ -249,15 +271,37 @@ function generateWorldElements(): WorldElement[] {
 		result.push(...shuffledSeen.slice(0, remaining));
 	}
 
+	// Handle incompatible elements
+	const incompatiblePairs: [WE, WE][] = [
+		[WE.RIVERS, WE.POND], // Both water-based, conflicting mechanics
+		[WE.ICE, WE.POND],    // Vibes don't match (frozen vs lily-pads)
+	];
+
+	for (const [a, b] of incompatiblePairs) {
+		if (result.includes(a) && result.includes(b)) {
+			// Remove one randomly (50/50 chance)
+			const removeFirst = Math.random() < 0.5;
+			if (removeFirst) {
+				result.splice(result.indexOf(a), 1);
+			} else {
+				result.splice(result.indexOf(b), 1);
+			}
+		}
+	}
+
 	return result;
 }
 
 const currentWorldName = computed(() => {
-	// Select name list based on biome (ice takes priority)
+	// Select name list based on biome (ice takes priority, then night, then swamp)
 	if (currentWorldElements.value.includes(WE.ICE)) {
 		const index =
 			(currentWorldIndex.value + iceNameOffset) % iceWorldNames.length;
 		return iceWorldNames[index] ?? "Frozen Fungi";
+	} else if (currentWorldElements.value.includes(WE.POND)) {
+		const index =
+			(currentWorldIndex.value + nightNameOffset) % nightWorldNames.length;
+		return nightWorldNames[index] ?? "Moonlit Marsh";
 	} else if (currentWorldElements.value.includes(WE.DIRT)) {
 		const index =
 			(currentWorldIndex.value + swampNameOffset) % swampWorldNames.length;
@@ -318,18 +362,25 @@ function handleWin() {
 	randomizeWinMushrooms();
 	showWinModal.value = true;
 
-	// Check if this is the last level of the world and if there's a dialogue
-	const isLastLevelOfWorld = currentLevelNumber.value === LEVELS_PER_WORLD;
-	if (isLastLevelOfWorld) {
-		// Check for specific world dialogue first (like meeting Dew after world 0)
-		const worldDialogue = worldEndDialogues[currentWorldIndex.value];
-		if (worldDialogue) {
-			pendingWorldDialogue.value = worldDialogue;
-		} else if (currentWorldIndex.value > 0 && adventureScenes.length > 0) {
-			// After meeting Dew, play random adventure scenes
-			const randomScene =
-				adventureScenes[Math.floor(Math.random() * adventureScenes.length)]!;
-			pendingWorldDialogue.value = randomScene;
+	// Check for level-specific dialogue first (e.g., meeting Dew at world 1 level 4)
+	const levelKey = `${currentWorldIndex.value}-${currentLevelNumber.value}`;
+	const levelDialogue = levelDialogues[levelKey];
+	if (levelDialogue) {
+		pendingWorldDialogue.value = levelDialogue;
+	} else {
+		// Check if this is the last level of the world and if there's a dialogue
+		const isLastLevelOfWorld = currentLevelNumber.value === LEVELS_PER_WORLD;
+		if (isLastLevelOfWorld) {
+			// Check for specific world dialogue first
+			const worldDialogue = worldEndDialogues[currentWorldIndex.value];
+			if (worldDialogue) {
+				pendingWorldDialogue.value = worldDialogue;
+			} else if (currentWorldIndex.value > 0 && adventureScenes.length > 0) {
+				// After meeting Dew, play random adventure scenes
+				const randomScene =
+					adventureScenes[Math.floor(Math.random() * adventureScenes.length)]!;
+				pendingWorldDialogue.value = randomScene;
+			}
 		}
 	}
 
@@ -359,17 +410,27 @@ function startTransition() {
 
 		// Small delay to let the message render before blocking work
 		setTimeout(() => {
-			currentLevel.value = getNewLevel();
-			levelKey.value++;
-			loadingMessage.value = "";
+			try {
+				currentLevel.value = getNewLevel();
+				levelKey.value++;
+			} finally {
+				// Always clear loading message
+				loadingMessage.value = "";
+			}
 
 			// Small pause while black, then fade back in
 			setTimeout(() => {
 				isBlack.value = false;
+				loadingMessage.value = ""; // Safety clear
 				// After fade in completes, re-enable controls and maybe show welcome/dialogue
 				setTimeout(() => {
 					isFading.value = false;
-					if (pendingNewWorld.value) {
+
+					// Check for level-specific dialogue (e.g., meeting Dew) - shown regardless of new world
+					if (pendingWorldDialogue.value && !pendingNewWorld.value) {
+						currentDialogue.value = pendingWorldDialogue.value;
+						pendingWorldDialogue.value = null;
+					} else if (pendingNewWorld.value) {
 						// Priority: mechanic dialogue > adventure scene > welcome sign
 						if (pendingMechanicDialogues.value.length > 0) {
 							// Show mechanic intro dialogue
@@ -417,16 +478,23 @@ function handleSkip() {
 	randomizeWinMushrooms();
 	showWinModal.value = true;
 
-	// Check if this is the last level of the world and if there's a dialogue
-	const isLastLevelOfWorld = currentLevelNumber.value === LEVELS_PER_WORLD;
-	if (isLastLevelOfWorld) {
-		const worldDialogue = worldEndDialogues[currentWorldIndex.value];
-		if (worldDialogue) {
-			pendingWorldDialogue.value = worldDialogue;
-		} else if (currentWorldIndex.value > 0 && adventureScenes.length > 0) {
-			const randomScene =
-				adventureScenes[Math.floor(Math.random() * adventureScenes.length)]!;
-			pendingWorldDialogue.value = randomScene;
+	// Check for level-specific dialogue first
+	const levelKey = `${currentWorldIndex.value}-${currentLevelNumber.value}`;
+	const levelDialogue = levelDialogues[levelKey];
+	if (levelDialogue) {
+		pendingWorldDialogue.value = levelDialogue;
+	} else {
+		// Check if this is the last level of the world and if there's a dialogue
+		const isLastLevelOfWorld = currentLevelNumber.value === LEVELS_PER_WORLD;
+		if (isLastLevelOfWorld) {
+			const worldDialogue = worldEndDialogues[currentWorldIndex.value];
+			if (worldDialogue) {
+				pendingWorldDialogue.value = worldDialogue;
+			} else if (currentWorldIndex.value > 0 && adventureScenes.length > 0) {
+				const randomScene =
+					adventureScenes[Math.floor(Math.random() * adventureScenes.length)]!;
+				pendingWorldDialogue.value = randomScene;
+			}
 		}
 	}
 
@@ -522,7 +590,10 @@ function openCustomWorldModal() {
 function startCustomWorld(elements: WorldElement[]) {
 	showCustomWorldModal.value = false;
 
-	// Set up custom world
+	// Ensure game is started
+	gameStarted.value = true;
+
+	// Set up custom world state
 	currentWorldIndex.value++;
 	currentLevelNumber.value = 1;
 	currentWorldElements.value = elements;
@@ -531,15 +602,52 @@ function startCustomWorld(elements: WorldElement[]) {
 	// Queue mechanic intro dialogues for any new mechanics
 	queueUnseenMechanicDialogues(elements);
 
-	// Change BGM for the new world
+	// Mark as entering new world and use the proper transition flow
+	pendingNewWorld.value = true;
+
+	// Start the fade transition (same as normal world transition)
+	isFading.value = true;
+	isBlack.value = true;
+
+	// Change BGM during fade
 	changeWorldBGM();
 
-	// Generate new level with selected elements
-	currentLevel.value = getNewLevel();
-	levelKey.value++;
+	// After fade completes, generate new level
+	setTimeout(() => {
+		loadingMessage.value = "Generating level...";
 
-	// Show welcome sign for the new world
-	showWelcomeSign.value = true;
+		setTimeout(() => {
+			try {
+				currentLevel.value = getNewLevel();
+				levelKey.value++;
+			} catch (e) {
+				console.error("Failed to generate level:", e);
+			} finally {
+				// Always clear loading message
+				loadingMessage.value = "";
+			}
+
+			// Fade back in (always runs, even if level generation failed)
+			setTimeout(() => {
+				isBlack.value = false;
+				loadingMessage.value = ""; // Safety clear
+
+				// After fade in, show dialogues or welcome sign
+				setTimeout(() => {
+					isFading.value = false;
+
+					// Priority: mechanic dialogue > welcome sign
+					if (pendingMechanicDialogues.value.length > 0) {
+						currentDialogue.value = pendingMechanicDialogues.value.shift()!;
+						showWelcomeAfterDialogue.value = true;
+					} else {
+						showWelcomeSign.value = true;
+					}
+					pendingNewWorld.value = false;
+				}, 500);
+			}, 200);
+		}, 50);
+	}, 500);
 }
 
 async function handleDialogueComplete() {
@@ -778,6 +886,7 @@ watch(isPlayerStuck, (isStuck) => {
         :level="currentLevel"
         :has-ice-element="currentWorldElements.includes(WE.ICE)"
         :has-dirt-element="currentWorldElements.includes(WE.DIRT)"
+        :has-pond-element="currentWorldElements.includes(WE.POND)"
         :disabled="!!currentDialogue"
         @win="handleWin"
       />

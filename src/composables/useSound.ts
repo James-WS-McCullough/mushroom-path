@@ -505,3 +505,12 @@ export function playVoiceTutorial(section: 1 | 2 | 3, volume = 0.7): void {
 export function playTeleportPoof(volume = 0.5): void {
 	playSound("/sfx/teleport-poof.mp3", volume);
 }
+
+// Lily-pad sounds
+export function playLilypadSink(volume = 0.3): void {
+	playSound("/sfx/lilypad-sink.mp3", volume);
+}
+
+export function playLilypadSurface(volume = 0.25): void {
+	playSound("/sfx/lilypad-resurface.mp3", volume);
+}
