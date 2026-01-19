@@ -2,6 +2,7 @@
 defineProps<{
 	title: string;
 	message: string;
+	confirmText?: string;
 }>();
 
 const emit = defineEmits<{
@@ -14,13 +15,15 @@ const emit = defineEmits<{
   <div class="modal-overlay" @click.self="emit('cancel')">
     <div class="modal">
       <h2 class="modal__title">{{ title }}</h2>
-      <p class="modal__message">{{ message }}</p>
+      <p class="modal__message">
+        <slot name="message">{{ message }}</slot>
+      </p>
       <div class="modal__buttons">
         <button class="modal__button modal__button--cancel" @click="emit('cancel')">
           Cancel
         </button>
         <button class="modal__button modal__button--confirm" @click="emit('confirm')">
-          Yes
+          {{ confirmText ?? 'Yes' }}
         </button>
       </div>
     </div>
@@ -84,6 +87,57 @@ const emit = defineEmits<{
   font-size: 16px;
   color: #7a6a5a;
   margin: 0 0 24px 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.modal__message :deep(.message-line) {
+  display: block;
+  width: 100%;
+  text-align: center;
+}
+
+.modal__message :deep(.mushroom-count-line) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.modal__message :deep(.inline-mushroom) {
+  display: inline-flex;
+  position: relative;
+  width: 14px;
+  height: 16px;
+  vertical-align: middle;
+  margin: 0 2px;
+}
+
+.modal__message :deep(.inline-mushroom-cap) {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 12px;
+  height: 8px;
+  background: linear-gradient(135deg, #e8a87c 0%, #d4896a 50%, #c47a5c 100%);
+  border-radius: 6px 6px 2px 2px;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+}
+
+.modal__message :deep(.inline-mushroom-stem) {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 6px;
+  height: 8px;
+  background: linear-gradient(180deg, #f5e6d3 0%, #e8d4c0 100%);
+  border-radius: 1px 1px 2px 2px;
 }
 
 .modal__buttons {

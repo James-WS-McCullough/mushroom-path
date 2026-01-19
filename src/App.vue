@@ -153,9 +153,7 @@ const hasTutorialComplete = localStorage.getItem(
 const hasFirstTimeAsked = localStorage.getItem(
 	"mushroom-path-first-time-asked",
 );
-const hasMetDew = ref(
-	localStorage.getItem("mushroom-path-met-dew") === "true",
-);
+const hasMetDew = ref(localStorage.getItem("mushroom-path-met-dew") === "true");
 
 // Mechanic intro tracking
 function hasSeenMechanic(mechanic: string): boolean {
@@ -211,6 +209,18 @@ const gameBoardRef = ref<InstanceType<typeof GameBoard> | null>(null);
 
 const canUndo = computed(() => {
 	return gameBoardRef.value?.canUndo ?? false;
+});
+
+// Track mushrooms planted in current level (updated via event from GameBoard)
+const levelMushroomsPlanted = ref(0);
+
+function handleMushroomsChanged(count: number) {
+	levelMushroomsPlanted.value = count;
+}
+
+// Displayed mushroom count (total + current level)
+const displayedMushroomCount = computed(() => {
+	return totalMushroomsPlanted.value + levelMushroomsPlanted.value;
 });
 
 // Hint system state
@@ -328,10 +338,65 @@ const mapTransitionData = ref<{
 	toWorld: number;
 } | null>(null);
 // Random offsets for world names so first world isn't always the same
-const forestNameOffset = Math.floor(Math.random() * forestWorldNames.length);
-const iceNameOffset = Math.floor(Math.random() * iceWorldNames.length);
-const swampNameOffset = Math.floor(Math.random() * swampWorldNames.length);
-const nightNameOffset = Math.floor(Math.random() * nightWorldNames.length);
+const forestNameOffset = ref(
+	Math.floor(Math.random() * forestWorldNames.length),
+);
+const iceNameOffset = ref(Math.floor(Math.random() * iceWorldNames.length));
+const swampNameOffset = ref(Math.floor(Math.random() * swampWorldNames.length));
+const nightNameOffset = ref(Math.floor(Math.random() * nightWorldNames.length));
+
+// Save game progress to localStorage
+const SAVE_KEY = "mushroom-path-progress";
+
+interface SavedProgress {
+	currentWorldIndex: number;
+	currentLevelNumber: number;
+	worldElementHistory: WorldElement[][];
+	worldNameHistory: string[];
+	currentWorldElements: WorldElement[];
+	forestNameOffset: number;
+	iceNameOffset: number;
+	swampNameOffset: number;
+	nightNameOffset: number;
+	totalMushroomsPlanted: number;
+}
+
+// Total mushrooms planted across all sessions (persisted)
+const totalMushroomsPlanted = ref(0);
+
+function saveProgress(): void {
+	const progress: SavedProgress = {
+		currentWorldIndex: currentWorldIndex.value,
+		currentLevelNumber: currentLevelNumber.value,
+		worldElementHistory: worldElementHistory.value,
+		worldNameHistory: worldNameHistory.value,
+		currentWorldElements: currentWorldElements.value,
+		forestNameOffset: forestNameOffset.value,
+		iceNameOffset: iceNameOffset.value,
+		swampNameOffset: swampNameOffset.value,
+		nightNameOffset: nightNameOffset.value,
+		totalMushroomsPlanted: totalMushroomsPlanted.value,
+	};
+	localStorage.setItem(SAVE_KEY, JSON.stringify(progress));
+}
+
+function loadProgress(): SavedProgress | null {
+	const saved = localStorage.getItem(SAVE_KEY);
+	if (!saved) return null;
+	try {
+		return JSON.parse(saved) as SavedProgress;
+	} catch {
+		return null;
+	}
+}
+
+function clearProgress(): void {
+	localStorage.removeItem(SAVE_KEY);
+}
+
+function hasSavedProgress(): boolean {
+	return localStorage.getItem(SAVE_KEY) !== null;
+}
 
 // All available world elements
 const allElements: WorldElement[] = [
@@ -418,19 +483,22 @@ const currentWorldName = computed(() => {
 	// Select name list based on biome (ice takes priority, then night, then swamp)
 	if (currentWorldElements.value.includes(WE.ICE)) {
 		const index =
-			(currentWorldIndex.value + iceNameOffset) % iceWorldNames.length;
+			(currentWorldIndex.value + iceNameOffset.value) % iceWorldNames.length;
 		return iceWorldNames[index] ?? "Frozen Fungi";
 	} else if (currentWorldElements.value.includes(WE.POND)) {
 		const index =
-			(currentWorldIndex.value + nightNameOffset) % nightWorldNames.length;
+			(currentWorldIndex.value + nightNameOffset.value) %
+			nightWorldNames.length;
 		return nightWorldNames[index] ?? "Moonlit Marsh";
 	} else if (currentWorldElements.value.includes(WE.DIRT)) {
 		const index =
-			(currentWorldIndex.value + swampNameOffset) % swampWorldNames.length;
+			(currentWorldIndex.value + swampNameOffset.value) %
+			swampWorldNames.length;
 		return swampWorldNames[index] ?? "Murky Marsh";
 	} else {
 		const index =
-			(currentWorldIndex.value + forestNameOffset) % forestWorldNames.length;
+			(currentWorldIndex.value + forestNameOffset.value) %
+			forestWorldNames.length;
 		return forestWorldNames[index] ?? "Mushroom Garden";
 	}
 });
@@ -520,6 +588,12 @@ function handleWin() {
 	// After showing the modal briefly, start the transition
 	setTimeout(() => {
 		pendingNewWorld.value = advanceLevel();
+		// Always add level mushrooms to total
+		totalMushroomsPlanted.value += levelMushroomsPlanted.value;
+		// Save progress only if tutorial is complete
+		if (localStorage.getItem("mushroom-path-tutorial-complete")) {
+			saveProgress();
+		}
 		startTransition();
 	}, 1500);
 }
@@ -676,6 +750,11 @@ function doSkip() {
 	// Show modal briefly then start transition
 	setTimeout(() => {
 		pendingNewWorld.value = advanceLevel();
+		// Skipping forfeits the level's mushrooms - don't add to total
+		// Save progress only if tutorial is complete
+		if (localStorage.getItem("mushroom-path-tutorial-complete")) {
+			saveProgress();
+		}
 		startTransition();
 	}, 1000);
 }
@@ -855,6 +934,84 @@ async function startGame() {
 
 	// Show welcome sign for first world
 	showWelcomeSign.value = true;
+}
+
+async function handleContinue() {
+	// Show loading state
+	isLoading.value = true;
+	loadingMessage.value = "Loading audio...";
+
+	await new Promise((resolve) => setTimeout(resolve, 50));
+
+	// Initialize audio system
+	initializeAudio();
+	startBackgroundMusic();
+
+	loadingMessage.value = "Loading saved progress...";
+
+	// Load saved progress
+	const saved = loadProgress();
+	if (!saved) {
+		// Fallback to normal start if no save found
+		isLoading.value = false;
+		loadingMessage.value = "";
+		await startGame();
+		return;
+	}
+
+	// Restore all saved state
+	currentWorldIndex.value = saved.currentWorldIndex;
+	currentLevelNumber.value = saved.currentLevelNumber;
+	worldElementHistory.value = saved.worldElementHistory;
+	worldNameHistory.value = saved.worldNameHistory;
+	currentWorldElements.value = saved.currentWorldElements;
+	forestNameOffset.value = saved.forestNameOffset;
+	iceNameOffset.value = saved.iceNameOffset;
+	swampNameOffset.value = saved.swampNameOffset;
+	nightNameOffset.value = saved.nightNameOffset;
+	totalMushroomsPlanted.value = saved.totalMushroomsPlanted ?? 0;
+
+	// Set the level queue to use the current world elements
+	levelQueue.setWorldElements(saved.currentWorldElements);
+
+	loadingMessage.value = "Generating level...";
+	await new Promise((resolve) => setTimeout(resolve, 50));
+
+	// Generate the level for the current position
+	currentLevel.value = getNewLevel();
+	gameStarted.value = true;
+	isLoading.value = false;
+	loadingMessage.value = "";
+
+	// Show welcome sign for the current world
+	showWelcomeSign.value = true;
+}
+
+async function handleNewGame() {
+	// Clear saved progress and reset total mushrooms
+	clearProgress();
+	totalMushroomsPlanted.value = 0;
+
+	// Initialize audio system
+	isLoading.value = true;
+	loadingMessage.value = "Loading audio...";
+
+	await new Promise((resolve) => setTimeout(resolve, 50));
+
+	initializeAudio();
+	startBackgroundMusic();
+
+	isLoading.value = false;
+	loadingMessage.value = "";
+
+	// Show intro dialogue if not seen before
+	if (!hasSeenIntro) {
+		currentDialogue.value = introDialogue;
+		return;
+	}
+
+	// Otherwise go straight to game
+	await startGame();
 }
 
 function closeTutorial() {
@@ -1180,7 +1337,15 @@ watch(isPlayerStuck, (isStuck) => {
   </Transition>
 
   <!-- Start Screen -->
-  <StartScreen v-if="!gameStarted && !showMusicPlayer && !currentDialogue" @begin="handleBegin" @open-music-player="showMusicPlayer = true" @start-tutorial="handleStartTutorial" />
+  <StartScreen
+    v-if="!gameStarted && !showMusicPlayer && !currentDialogue"
+    :has-saved-game="hasSavedProgress()"
+    @begin="handleBegin"
+    @continue="handleContinue"
+    @new-game="handleNewGame"
+    @open-music-player="showMusicPlayer = true"
+    @start-tutorial="handleStartTutorial"
+  />
 
   <!-- Music Player -->
   <MusicPlayer v-if="showMusicPlayer && !currentDialogue" @close="showMusicPlayer = false" />
@@ -1203,10 +1368,23 @@ watch(isPlayerStuck, (isStuck) => {
     <ConfirmModal
       v-if="confirmAction"
       :title="confirmAction === 'skip' ? 'Skip Level?' : 'Restart Level?'"
-      :message="confirmAction === 'skip' ? 'Are you sure you want to skip this level?' : 'Are you sure you want to restart?'"
+      :message="confirmAction === 'restart' ? 'Are you sure you want to restart?' : (levelMushroomsPlanted === 0 ? 'Are you sure you want to skip this level?' : '')"
+      :confirm-text="confirmAction === 'skip' ? 'Skip' : 'Restart'"
       @confirm="handleConfirmAction"
       @cancel="handleCancelAction"
-    />
+    >
+      <template v-if="confirmAction === 'skip' && levelMushroomsPlanted > 0" #message>
+        <span class="message-line">If you skip, you won't keep the</span>
+        <span class="message-line mushroom-count-line">
+          <span>{{ levelMushroomsPlanted }} mushroom{{ levelMushroomsPlanted === 1 ? '' : 's' }}</span>
+          <span class="inline-mushroom">
+            <span class="inline-mushroom-cap"></span>
+            <span class="inline-mushroom-stem"></span>
+          </span>
+        </span>
+        <span class="message-line">you planted on this level.</span>
+      </template>
+    </ConfirmModal>
   </Transition>
 
   <!-- Game (stays visible for overlay dialogues) -->
@@ -1216,6 +1394,15 @@ watch(isPlayerStuck, (isStuck) => {
       :elements="currentWorldElements"
       @show-tutorial="showTutorial = true"
     />
+
+    <!-- Mushroom Counter -->
+    <div class="mushroom-counter">
+      <div class="mushroom-counter-icon">
+        <div class="counter-mushroom-cap"></div>
+        <div class="counter-mushroom-stem"></div>
+      </div>
+      <span class="mushroom-counter-text">{{ displayedMushroomCount }}</span>
+    </div>
 
     <main class="app">
       <GameBoard
@@ -1229,6 +1416,7 @@ watch(isPlayerStuck, (isStuck) => {
         :stuck-tiles="stuckTiles"
         :disabled="!!currentDialogue"
         @win="handleWin"
+        @mushrooms-changed="handleMushroomsChanged"
       />
 
       <!-- Fade Transition Overlay (game area only) -->
@@ -1330,6 +1518,85 @@ watch(isPlayerStuck, (isStuck) => {
   overflow: hidden;
   width: 100%;
   box-sizing: border-box;
+}
+
+/* Mushroom Counter */
+.mushroom-counter {
+  position: absolute;
+  top: 72px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 248, 230, 0.9);
+  padding: 6px 12px 6px 8px;
+  border-radius: 20px;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  z-index: 10;
+}
+
+.mushroom-counter-icon {
+  position: relative;
+  width: 20px;
+  height: 24px;
+}
+
+.counter-mushroom-cap {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 18px;
+  height: 12px;
+  background: linear-gradient(135deg, #e8a87c 0%, #d4896a 50%, #c47a5c 100%);
+  border-radius: 9px 9px 3px 3px;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+}
+
+.counter-mushroom-cap::before {
+  content: "";
+  position: absolute;
+  width: 4px;
+  height: 3px;
+  background: #fff5eb;
+  border-radius: 50%;
+  top: 3px;
+  left: 3px;
+}
+
+.counter-mushroom-stem {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 8px;
+  height: 12px;
+  background: linear-gradient(180deg, #f5e6d3 0%, #e8d4c0 100%);
+  border-radius: 2px 2px 3px 3px;
+}
+
+.mushroom-counter-text {
+  font-family: 'Georgia', serif;
+  font-size: 16px;
+  font-weight: bold;
+  color: #5a4a3a;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+  min-width: 24px;
+  text-align: center;
+}
+
+@media (max-width: 480px) {
+  .mushroom-counter {
+    top: 56px;
+    right: 8px;
+    padding: 5px 10px 5px 6px;
+  }
+
+  .mushroom-counter-text {
+    font-size: 14px;
+  }
 }
 
 /* Dew Hint Message */

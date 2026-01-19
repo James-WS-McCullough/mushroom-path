@@ -23,9 +23,19 @@ const props = defineProps<{
 
 const emit = defineEmits<{
 	win: [];
+	mushroomsChanged: [count: number];
 }>();
 
 const game = useGame(props.level);
+
+// Emit mushroom count changes to parent (counts actual mushroom tiles on board)
+watch(
+	() => game.mushroomTileCount.value,
+	(count) => {
+		emit("mushroomsChanged", count);
+	},
+	{ immediate: true },
+);
 
 // Camera system for maps that don't fit in viewport
 const viewportRef = ref<HTMLElement | null>(null);

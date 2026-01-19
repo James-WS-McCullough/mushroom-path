@@ -1557,6 +1557,19 @@ export function useGame(level: Level) {
 		return count;
 	});
 
+	// Count mushroom tiles on the board (for tracking mushrooms planted this level)
+	const mushroomTileCount = computed(() => {
+		let count = 0;
+		for (const row of tiles.value) {
+			for (const tile of row) {
+				if (tile.type === TileType.MUSHROOM) {
+					count++;
+				}
+			}
+		}
+		return count;
+	});
+
 	// Show hints when player is idle for 4+ seconds and remaining tiles < 8
 	const IDLE_HINT_THRESHOLD = 4000; // 4 seconds
 	const TILES_HINT_THRESHOLD = 8;
@@ -1756,6 +1769,7 @@ export function useGame(level: Level) {
 		lilypadState,
 		showHints,
 		cleanupIdleTimer,
+		mushroomTileCount,
 		levelWidth: level.width,
 		levelHeight: level.height,
 	};

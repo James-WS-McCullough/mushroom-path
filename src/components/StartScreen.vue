@@ -1,8 +1,14 @@
 <script setup lang="ts">
 import { ref } from "vue";
 
+const props = defineProps<{
+	hasSavedGame?: boolean;
+}>();
+
 const emit = defineEmits<{
 	begin: [];
+	continue: [];
+	newGame: [];
 	openMusicPlayer: [];
 	startTutorial: [];
 }>();
@@ -13,6 +19,18 @@ function handleBegin() {
 	if (isLeaving.value) return;
 	isLeaving.value = true;
 	setTimeout(() => emit("begin"), 600);
+}
+
+function handleContinue() {
+	if (isLeaving.value) return;
+	isLeaving.value = true;
+	setTimeout(() => emit("continue"), 600);
+}
+
+function handleNewGame() {
+	if (isLeaving.value) return;
+	isLeaving.value = true;
+	setTimeout(() => emit("newGame"), 600);
 }
 
 function handleTutorial() {
@@ -46,11 +64,20 @@ function handleTutorial() {
       <h1 class="title">Welcome to the</h1>
       <h2 class="subtitle">Mushroom Garden</h2>
 
-      <button class="begin-button" @click="handleBegin">
+      <!-- Continue button (when there's saved progress) -->
+      <button v-if="props.hasSavedGame" class="begin-button" @click="handleContinue">
+        <span class="begin-text">Continue</span>
+      </button>
+      <!-- Begin button (when starting fresh) -->
+      <button v-else class="begin-button" @click="handleBegin">
         <span class="begin-text">Begin</span>
       </button>
 
       <div class="secondary-buttons">
+        <!-- New Game button (only when there's saved progress) -->
+        <button v-if="props.hasSavedGame" class="secondary-button" @click="handleNewGame">
+          <span class="secondary-text">New Game</span>
+        </button>
         <button class="secondary-button" @click="handleTutorial">
           <span class="secondary-text">Tutorial</span>
         </button>
