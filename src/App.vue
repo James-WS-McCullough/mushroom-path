@@ -1190,6 +1190,8 @@ async function handleFirstTimeChoice(choice: "yes" | "no") {
 		switchToTutorialMusic();
 		await startTutorialMode();
 	} else {
+		// Skipping tutorial still counts as "complete" for save purposes
+		localStorage.setItem("mushroom-path-tutorial-complete", "true");
 		await startGame();
 	}
 }
