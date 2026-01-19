@@ -24,6 +24,7 @@ const props = defineProps<{
 const emit = defineEmits<{
 	win: [];
 	mushroomsChanged: [count: number];
+	moveCompleted: [];
 }>();
 
 const game = useGame(props.level);
@@ -36,6 +37,19 @@ watch(
 	},
 	{ immediate: true },
 );
+
+// Track when moves complete (all animations finished)
+const isMoveInProgress = computed(
+	() =>
+		game.isHopping.value || game.isSliding.value || game.isTeleporting.value,
+);
+
+watch(isMoveInProgress, (inProgress, wasInProgress) => {
+	// Emit when transitioning from moving to not moving (and not won)
+	if (wasInProgress && !inProgress && !game.hasWon.value) {
+		emit("moveCompleted");
+	}
+});
 
 // Camera system for maps that don't fit in viewport
 const viewportRef = ref<HTMLElement | null>(null);
@@ -288,6 +302,8 @@ const unifiedRoomPath = computed(() => {
 });
 
 function isReachable(tilePos: Position): boolean {
+	// Don't show reachable tiles when board is disabled
+	if (props.disabled) return false;
 	return game.canReachByClick(tilePos);
 }
 
@@ -426,6 +442,7 @@ defineExpose({
 		}
 	},
 	getHint: game.getHint,
+	hasUnreachableTiles: game.hasUnreachableTiles,
 });
 </script>
 

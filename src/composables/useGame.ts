@@ -1770,6 +1770,7 @@ export function useGame(level: Level) {
 		showHints,
 		cleanupIdleTimer,
 		mushroomTileCount,
+		hasUnreachableTiles,
 		levelWidth: level.width,
 		levelHeight: level.height,
 	};

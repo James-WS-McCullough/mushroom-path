@@ -11,10 +11,12 @@ import { WorldElement as WE } from "../types/game";
 defineProps<{
 	levelName: string;
 	elements: WorldElement[];
+	helpModeEnabled?: boolean;
 }>();
 
 const emit = defineEmits<{
 	showTutorial: [];
+	showHelpSettings: [];
 }>();
 </script>
 
@@ -24,6 +26,23 @@ const emit = defineEmits<{
     <div class="bar-content">
       <button class="info-btn" @click="emit('showTutorial')" title="How to Play">
         <span class="info-icon">i</span>
+      </button>
+      <button
+        class="help-btn"
+        :class="{ 'help-btn--active': helpModeEnabled }"
+        title="Assist Mode"
+        @click="emit('showHelpSettings')"
+      >
+        <svg viewBox="0 0 24 24" class="help-icon-svg">
+          <!-- Life preserver ring -->
+          <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.5"/>
+          <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/>
+          <!-- Cross straps -->
+          <line x1="12" y1="3" x2="12" y2="8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+          <line x1="12" y1="16" x2="12" y2="21" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+          <line x1="3" y1="12" x2="8" y2="12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+          <line x1="16" y1="12" x2="21" y2="12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
       </button>
       <h2 class="level-name">{{ levelName }}</h2>
       <div class="elements-display">
@@ -203,6 +222,47 @@ const emit = defineEmits<{
   line-height: 1;
 }
 
+.help-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(180deg, rgba(255, 248, 230, 0.95) 0%, rgba(240, 230, 210, 0.95) 100%);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  transition: all 0.15s ease;
+}
+
+.help-btn:hover {
+  transform: scale(1.05);
+  box-shadow:
+    0 3px 6px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.help-btn:active {
+  transform: scale(0.95);
+}
+
+.help-btn--active {
+  background: linear-gradient(180deg, rgba(180, 220, 170, 0.95) 0%, rgba(140, 190, 130, 0.95) 100%);
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 0 8px rgba(100, 180, 100, 0.4);
+}
+
+.help-icon-svg {
+  width: 22px;
+  height: 22px;
+  color: #5a4a3a;
+}
+
 .level-name {
   flex: 1;
   font-family: 'Georgia', serif;
@@ -230,13 +290,19 @@ const emit = defineEmits<{
     letter-spacing: 1px;
   }
 
-  .info-btn {
+  .info-btn,
+  .help-btn {
     width: 32px;
     height: 32px;
   }
 
   .info-icon {
     font-size: 18px;
+  }
+
+  .help-icon-svg {
+    width: 18px;
+    height: 18px;
   }
 
   .element-icon {

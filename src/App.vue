@@ -3,6 +3,7 @@ import { computed, ref, watch } from "vue";
 import BottomBar from "./components/BottomBar.vue";
 import ConfirmModal from "./components/ConfirmModal.vue";
 import CustomWorldModal from "./components/CustomWorldModal.vue";
+import HelpModeModal from "./components/HelpModeModal.vue";
 import DialogueScene from "./components/DialogueScene.vue";
 import FirstTimeModal from "./components/FirstTimeModal.vue";
 import GameBoard from "./components/GameBoard.vue";
@@ -154,6 +155,21 @@ const hasFirstTimeAsked = localStorage.getItem(
 	"mushroom-path-first-time-asked",
 );
 const hasMetDew = ref(localStorage.getItem("mushroom-path-met-dew") === "true");
+
+// Help mode state (persisted to localStorage)
+const HELP_MODE_KEY = "mushroom-path-help-mode";
+const isHelpModeEnabled = ref(localStorage.getItem(HELP_MODE_KEY) === "true");
+const showHelpModeModal = ref(false);
+const isHelpModeBlocked = ref(false); // Blocks controls when help mode detects impossible state
+
+function toggleHelpMode(enabled: boolean) {
+	isHelpModeEnabled.value = enabled;
+	localStorage.setItem(HELP_MODE_KEY, enabled ? "true" : "false");
+	// Clear blocked state if help mode is disabled
+	if (!enabled) {
+		isHelpModeBlocked.value = false;
+	}
+}
 
 // Mechanic intro tracking
 function hasSeenMechanic(mechanic: string): boolean {
@@ -552,6 +568,10 @@ function handleWin() {
 		return;
 	}
 
+	// Capture mushroom count immediately before any delays
+	// This ensures we use the correct value even if the ref changes during the timeout
+	const mushroomsToAdd = levelMushroomsPlanted.value;
+
 	playSuccess();
 	// 20% chance to play a voice line
 	if (Math.random() < 0.2) {
@@ -588,8 +608,8 @@ function handleWin() {
 	// After showing the modal briefly, start the transition
 	setTimeout(() => {
 		pendingNewWorld.value = advanceLevel();
-		// Always add level mushrooms to total
-		totalMushroomsPlanted.value += levelMushroomsPlanted.value;
+		// Add captured mushroom count to total (using captured value, not ref)
+		totalMushroomsPlanted.value += mushroomsToAdd;
 		// Save progress only if tutorial is complete
 		if (localStorage.getItem("mushroom-path-tutorial-complete")) {
 			saveProgress();
@@ -780,6 +800,7 @@ function handleRestart() {
 function doRestart() {
 	playUndo();
 	clearHintState();
+	isHelpModeBlocked.value = false;
 	// Trigger restart in the GameBoard component
 	levelKey.value++;
 }
@@ -802,6 +823,7 @@ function handleUndo() {
 	if (isFading.value) return;
 	gameBoardRef.value?.undo();
 	clearHintState();
+	isHelpModeBlocked.value = false;
 }
 
 function handleHint() {
@@ -885,6 +907,55 @@ function handleHint() {
 		}, 3000);
 		hintTimeouts.push(clearTimeoutId);
 	}
+}
+
+function handleMoveCompleted() {
+	// Only check if help mode is enabled
+	if (!isHelpModeEnabled.value) return;
+	// Don't interrupt existing hints
+	if (hintMessage.value) return;
+	// Don't show during transitions
+	if (isFading.value) return;
+	// Don't show during tutorial (has its own stuck handling)
+	if (isInTutorial.value) return;
+
+	// Get hint to check if level is impossible and get stuck tiles
+	const hint = gameBoardRef.value?.getHint?.();
+	if (hint?.needsUndo) {
+		showAutoUndoHint(hint.stuckTiles ?? []);
+	}
+}
+
+function showAutoUndoHint(stuckTilesData: { x: number; y: number }[]) {
+	// Clear any previous hints
+	clearHintState();
+
+	// Block player controls until they undo or restart
+	isHelpModeBlocked.value = true;
+
+	// Use Sprout or Dew based on hasMetDew
+	const useSprout = !hasMetDew.value || Math.random() < 0.3;
+
+	// Show the stuck tiles with red glow
+	stuckTiles.value = stuckTilesData;
+	hintSprite.value = useSprout ? "MushroomGirl-Nervous" : "BlueGirl-Nervous";
+
+	if (canUndo.value) {
+		undoGlow.value = true;
+		const messages = useSprout ? sproutStuckMessages : stuckHintMessages;
+		hintMessage.value =
+			messages[Math.floor(Math.random() * messages.length)] ??
+			"We need to go back...";
+	} else {
+		restartGlow.value = true;
+		const messages = useSprout ? sproutRestartMessages : restartHintMessages;
+		hintMessage.value =
+			messages[Math.floor(Math.random() * messages.length)] ??
+			"Let's start fresh!";
+	}
+
+	// Keep all visual cues (stuck tiles, button glow, character message)
+	// visible until player undos/restarts - no auto-clear
 }
 
 async function handleBegin() {
@@ -1394,7 +1465,9 @@ watch(isPlayerStuck, (isStuck) => {
     <TopBar
       :level-name="displayName"
       :elements="currentWorldElements"
+      :help-mode-enabled="isHelpModeEnabled"
       @show-tutorial="showTutorial = true"
+      @show-help-settings="showHelpModeModal = true"
     />
 
     <!-- Mushroom Counter -->
@@ -1416,9 +1489,10 @@ watch(isPlayerStuck, (isStuck) => {
         :has-pond-element="currentWorldElements.includes(WE.POND)"
         :hint-tiles="hintTiles"
         :stuck-tiles="stuckTiles"
-        :disabled="!!currentDialogue"
+        :disabled="!!currentDialogue || isHelpModeBlocked"
         @win="handleWin"
         @mushrooms-changed="handleMushroomsChanged"
+        @move-completed="handleMoveCompleted"
       />
 
       <!-- Fade Transition Overlay (game area only) -->
@@ -1483,6 +1557,16 @@ watch(isPlayerStuck, (isStuck) => {
 
     <!-- Tutorial Modal -->
     <TutorialModal v-if="showTutorial" @close="closeTutorial" />
+
+    <!-- Help Mode Modal -->
+    <Transition name="modal">
+      <HelpModeModal
+        v-if="showHelpModeModal"
+        :enabled="isHelpModeEnabled"
+        @toggle="toggleHelpMode"
+        @close="showHelpModeModal = false"
+      />
+    </Transition>
 
     <!-- Welcome Sign for new worlds -->
     <WelcomeSign
