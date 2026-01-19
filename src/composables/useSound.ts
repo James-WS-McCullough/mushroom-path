@@ -32,27 +32,59 @@ async function ensureAudioContextResumed(): Promise<void> {
 
 // Set up event listeners to resume audio context on any interaction
 function setupAudioContextListeners(): void {
-	const resume = () => ensureAudioContextResumed();
+	const resume = () => {
+		ensureAudioContextResumed();
+		tryResumeMusic();
+	};
 	document.addEventListener("click", resume);
 	document.addEventListener("touchstart", resume);
 	document.addEventListener("keydown", resume);
 }
 
-// Handle visibility changes - pause/resume music when page is hidden/shown
+// Detect if we're on a mobile device
+function isMobileDevice(): boolean {
+	return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+		navigator.userAgent,
+	);
+}
+
+// Track if music was playing before visibility change (for mobile resume)
+let wasPlayingBeforeHidden = false;
+
+// Handle visibility changes - only pause on mobile (browsers force it anyway)
 document.addEventListener("visibilitychange", () => {
 	if (document.hidden) {
-		// Pause music when page is hidden (minimized, tab switched, etc.)
-		if (currentBgm && !currentBgm.paused) {
-			currentBgm.pause();
+		// On mobile, track if music was playing so we can resume
+		if (isMobileDevice() && currentBgm && !currentBgm.paused) {
+			wasPlayingBeforeHidden = true;
+			// Don't manually pause - let the browser handle it
 		}
 	} else {
-		// Resume when page becomes visible again
+		// Resume audio context first
 		ensureAudioContextResumed();
-		if (currentBgm && musicStarted && !isMusicMuted.value) {
-			currentBgm.play().catch(() => {});
+
+		// On mobile, try to resume if music was playing before
+		if (isMobileDevice() && wasPlayingBeforeHidden && currentBgm && musicStarted && !isMusicMuted.value) {
+			wasPlayingBeforeHidden = false;
+			// Try to resume - if it fails due to autoplay policy, the next user interaction will resume it
+			currentBgm.play().catch(() => {
+				// Mark that we need to resume on next interaction
+				needsResumeOnInteraction = true;
+			});
 		}
 	}
 });
+
+// Flag to resume music on next user interaction (for mobile autoplay policy)
+let needsResumeOnInteraction = false;
+
+// Resume music on user interaction if needed
+function tryResumeMusic(): void {
+	if (needsResumeOnInteraction && currentBgm && musicStarted && !isMusicMuted.value) {
+		currentBgm.play().catch(() => {});
+		needsResumeOnInteraction = false;
+	}
+}
 
 // ============================================
 // Audio Loading & Caching
