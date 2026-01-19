@@ -25,6 +25,8 @@ const emit = defineEmits<{
 	win: [];
 	mushroomsChanged: [count: number];
 	moveCompleted: [];
+	requestUndo: [];
+	requestRestart: [];
 }>();
 
 const game = useGame(props.level);
@@ -362,7 +364,23 @@ function handleTileClick(position: Position) {
 }
 
 function handleKeydown(event: KeyboardEvent) {
+	// Undo with Z - always allowed (even when disabled for help mode)
+	if (event.key === "z" || event.key === "Z") {
+		event.preventDefault();
+		emit("requestUndo");
+		return;
+	}
+
+	// Reset with R - always allowed (shows confirmation modal)
+	if (event.key === "r" || event.key === "R") {
+		event.preventDefault();
+		emit("requestRestart");
+		return;
+	}
+
+	// Movement keys are blocked when disabled
 	if (props.disabled) return;
+
 	const keyMap: Record<string, Direction> = {
 		ArrowUp: "up",
 		ArrowDown: "down",
@@ -382,23 +400,6 @@ function handleKeydown(event: KeyboardEvent) {
 	if (direction) {
 		event.preventDefault();
 		game.movePlayer(direction);
-		return;
-	}
-
-	// Undo with Z
-	if (event.key === "z" || event.key === "Z") {
-		event.preventDefault();
-		if (game.canUndo.value) {
-			playUndo();
-			game.undo();
-		}
-		return;
-	}
-
-	// Reset with R
-	if (event.key === "r" || event.key === "R") {
-		event.preventDefault();
-		handleRestart();
 	}
 }
 

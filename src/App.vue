@@ -1493,6 +1493,8 @@ watch(isPlayerStuck, (isStuck) => {
         @win="handleWin"
         @mushrooms-changed="handleMushroomsChanged"
         @move-completed="handleMoveCompleted"
+        @request-undo="handleUndo"
+        @request-restart="handleRestart"
       />
 
       <!-- Fade Transition Overlay (game area only) -->
