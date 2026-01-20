@@ -16,6 +16,7 @@ const props = defineProps<{
 	hasIceElement?: boolean;
 	hasDirtElement?: boolean;
 	hasPondElement?: boolean;
+	hasTidesElement?: boolean;
 	disabled?: boolean;
 	hintTiles?: Position[];
 	stuckTiles?: Position[];
@@ -27,6 +28,7 @@ const emit = defineEmits<{
 	moveCompleted: [];
 	requestUndo: [];
 	requestRestart: [];
+	requestHint: [];
 }>();
 
 const game = useGame(props.level);
@@ -346,6 +348,14 @@ function isStuckTile(tilePos: Position): boolean {
 	);
 }
 
+function getMovesUntilFloodForTile(tilePos: Position): number | undefined {
+	if (!props.hasTidesElement) return undefined;
+	const tile = game.tiles.value[tilePos.y]?.[tilePos.x];
+	if (!tile || (tile.type !== "low_sand" && tile.type !== "sand_mushroom"))
+		return undefined;
+	return game.getMovesUntilFlood();
+}
+
 function getPoofStyle(position: Position) {
 	const boardPadding = hasRooms.value ? 0 : 3;
 	// Match character positioning: boardPadding + position * 67, then add half tile for center
@@ -375,6 +385,13 @@ function handleKeydown(event: KeyboardEvent) {
 	if (event.key === "r" || event.key === "R") {
 		event.preventDefault();
 		emit("requestRestart");
+		return;
+	}
+
+	// Hint with H - always allowed
+	if (event.key === "h" || event.key === "H") {
+		event.preventDefault();
+		emit("requestHint");
 		return;
 	}
 
@@ -479,6 +496,9 @@ defineExpose({
             :has-ice-element="hasIceElement"
             :has-dirt-element="hasDirtElement"
             :has-pond-element="hasPondElement"
+            :has-tides-element="hasTidesElement"
+            :tide-phase="game.tidePhase.value"
+            :moves-until-flood="getMovesUntilFloodForTile(tile.position)"
             :lilypad-state="game.getLilypadState(tile.position)"
             :should-shimmer="shouldShimmer()"
             @click="handleTileClick(tile.position)"

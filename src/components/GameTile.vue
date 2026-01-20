@@ -21,9 +21,15 @@ const props = defineProps<{
 	hasIceElement?: boolean;
 	hasDirtElement?: boolean;
 	hasPondElement?: boolean;
+	hasTidesElement?: boolean;
 	shouldShimmer?: boolean;
 	lilypadState?: LilypadState;
+	tidePhase?: number;
+	movesUntilFlood?: number;
 }>();
+
+// Check if low sand tiles are currently flooded (tidePhase === 0)
+const isLowSandFlooded = computed(() => props.tidePhase === 0);
 
 const emit = defineEmits<{
 	click: [];
@@ -39,14 +45,19 @@ const isPortal = computed(() => {
 });
 
 const tileClass = computed(() => {
-	// Shimmer applies to grass and dirt tiles when hints are active and player is not here
+	// Shimmer applies to grass, dirt, and low_sand tiles when hints are active and player is not here
 	const canShimmer =
 		props.shouldShimmer &&
 		!props.isPlayerHere &&
-		(props.tile.type === TileType.GRASS || props.tile.type === TileType.DIRT);
+		(props.tile.type === TileType.GRASS ||
+			props.tile.type === TileType.DIRT ||
+			props.tile.type === TileType.LOW_SAND);
 
 	// Night biome (pond element) overrides other biomes
 	const isNightBiome = props.hasPondElement && !props.hasIceElement;
+
+	// Beach biome (tides element)
+	const isBeachBiome = props.hasTidesElement && !props.hasIceElement && !isNightBiome;
 
 	return {
 		tile: true,
@@ -62,6 +73,20 @@ const tileClass = computed(() => {
 		"tile--pond-submerged":
 			props.tile.type === TileType.POND && props.lilypadState?.submerged,
 		"tile--pond-water": props.tile.type === TileType.POND_WATER,
+		// Tides tiles
+		"tile--low-sand": props.tile.type === TileType.LOW_SAND,
+		"tile--low-sand-flooded":
+			props.tile.type === TileType.LOW_SAND && isLowSandFlooded.value,
+		"tile--low-sand-warning":
+			props.tile.type === TileType.LOW_SAND && props.movesUntilFlood === 1,
+		"tile--sea": props.tile.type === TileType.SEA,
+		"tile--sea-high-tide": props.tile.type === TileType.SEA && isLowSandFlooded.value,
+		// Sand mushroom (mushroom planted on low sand)
+		"tile--sand-mushroom": props.tile.type === TileType.SAND_MUSHROOM,
+		"tile--sand-mushroom-flooded":
+			props.tile.type === TileType.SAND_MUSHROOM && isLowSandFlooded.value,
+		"tile--sand-mushroom-warning":
+			props.tile.type === TileType.SAND_MUSHROOM && props.movesUntilFlood === 1,
 		"tile--portal": isPortal.value,
 		"tile--portal-pink": props.tile.type === TileType.PORTAL_PINK,
 		"tile--portal-blue": props.tile.type === TileType.PORTAL_BLUE,
@@ -72,7 +97,7 @@ const tileClass = computed(() => {
 		"tile--hinted": props.isHinted,
 		"tile--stuck-highlight": props.isStuckHighlight,
 		"tile--shimmer": canShimmer,
-		// Ice biome takes priority over swamp and night
+		// Ice biome takes priority over swamp, night, and beach
 		"tile--frosty":
 			props.hasIceElement &&
 			(props.tile.type === TileType.GRASS || isPortal.value),
@@ -86,20 +111,28 @@ const tileClass = computed(() => {
 		"tile--night-mushroom":
 			isNightBiome && props.tile.type === TileType.MUSHROOM,
 		"tile--night-dirt": isNightBiome && props.tile.type === TileType.DIRT,
-		// Swamp biome (fallback when no ice or night)
+		// Beach biome (tides element) - sandy warm tones
+		"tile--beach":
+			isBeachBiome && (props.tile.type === TileType.GRASS || isPortal.value),
+		"tile--beach-mushroom":
+			isBeachBiome && props.tile.type === TileType.MUSHROOM,
+		// Swamp biome (fallback when no ice, night, or beach)
 		"tile--swamp":
 			!props.hasIceElement &&
 			!isNightBiome &&
+			!isBeachBiome &&
 			props.hasDirtElement &&
 			(props.tile.type === TileType.GRASS || isPortal.value),
 		"tile--swamp-mushroom":
 			!props.hasIceElement &&
 			!isNightBiome &&
+			!isBeachBiome &&
 			props.hasDirtElement &&
 			props.tile.type === TileType.MUSHROOM,
 		"tile--swamp-dirt":
 			!props.hasIceElement &&
 			!isNightBiome &&
+			!isBeachBiome &&
 			props.hasDirtElement &&
 			props.tile.type === TileType.DIRT,
 	};
@@ -355,6 +388,132 @@ function handleClick() {
         <div class="frog-eye frog-eye--right"></div>
         <div class="frog-leg frog-leg--left"></div>
         <div class="frog-leg frog-leg--right"></div>
+      </div>
+    </div>
+
+    <!-- Low sand tile (tidal zone) -->
+    <div v-if="tile.type === TileType.LOW_SAND" class="low-sand-detail">
+      <!-- Sandy texture with wave patterns -->
+      <div class="sand-texture">
+        <div class="sand-ripple sand-ripple--1"></div>
+        <div class="sand-ripple sand-ripple--2"></div>
+      </div>
+      <!-- Seashells scattered -->
+      <div class="seashells">
+        <div class="shell shell--1"></div>
+        <div class="shell shell--2"></div>
+      </div>
+      <!-- Warning state - water rising at edges when about to flood -->
+      <div v-if="movesUntilFlood === 1" class="tide-warning">
+        <div class="rising-water"></div>
+        <div class="warning-foam">
+          <div class="foam-bubble foam-bubble--1"></div>
+          <div class="foam-bubble foam-bubble--2"></div>
+          <div class="foam-bubble foam-bubble--3"></div>
+          <div class="foam-bubble foam-bubble--4"></div>
+        </div>
+      </div>
+      <!-- Flood water overlay when tide is high -->
+      <div v-if="isLowSandFlooded" class="flood-water">
+        <div class="flood-ripple flood-ripple--1"></div>
+        <div class="flood-ripple flood-ripple--2"></div>
+      </div>
+      <!-- Tide countdown indicator -->
+      <div v-if="movesUntilFlood !== undefined && !isLowSandFlooded" :class="['tide-countdown', { 'tide-countdown--warning': movesUntilFlood === 1 }]">
+        {{ movesUntilFlood }}
+      </div>
+    </div>
+
+    <!-- Sea tile (always water, syncs visually with tide) -->
+    <div v-if="tile.type === TileType.SEA" class="sea-detail">
+      <!-- Ocean waves -->
+      <div class="sea-waves">
+        <div class="sea-wave sea-wave--1"></div>
+        <div class="sea-wave sea-wave--2"></div>
+        <div class="sea-wave sea-wave--3"></div>
+      </div>
+      <!-- Foam at edges -->
+      <div class="sea-foam">
+        <div class="foam-patch foam-patch--1"></div>
+        <div class="foam-patch foam-patch--2"></div>
+      </div>
+    </div>
+
+    <!-- Sand mushroom tile (mushroom planted on tidal sand) -->
+    <div v-if="tile.type === TileType.SAND_MUSHROOM" class="sand-mushroom-detail">
+      <!-- Sandy base texture (darker than low sand) -->
+      <div class="sand-mushroom-texture">
+        <div class="sand-ripple sand-ripple--1"></div>
+        <div class="sand-ripple sand-ripple--2"></div>
+      </div>
+      <!-- Warning state - water rising at edges when about to flood -->
+      <div v-if="movesUntilFlood === 1" class="tide-warning">
+        <div class="rising-water"></div>
+        <div class="warning-foam">
+          <div class="foam-bubble foam-bubble--1"></div>
+          <div class="foam-bubble foam-bubble--2"></div>
+          <div class="foam-bubble foam-bubble--3"></div>
+          <div class="foam-bubble foam-bubble--4"></div>
+        </div>
+      </div>
+      <!-- Flood water overlay when tide is high -->
+      <div v-if="isLowSandFlooded" class="flood-water">
+        <div class="flood-ripple flood-ripple--1"></div>
+        <div class="flood-ripple flood-ripple--2"></div>
+      </div>
+      <!-- Mushroom variants on top of sand with pop animation -->
+      <div :class="['sand-mushroom-container', { 'mushroom--pop': isJustPlanted }]">
+        <!-- Variant 0: Single tan beach mushroom -->
+        <div v-if="mushroomVariant === 0" class="sand-mushroom sand-mushroom--tan">
+          <div class="sand-mushroom__cap"></div>
+          <div class="sand-mushroom__stem"></div>
+        </div>
+
+        <!-- Variant 1: Single coral/pink mushroom -->
+        <div v-else-if="mushroomVariant === 1" class="sand-mushroom sand-mushroom--coral">
+          <div class="sand-mushroom__cap">
+            <div class="sand-mushroom__spots"></div>
+          </div>
+          <div class="sand-mushroom__stem"></div>
+        </div>
+
+        <!-- Variant 2: Double small beach mushrooms -->
+        <div v-else-if="mushroomVariant === 2" class="sand-mushroom-cluster">
+          <div class="sand-mushroom sand-mushroom--tan sand-mushroom--small sand-mushroom--left">
+            <div class="sand-mushroom__cap"></div>
+            <div class="sand-mushroom__stem"></div>
+          </div>
+          <div class="sand-mushroom sand-mushroom--tan sand-mushroom--small sand-mushroom--right">
+            <div class="sand-mushroom__cap"></div>
+            <div class="sand-mushroom__stem"></div>
+          </div>
+        </div>
+
+        <!-- Variant 3: Single seafoam/teal mushroom -->
+        <div v-else-if="mushroomVariant === 3" class="sand-mushroom sand-mushroom--seafoam">
+          <div class="sand-mushroom__cap"></div>
+          <div class="sand-mushroom__stem"></div>
+        </div>
+
+        <!-- Variant 4: Triple tiny beach mushrooms -->
+        <div v-else class="sand-mushroom-cluster sand-mushroom-cluster--triple">
+          <div class="sand-mushroom sand-mushroom--tiny sand-mushroom--tan">
+            <div class="sand-mushroom__cap"></div>
+            <div class="sand-mushroom__stem"></div>
+          </div>
+          <div class="sand-mushroom sand-mushroom--tiny sand-mushroom--coral">
+            <div class="sand-mushroom__cap"></div>
+            <div class="sand-mushroom__stem"></div>
+          </div>
+          <div class="sand-mushroom sand-mushroom--tiny sand-mushroom--tan">
+            <div class="sand-mushroom__cap"></div>
+            <div class="sand-mushroom__stem"></div>
+          </div>
+        </div>
+      </div>
+      <!-- Tide countdown indicator -->
+      <div v-if="movesUntilFlood !== undefined && !isLowSandFlooded" :class="['tide-countdown', { 'tide-countdown--warning': movesUntilFlood === 1 }]">
+        {{ movesUntilFlood }}
       </div>
     </div>
 
@@ -1685,6 +1844,10 @@ function handleClick() {
   animation: mushroomPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
+.sand-mushroom-container.mushroom--pop {
+  animation: sandMushroomPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
 @keyframes mushroomPop {
   0% {
     transform: scale(0) translateY(20px);
@@ -1696,6 +1859,21 @@ function handleClick() {
   }
   100% {
     transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes sandMushroomPop {
+  0% {
+    transform: translateX(-50%) scale(0) translateY(20px);
+    opacity: 0;
+  }
+  50% {
+    transform: translateX(-50%) scale(1.2) translateY(-5px);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(-50%) scale(1) translateY(0);
     opacity: 1;
   }
 }
@@ -2587,6 +2765,26 @@ function handleClick() {
   }
 }
 
+/* Hint highlight on flooded low sand - needs stronger glow to show through water */
+.tile--hinted.tile--low-sand-flooded {
+  animation: hintGlowFlooded 1.2s ease-in-out infinite;
+}
+
+@keyframes hintGlowFlooded {
+  0%, 100% {
+    box-shadow:
+      0 0 0 5px rgba(255, 220, 100, 0.9),
+      0 0 16px 6px rgba(255, 200, 50, 0.6),
+      inset 0 0 12px rgba(255, 220, 100, 0.4);
+  }
+  50% {
+    box-shadow:
+      0 0 0 6px rgba(255, 230, 120, 1),
+      0 0 24px 10px rgba(255, 210, 80, 0.8),
+      inset 0 0 16px rgba(255, 230, 120, 0.5);
+  }
+}
+
 /* Stuck highlight - red glow for tiles around player when no path */
 .tile--stuck-highlight {
   animation: stuckGlow 0.8s ease-in-out infinite;
@@ -2606,6 +2804,698 @@ function handleClick() {
       0 0 16px 6px rgba(255, 80, 60, 0.5),
       inset 0 -4px 0 rgba(0, 0, 0, 0.1);
   }
+}
+
+/* ========== LOW SAND TILES (Tidal Zone) ========== */
+.tile--low-sand {
+  background: linear-gradient(
+    135deg,
+    #e8dcc0 0%,
+    #d4c4a0 40%,
+    #c8b890 100%
+  );
+  box-shadow:
+    inset 0 -4px 0 rgba(0, 0, 0, 0.1),
+    inset 0 0 15px rgba(160, 140, 100, 0.3);
+}
+
+.tile--low-sand-flooded {
+  animation: tidalFlood 0.6s ease-out forwards;
+}
+
+@keyframes tidalFlood {
+  0% {
+    background: linear-gradient(135deg, #e8dcc0 0%, #d4c4a0 40%, #c8b890 100%);
+  }
+  100% {
+    background: linear-gradient(
+      135deg,
+      #7ab5d4 0%,
+      #5a9fc8 40%,
+      #4a8fb8 100%
+    );
+  }
+}
+
+.low-sand-detail {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* Sand texture with ripple patterns */
+.sand-texture {
+  position: absolute;
+  inset: 0;
+}
+
+.sand-ripple {
+  position: absolute;
+  width: 100%;
+  height: 3px;
+  background: rgba(180, 160, 120, 0.3);
+  border-radius: 50%;
+}
+
+.sand-ripple--1 {
+  top: 30%;
+  transform: scaleX(0.7);
+}
+
+.sand-ripple--2 {
+  top: 60%;
+  transform: scaleX(0.5);
+  left: 20%;
+}
+
+/* Seashells decoration */
+.seashells {
+  position: absolute;
+  inset: 0;
+}
+
+.shell {
+  position: absolute;
+  width: 8px;
+  height: 6px;
+  background: radial-gradient(ellipse at 30% 30%, #f5efe5 0%, #d4c8b8 50%, #b8a898 100%);
+  border-radius: 50% 50% 0 0;
+  transform: rotate(-15deg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.shell::after {
+  content: "";
+  position: absolute;
+  top: 40%;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: rgba(160, 140, 120, 0.4);
+  box-shadow:
+    0 2px 0 rgba(160, 140, 120, 0.3),
+    0 4px 0 rgba(160, 140, 120, 0.2);
+}
+
+.shell--1 {
+  bottom: 15%;
+  left: 20%;
+}
+
+.shell--2 {
+  bottom: 25%;
+  right: 25%;
+  transform: rotate(30deg);
+  width: 6px;
+  height: 5px;
+}
+
+/* Flood water overlay */
+.flood-water {
+  position: absolute;
+  inset: 0;
+  background: rgba(90, 160, 200, 0.6);
+  animation: floodWaterPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes floodWaterPulse {
+  0%, 100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+.flood-ripple {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-radius: 50%;
+  animation: floodRippleExpand 2s ease-out infinite;
+}
+
+.flood-ripple--1 {
+  top: 30%;
+  left: 25%;
+  animation-delay: 0s;
+}
+
+.flood-ripple--2 {
+  top: 50%;
+  left: 55%;
+  animation-delay: 0.7s;
+}
+
+@keyframes floodRippleExpand {
+  0% {
+    transform: scale(0.3);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+/* Tide countdown indicator */
+.tide-countdown {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 18px;
+  height: 18px;
+  background: rgba(70, 130, 180, 0.85);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: bold;
+  color: white;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+/* Warning state countdown - pulsing */
+.tide-countdown--warning {
+  animation: countdownPulse 0.6s ease-in-out infinite;
+  box-shadow: 0 0 8px rgba(70, 130, 180, 0.6);
+}
+
+@keyframes countdownPulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 8px rgba(70, 130, 180, 0.6);
+  }
+  50% {
+    transform: scale(1.15);
+    box-shadow: 0 0 12px rgba(70, 130, 180, 0.8);
+  }
+}
+
+/* ========== LOW SAND WARNING STATE ========== */
+.tile--low-sand-warning {
+  animation: sandWarningPulse 1s ease-in-out infinite;
+}
+
+@keyframes sandWarningPulse {
+  0%, 100% {
+    box-shadow:
+      inset 0 -4px 0 rgba(0, 0, 0, 0.1),
+      inset 0 0 15px rgba(160, 140, 100, 0.3);
+  }
+  50% {
+    box-shadow:
+      inset 0 -4px 0 rgba(0, 0, 0, 0.1),
+      inset 0 0 20px rgba(90, 150, 200, 0.4),
+      0 0 8px rgba(90, 150, 200, 0.3);
+  }
+}
+
+/* Rising water at edges */
+.tide-warning {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.rising-water {
+  position: absolute;
+  inset: -2px;
+  border: 3px solid transparent;
+  border-radius: 8px;
+  background: linear-gradient(
+    to top,
+    rgba(90, 160, 210, 0.5) 0%,
+    rgba(90, 160, 210, 0.2) 40%,
+    transparent 70%
+  );
+  animation: waterRise 1.2s ease-in-out infinite;
+}
+
+@keyframes waterRise {
+  0%, 100% {
+    opacity: 0.6;
+    transform: translateY(4px);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Warning foam bubbles */
+.warning-foam {
+  position: absolute;
+  inset: 0;
+}
+
+.foam-bubble {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: radial-gradient(
+    circle at 30% 30%,
+    rgba(255, 255, 255, 0.9) 0%,
+    rgba(255, 255, 255, 0.5) 40%,
+    rgba(200, 230, 255, 0.3) 70%,
+    transparent 100%
+  );
+  border-radius: 50%;
+  animation: foamFloat 1.5s ease-in-out infinite;
+}
+
+.foam-bubble--1 {
+  bottom: 8px;
+  left: 10%;
+  animation-delay: 0s;
+}
+
+.foam-bubble--2 {
+  bottom: 6px;
+  right: 15%;
+  width: 6px;
+  height: 6px;
+  animation-delay: 0.3s;
+}
+
+.foam-bubble--3 {
+  bottom: 10px;
+  left: 40%;
+  width: 5px;
+  height: 5px;
+  animation-delay: 0.6s;
+}
+
+.foam-bubble--4 {
+  bottom: 5px;
+  right: 35%;
+  width: 7px;
+  height: 7px;
+  animation-delay: 0.9s;
+}
+
+@keyframes foamFloat {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+    opacity: 0.7;
+  }
+  50% {
+    transform: translateY(-6px) scale(1.1);
+    opacity: 1;
+  }
+}
+
+/* ========== SEA TILES (Always impassable) ========== */
+.tile--sea {
+  background: linear-gradient(
+    135deg,
+    #4a9fd9 0%,
+    #3580b8 50%,
+    #2a70a8 100%
+  );
+  box-shadow:
+    inset 0 -4px 0 rgba(0, 0, 0, 0.15),
+    inset 0 0 20px rgba(30, 80, 140, 0.4);
+}
+
+.tile--sea-high-tide {
+  background: linear-gradient(
+    135deg,
+    #3580b8 0%,
+    #2060a0 50%,
+    #1a5090 100%
+  );
+  box-shadow:
+    inset 0 -6px 0 rgba(0, 0, 0, 0.2),
+    inset 0 0 25px rgba(20, 60, 120, 0.5);
+}
+
+.sea-detail {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* Sea waves */
+.sea-waves {
+  position: absolute;
+  inset: 0;
+}
+
+.sea-wave {
+  position: absolute;
+  width: 120%;
+  height: 8px;
+  left: -10%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.3) 25%,
+    rgba(255, 255, 255, 0.4) 50%,
+    rgba(255, 255, 255, 0.3) 75%,
+    transparent 100%
+  );
+  border-radius: 50%;
+  animation: seaWaveMove 3s ease-in-out infinite;
+}
+
+.sea-wave--1 {
+  top: 20%;
+  animation-delay: 0s;
+}
+
+.sea-wave--2 {
+  top: 45%;
+  animation-delay: 1s;
+  width: 100%;
+  left: 0;
+}
+
+.sea-wave--3 {
+  top: 70%;
+  animation-delay: 2s;
+  width: 110%;
+  left: -5%;
+}
+
+@keyframes seaWaveMove {
+  0%, 100% {
+    transform: translateX(-5%) scaleY(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: translateX(5%) scaleY(1.2);
+    opacity: 0.9;
+  }
+}
+
+/* Sea foam at edges */
+.sea-foam {
+  position: absolute;
+  inset: 0;
+}
+
+.foam-patch {
+  position: absolute;
+  width: 12px;
+  height: 8px;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 255, 255, 0.7) 0%,
+    rgba(255, 255, 255, 0.3) 60%,
+    transparent 100%
+  );
+  border-radius: 50%;
+  animation: foamBubble 2.5s ease-in-out infinite;
+}
+
+.foam-patch--1 {
+  top: 15%;
+  right: 15%;
+  animation-delay: 0s;
+}
+
+.foam-patch--2 {
+  bottom: 20%;
+  left: 20%;
+  animation-delay: 1.2s;
+  width: 10px;
+  height: 6px;
+}
+
+@keyframes foamBubble {
+  0%, 100% {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.9;
+  }
+}
+
+/* ========== SAND MUSHROOM TILES (Mushroom planted on tidal sand) ========== */
+.tile--sand-mushroom {
+  /* Darker sandy tone to show mushroom impact */
+  background: linear-gradient(
+    135deg,
+    #c8b890 0%,
+    #b8a880 40%,
+    #a89870 100%
+  );
+  box-shadow:
+    inset 0 -4px 0 rgba(0, 0, 0, 0.12),
+    inset 0 0 15px rgba(140, 120, 80, 0.4);
+}
+
+.tile--sand-mushroom-flooded {
+  animation: sandMushroomFlood 0.6s ease-out forwards;
+}
+
+@keyframes sandMushroomFlood {
+  0% {
+    background: linear-gradient(135deg, #c8b890 0%, #b8a880 40%, #a89870 100%);
+  }
+  100% {
+    background: linear-gradient(
+      135deg,
+      #6aa0c4 0%,
+      #4a8fb8 40%,
+      #3a7fa8 100%
+    );
+  }
+}
+
+.tile--sand-mushroom-warning {
+  animation: sandMushroomWarningPulse 1s ease-in-out infinite;
+}
+
+@keyframes sandMushroomWarningPulse {
+  0%, 100% {
+    box-shadow:
+      inset 0 -4px 0 rgba(0, 0, 0, 0.12),
+      inset 0 0 15px rgba(140, 120, 80, 0.4);
+  }
+  50% {
+    box-shadow:
+      inset 0 -4px 0 rgba(0, 0, 0, 0.12),
+      inset 0 0 20px rgba(90, 150, 200, 0.4),
+      0 0 8px rgba(90, 150, 200, 0.3);
+  }
+}
+
+.sand-mushroom-detail {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* Sandy texture (darker) */
+.sand-mushroom-texture {
+  position: absolute;
+  inset: 0;
+}
+
+/* Sand mushroom container - positioned at bottom center */
+.sand-mushroom-container {
+  position: absolute;
+  bottom: 16%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+}
+
+/* Base sand mushroom styles */
+.sand-mushroom {
+  position: relative;
+}
+
+.sand-mushroom__cap {
+  width: 28px;
+  height: 16px;
+  border-radius: 50% 50% 20% 20%;
+  position: relative;
+  box-shadow:
+    inset 0 -4px 6px rgba(80, 50, 20, 0.3),
+    0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.sand-mushroom__stem {
+  width: 10px;
+  height: 12px;
+  background: linear-gradient(
+    90deg,
+    #e8d8c8 0%,
+    #f5ece0 50%,
+    #e0d0c0 100%
+  );
+  margin: 0 auto;
+  border-radius: 3px 3px 4px 4px;
+  box-shadow:
+    inset 2px 0 3px rgba(0, 0, 0, 0.1),
+    inset -2px 0 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Tan beach mushroom (variant 0) */
+.sand-mushroom--tan .sand-mushroom__cap {
+  background: radial-gradient(
+    ellipse at 50% 80%,
+    #c9a86c 0%,
+    #b08850 50%,
+    #8a6830 100%
+  );
+}
+
+.sand-mushroom--tan .sand-mushroom__cap::before {
+  content: "";
+  position: absolute;
+  width: 6px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 50%;
+  top: 30%;
+  left: 25%;
+}
+
+.sand-mushroom--tan .sand-mushroom__cap::after {
+  content: "";
+  position: absolute;
+  width: 4px;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.35);
+  border-radius: 50%;
+  top: 45%;
+  right: 30%;
+}
+
+/* Coral/pink beach mushroom (variant 1) */
+.sand-mushroom--coral .sand-mushroom__cap {
+  background: radial-gradient(
+    ellipse at 50% 80%,
+    #e8a090 0%,
+    #d08070 50%,
+    #b06050 100%
+  );
+}
+
+.sand-mushroom--coral .sand-mushroom__spots {
+  position: absolute;
+  inset: 0;
+}
+
+.sand-mushroom--coral .sand-mushroom__spots::before {
+  content: "";
+  position: absolute;
+  width: 5px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 50%;
+  top: 25%;
+  left: 20%;
+}
+
+.sand-mushroom--coral .sand-mushroom__spots::after {
+  content: "";
+  position: absolute;
+  width: 4px;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.45);
+  border-radius: 50%;
+  top: 40%;
+  right: 25%;
+}
+
+/* Seafoam/teal beach mushroom (variant 3) */
+.sand-mushroom--seafoam .sand-mushroom__cap {
+  background: radial-gradient(
+    ellipse at 50% 80%,
+    #7bc4b8 0%,
+    #5aa898 50%,
+    #3a8878 100%
+  );
+}
+
+.sand-mushroom--seafoam .sand-mushroom__cap::before {
+  content: "";
+  position: absolute;
+  width: 5px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.45);
+  border-radius: 50%;
+  top: 28%;
+  left: 22%;
+}
+
+.sand-mushroom--seafoam .sand-mushroom__cap::after {
+  content: "";
+  position: absolute;
+  width: 4px;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 50%;
+  top: 42%;
+  right: 28%;
+}
+
+/* Small mushroom variant (for clusters) */
+.sand-mushroom--small .sand-mushroom__cap {
+  width: 18px;
+  height: 11px;
+}
+
+.sand-mushroom--small .sand-mushroom__stem {
+  width: 7px;
+  height: 9px;
+}
+
+/* Tiny mushroom variant (for triple clusters) */
+.sand-mushroom--tiny .sand-mushroom__cap {
+  width: 12px;
+  height: 8px;
+}
+
+.sand-mushroom--tiny .sand-mushroom__stem {
+  width: 5px;
+  height: 7px;
+}
+
+/* Double mushroom cluster (variant 2) */
+.sand-mushroom-cluster {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.sand-mushroom--left {
+  transform: rotate(-8deg);
+}
+
+.sand-mushroom--right {
+  transform: rotate(8deg);
+}
+
+/* Triple mushroom cluster (variant 4) */
+.sand-mushroom-cluster--triple {
+  gap: 1px;
+}
+
+.sand-mushroom-cluster--triple .sand-mushroom:nth-child(1) {
+  transform: rotate(-12deg) translateY(2px);
+}
+
+.sand-mushroom-cluster--triple .sand-mushroom:nth-child(2) {
+  transform: translateY(-2px);
+}
+
+.sand-mushroom-cluster--triple .sand-mushroom:nth-child(3) {
+  transform: rotate(12deg) translateY(2px);
 }
 
 /* Mobile performance optimizations - reduce animation complexity */

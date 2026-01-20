@@ -28,6 +28,8 @@ export interface GeneratorConfig {
 	portalPairs: number; // 0-3 pairs of portals
 	pondChance: number;
 	pondClusterSize: number;
+	tidesChance: number;
+	tidesClusterSize: number;
 }
 
 const DEFAULT_CONFIG: GeneratorConfig = {
@@ -48,7 +50,12 @@ const DEFAULT_CONFIG: GeneratorConfig = {
 	portalPairs: 2, // 1-3 pairs when FAIRY element is active
 	pondChance: 0.1,
 	pondClusterSize: 3,
+	tidesChance: 0.1,
+	tidesClusterSize: 4,
 };
+
+// Tide period constant - must match useGame.ts
+const TIDE_PERIOD = 5;
 
 interface Rectangle {
 	x: number;
@@ -687,6 +694,7 @@ function computeSlideDestination(
 // Water tiles force sliding to their endpoint (stone)
 // Dirt tiles need to be visited TWICE (first visit: dirt->grass, second visit: grass->mushroom)
 // Ice tiles are slippery - entering from a direction causes sliding until leaving ice
+// Low sand tiles are walkable and need to be visited, but must avoid being on them during flood (pathLength % TIDE_PERIOD === 0)
 function findHamiltonianPath(
 	grassTiles: Position[],
 	obstacleTiles: Set<string>,
@@ -697,12 +705,12 @@ function findHamiltonianPath(
 	iceTiles: Set<string> = new Set(),
 	allShapeTiles: Set<string> = new Set(),
 	pondTiles: Set<string> = new Set(),
+	lowSandTiles: Set<string> = new Set(),
 ): Position[] | null {
 	const grassSet = new Set(grassTiles.map((t) => posKey(t.x, t.y)));
 
-	// Total visits needed: each grass tile once, each dirt tile twice
-	// But grassTiles already includes dirt tiles, so we need:
-	// grassTiles.length (first visit to all) + dirtTiles.size (second visit to dirt)
+	// Total visits needed: each grass tile once, each dirt tile twice, each low sand tile once
+	// grassTiles already includes low sand tiles
 	const totalVisitsNeeded = grassTiles.length + dirtTiles.size;
 
 	// Limit iterations to prevent freezing - scales with grid size
@@ -818,6 +826,14 @@ function findHamiltonianPath(
 		}
 
 		// Get neighbors
+		// Calculate what the path length would be at the next position
+		const nextDepth = depth + 1;
+		// Check if landing on low sand at nextDepth would be during a flood
+		// Flood happens when (pathLength % TIDE_PERIOD) === (TIDE_PERIOD - 1)
+		// because tidePhase starts at 1 and advances after each move
+		const wouldBeFloodedAtNextDepth =
+			nextDepth % TIDE_PERIOD === TIDE_PERIOD - 1;
+
 		const standardNeighbors = getReachableNeighbors(
 			current,
 			walkableTiles,
@@ -827,6 +843,11 @@ function findHamiltonianPath(
 			if (stoneTiles.has(nKey)) return true;
 			// Pond tiles (lily-pads) - walkable if not on cooldown
 			if (pondTiles.has(nKey)) return !recentMoves.has(nKey);
+
+			// Low sand tiles - can't step onto them if we'd be there during a flood
+			if (lowSandTiles.has(nKey) && wouldBeFloodedAtNextDepth) {
+				return false;
+			}
 
 			const nVisitedOnce = visitedOnce.has(nKey);
 			const nVisitedTwice = visitedTwice.has(nKey);
@@ -1605,6 +1626,159 @@ function addPondStrip(
 	};
 }
 
+// Add tidal zones - low sand tiles that flood periodically, with sea as impassable edges
+// Creates beach-style zones along edges of the level
+function addTidalZones(
+	grass: Set<string>,
+	brambles: Set<string>,
+	stones: Set<string>,
+	water: Set<string>,
+	ice: Set<string>,
+	chance: number,
+	clusterSize: number,
+): {
+	grass: Set<string>;
+	lowSand: Set<string>;
+	sea: Set<string>;
+} {
+	const remainingGrass = new Set(grass);
+	const lowSand = new Set<string>();
+	const sea = new Set<string>();
+
+	if (chance <= 0) {
+		return { grass: remainingGrass, lowSand, sea };
+	}
+
+	// Find bounding box and edge tiles
+	let minX = Infinity,
+		maxX = -Infinity,
+		minY = Infinity,
+		maxY = -Infinity;
+	for (const key of grass) {
+		const pos = parseKey(key);
+		minX = Math.min(minX, pos.x);
+		maxX = Math.max(maxX, pos.x);
+		minY = Math.min(minY, pos.y);
+		maxY = Math.max(maxY, pos.y);
+	}
+
+	// Target number of low sand tiles
+	const targetLowSand = Math.max(2, Math.floor(grass.size * chance));
+
+	// Find edge grass tiles (tiles that have at least one side not adjacent to grass/bramble/stone)
+	const edgeTiles: string[] = [];
+	for (const key of remainingGrass) {
+		const pos = parseKey(key);
+		const neighbors = [
+			posKey(pos.x + 1, pos.y),
+			posKey(pos.x - 1, pos.y),
+			posKey(pos.x, pos.y + 1),
+			posKey(pos.x, pos.y - 1),
+		];
+
+		// Check if any neighbor is "outside" the level (not grass, bramble, or stone)
+		const allTiles = new Set([...grass, ...brambles, ...stones, ...water, ...ice]);
+		const hasExteriorEdge = neighbors.some((n) => !allTiles.has(n));
+		if (hasExteriorEdge) {
+			edgeTiles.push(key);
+		}
+	}
+
+	if (edgeTiles.length < 2) {
+		return { grass: remainingGrass, lowSand, sea };
+	}
+
+	// Grow clusters of low sand from edge tiles
+	const shuffledEdges = shuffleArray(edgeTiles);
+	const numClusters = Math.max(1, Math.ceil(targetLowSand / clusterSize));
+
+	for (const startKey of shuffledEdges.slice(0, numClusters)) {
+		if (!remainingGrass.has(startKey)) continue;
+		if (lowSand.size >= targetLowSand) break;
+
+		// Grow a cluster from this starting point
+		const cluster = new Set<string>();
+		const queue = [startKey];
+		const visited = new Set<string>();
+
+		while (queue.length > 0 && cluster.size < clusterSize) {
+			const current = queue.shift();
+			if (!current || visited.has(current)) continue;
+			visited.add(current);
+
+			if (!remainingGrass.has(current)) continue;
+
+			cluster.add(current);
+
+			// Add neighbors to queue for potential cluster growth
+			const pos = parseKey(current);
+			const neighbors = [
+				posKey(pos.x + 1, pos.y),
+				posKey(pos.x - 1, pos.y),
+				posKey(pos.x, pos.y + 1),
+				posKey(pos.x, pos.y - 1),
+			];
+
+			for (const neighbor of shuffleArray(neighbors)) {
+				if (!visited.has(neighbor) && remainingGrass.has(neighbor)) {
+					queue.push(neighbor);
+				}
+			}
+		}
+
+		// Validate the cluster
+		if (cluster.size > 0) {
+			const testGrass = new Set(remainingGrass);
+			for (const tile of cluster) {
+				testGrass.delete(tile);
+			}
+
+			// Need at least 8 grass tiles remaining
+			if (testGrass.size < 8) continue;
+
+			// Low sand tiles act as walkable bridges (like grass) when not flooded
+			const walkableBridges = new Set([...stones, ...water, ...ice, ...cluster]);
+			if (isConnectedWithJumps(testGrass, brambles, walkableBridges)) {
+				// Valid cluster - add to low sand
+				for (const tile of cluster) {
+					remainingGrass.delete(tile);
+					lowSand.add(tile);
+				}
+			}
+		}
+	}
+
+	// Add sea tiles adjacent to low sand tiles (on the exterior side)
+	// Sea tiles are impassable but add visual variety
+	for (const lowSandKey of lowSand) {
+		const pos = parseKey(lowSandKey);
+		const neighbors = [
+			posKey(pos.x + 1, pos.y),
+			posKey(pos.x - 1, pos.y),
+			posKey(pos.x, pos.y + 1),
+			posKey(pos.x, pos.y - 1),
+		];
+
+		const allTiles = new Set([
+			...remainingGrass,
+			...brambles,
+			...stones,
+			...water,
+			...ice,
+			...lowSand,
+		]);
+
+		for (const neighbor of neighbors) {
+			// Add sea where there's empty space adjacent to low sand
+			if (!allTiles.has(neighbor) && !sea.has(neighbor)) {
+				sea.add(neighbor);
+			}
+		}
+	}
+
+	return { grass: remainingGrass, lowSand, sea };
+}
+
 // Compute where a player slides to when entering ice from a given direction
 // Returns the final position after sliding stops (hitting non-ice or obstacle)
 function computeIceSlideDestination(
@@ -1718,13 +1892,17 @@ function buildLevelFromPath(
 	portals: Map<string, PortalType>,
 	waterFlowInput: Record<string, FlowDirection>,
 	rooms: Rectangle[],
+	lowSand: Set<string> = new Set(),
+	sea: Set<string> = new Set(),
 ): Level {
 	let minX = Number.POSITIVE_INFINITY;
 	let minY = Number.POSITIVE_INFINITY;
 	let maxX = Number.NEGATIVE_INFINITY;
 	let maxY = Number.NEGATIVE_INFINITY;
 
-	for (const key of allShapeTiles) {
+	// Include both shape tiles and sea tiles in bounding box
+	const allTilesForBounds = new Set([...allShapeTiles, ...sea]);
+	for (const key of allTilesForBounds) {
 		const { x, y } = parseKey(key);
 		minX = Math.min(minX, x);
 		minY = Math.min(minY, y);
@@ -1752,6 +1930,10 @@ function buildLevelFromPath(
 				row.push(TileType.POND);
 			} else if (pondWater.has(key)) {
 				row.push(TileType.POND_WATER);
+			} else if (lowSand.has(key)) {
+				row.push(TileType.LOW_SAND);
+			} else if (sea.has(key)) {
+				row.push(TileType.SEA);
 			} else if (portals.has(key)) {
 				// Portal tiles replace grass tiles
 				row.push(portals.get(key)!);
@@ -1810,7 +1992,7 @@ function buildLevelFromPath(
 
 // Verify a level is valid and solvable
 function verifyLevel(level: Level): boolean {
-	// Check start position is grass
+	// Check start position is grass or low_sand
 	if (
 		level.startPosition.x < 0 ||
 		level.startPosition.y < 0 ||
@@ -1821,11 +2003,11 @@ function verifyLevel(level: Level): boolean {
 	}
 	const row = level.grid[level.startPosition.y];
 	const tile = row?.[level.startPosition.x];
-	if (tile !== TileType.GRASS) {
+	if (tile !== TileType.GRASS && tile !== TileType.LOW_SAND) {
 		return false;
 	}
 
-	// Count grass, dirt, and portal tiles - should be at least 8
+	// Count grass, dirt, low_sand, and portal tiles - should be at least 8
 	// Dirt counts as 1 tile (even though it needs 2 visits)
 	// Portal tiles count as grass tiles (walkable, need to be visited)
 	let grassCount = 0;
@@ -1834,6 +2016,7 @@ function verifyLevel(level: Level): boolean {
 			if (
 				tile === TileType.GRASS ||
 				tile === TileType.DIRT ||
+				tile === TileType.LOW_SAND ||
 				tile === TileType.PORTAL_PINK ||
 				tile === TileType.PORTAL_BLUE ||
 				tile === TileType.PORTAL_YELLOW
@@ -1893,6 +2076,15 @@ export function generateLevel(
 		elementConfig.pondChance = Math.max(basePondChance * 8, 0.8);
 	}
 
+	// Tides only generates if the TIDES element is active
+	if (!elements.includes(WE.TIDES)) {
+		elementConfig.tidesChance = 0;
+	} else {
+		// Boost tides chance to ensure beach zones appear reliably
+		const baseTidesChance = config.tidesChance ?? DEFAULT_CONFIG.tidesChance;
+		elementConfig.tidesChance = Math.max(baseTidesChance * 8, 0.8);
+	}
+
 	const fullConfig = { ...DEFAULT_CONFIG, ...elementConfig };
 	const maxRetries = 100;
 
@@ -1937,7 +2129,7 @@ export function generateLevel(
 
 		// Add pond strip with lily-pad bridges
 		const {
-			grass,
+			grass: grassAfterPond,
 			brambles: bramblesAfterPond,
 			stones: stonesAfterPond,
 			pond,
@@ -1951,9 +2143,28 @@ export function generateLevel(
 			fullConfig.pondChance,
 		);
 
+		// Add tidal zones (low sand and sea tiles)
+		const {
+			grass,
+			lowSand,
+			sea,
+		} = addTidalZones(
+			grassAfterPond,
+			bramblesAfterPond,
+			stonesAfterPond,
+			water,
+			ice,
+			fullConfig.tidesChance,
+			fullConfig.tidesClusterSize,
+		);
+
 		const shape = new Set(baseShape);
 
-		const grassTiles = Array.from(grass).map(parseKey);
+		// Include lowSand tiles in grassTiles for pathfinding (they need to be visited)
+		const grassTiles = [
+			...Array.from(grass).map(parseKey),
+			...Array.from(lowSand).map(parseKey),
+		];
 
 		if (grassTiles.length < 8) continue;
 
@@ -1965,7 +2176,7 @@ export function generateLevel(
 			fullConfig.dirtChance,
 		);
 
-		// Find path - path finder will visit dirt tiles twice, handle ice sliding
+		// Find path - path finder will visit dirt tiles twice, handle ice sliding, and avoid low sand during floods
 		const path = findHamiltonianPath(
 			grassTiles,
 			bramblesAfterPond,
@@ -1976,6 +2187,7 @@ export function generateLevel(
 			ice,
 			shape,
 			pond,
+			lowSand,
 		);
 
 		if (path) {
@@ -1996,6 +2208,8 @@ export function generateLevel(
 				portals,
 				waterFlow,
 				rooms,
+				lowSand,
+				sea,
 			);
 			if (verifyLevel(level)) {
 				return level;

@@ -129,6 +129,22 @@ const nightWorldNames = [
 	"Mystic Moonpond",
 ];
 
+const beachWorldNames = [
+	"Sandy Shores",
+	"Tidal Pools",
+	"Coral Cove",
+	"Driftwood Beach",
+	"Seashell Bay",
+	"Sunset Strand",
+	"Kelp Coast",
+	"Pebbly Point",
+	"Foam Flats",
+	"Sandcastle Spit",
+	"Saltspray Sanctuary",
+	"Seaside Shrooms",
+	"Wavecrest Walk",
+];
+
 const gameStarted = ref(false);
 const currentLevel = ref<Level>(level1);
 const levelKey = ref(0);
@@ -196,6 +212,8 @@ function getMechanicKey(element: WorldElement): string {
 			return "fairy";
 		case WE.POND:
 			return "pond";
+		case WE.TIDES:
+			return "tides";
 		default:
 			return "";
 	}
@@ -360,6 +378,7 @@ const forestNameOffset = ref(
 const iceNameOffset = ref(Math.floor(Math.random() * iceWorldNames.length));
 const swampNameOffset = ref(Math.floor(Math.random() * swampWorldNames.length));
 const nightNameOffset = ref(Math.floor(Math.random() * nightWorldNames.length));
+const beachNameOffset = ref(Math.floor(Math.random() * beachWorldNames.length));
 
 // Save game progress to localStorage
 const SAVE_KEY = "mushroom-path-progress";
@@ -374,6 +393,7 @@ interface SavedProgress {
 	iceNameOffset: number;
 	swampNameOffset: number;
 	nightNameOffset: number;
+	beachNameOffset: number;
 	totalMushroomsPlanted: number;
 }
 
@@ -391,6 +411,7 @@ function saveProgress(): void {
 		iceNameOffset: iceNameOffset.value,
 		swampNameOffset: swampNameOffset.value,
 		nightNameOffset: nightNameOffset.value,
+		beachNameOffset: beachNameOffset.value,
 		totalMushroomsPlanted: totalMushroomsPlanted.value,
 	};
 	localStorage.setItem(SAVE_KEY, JSON.stringify(progress));
@@ -421,15 +442,18 @@ const allElements: WorldElement[] = [
 	WE.ICE,
 	WE.FAIRY,
 	WE.POND,
+	WE.TIDES,
 ];
 
-// Update body class based on current biome (ice takes priority, then pond/night, then swamp)
+// Update body class based on current biome (ice takes priority, then beach, then pond/night, then swamp)
 watch(
 	currentWorldElements,
 	(elements) => {
-		document.body.classList.remove("biome-ice", "biome-swamp", "biome-night");
+		document.body.classList.remove("biome-ice", "biome-swamp", "biome-night", "biome-beach");
 		if (elements.includes(WE.ICE)) {
 			document.body.classList.add("biome-ice");
+		} else if (elements.includes(WE.TIDES)) {
+			document.body.classList.add("biome-beach");
 		} else if (elements.includes(WE.POND)) {
 			document.body.classList.add("biome-night");
 		} else if (elements.includes(WE.DIRT)) {
@@ -510,6 +534,9 @@ function generateWorldElementsInner(): WorldElement[] {
 	const incompatiblePairs: [WE, WE][] = [
 		[WE.RIVERS, WE.POND], // Both water-based, conflicting mechanics
 		[WE.ICE, WE.POND], // Vibes don't match (frozen vs lily-pads)
+		[WE.TIDES, WE.ICE], // Beach and frozen don't mix
+		[WE.TIDES, WE.POND], // Too much water mechanics confusion
+		[WE.TIDES, WE.RIVERS], // Too much water mechanics confusion
 	];
 
 	for (const [a, b] of incompatiblePairs) {
@@ -528,11 +555,16 @@ function generateWorldElementsInner(): WorldElement[] {
 }
 
 const currentWorldName = computed(() => {
-	// Select name list based on biome (ice takes priority, then night, then swamp)
+	// Select name list based on biome (ice takes priority, then beach, then night, then swamp)
 	if (currentWorldElements.value.includes(WE.ICE)) {
 		const index =
 			(currentWorldIndex.value + iceNameOffset.value) % iceWorldNames.length;
 		return iceWorldNames[index] ?? "Frozen Fungi";
+	} else if (currentWorldElements.value.includes(WE.TIDES)) {
+		const index =
+			(currentWorldIndex.value + beachNameOffset.value) %
+			beachWorldNames.length;
+		return beachWorldNames[index] ?? "Sandy Shores";
 	} else if (currentWorldElements.value.includes(WE.POND)) {
 		const index =
 			(currentWorldIndex.value + nightNameOffset.value) %
@@ -1080,6 +1112,7 @@ async function handleContinue() {
 	iceNameOffset.value = saved.iceNameOffset;
 	swampNameOffset.value = saved.swampNameOffset;
 	nightNameOffset.value = saved.nightNameOffset;
+	beachNameOffset.value = saved.beachNameOffset ?? 0;
 	totalMushroomsPlanted.value = saved.totalMushroomsPlanted ?? 0;
 
 	// Set the level queue to use the current world elements
@@ -1527,6 +1560,7 @@ watch(isPlayerStuck, (isStuck) => {
         :has-ice-element="currentWorldElements.includes(WE.ICE)"
         :has-dirt-element="currentWorldElements.includes(WE.DIRT)"
         :has-pond-element="currentWorldElements.includes(WE.POND)"
+        :has-tides-element="currentWorldElements.includes(WE.TIDES)"
         :hint-tiles="hintTiles"
         :stuck-tiles="stuckTiles"
         :disabled="!!currentDialogue || isHelpModeBlocked"
@@ -1535,6 +1569,7 @@ watch(isPlayerStuck, (isStuck) => {
         @move-completed="handleMoveCompleted"
         @request-undo="handleUndo"
         @request-restart="handleRestart"
+        @request-hint="handleHint"
       />
 
       <!-- Fade Transition Overlay (game area only) -->

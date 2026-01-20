@@ -13,6 +13,7 @@ const allElements: { id: WorldElement; name: string; icon: string }[] = [
 	{ id: WE.ICE, name: "Ice", icon: "🧊" },
 	{ id: WE.FAIRY, name: "Fairy Rings", icon: "🍄" },
 	{ id: WE.POND, name: "Lily Pads", icon: "🌙" },
+	{ id: WE.TIDES, name: "Tides", icon: "🏖️" },
 ];
 
 const selectedElements = ref<Set<WorldElement>>(new Set());
@@ -23,6 +24,9 @@ const canSelectMore = computed(() => selectedElements.value.size < 2);
 const incompatiblePairs: [WorldElement, WorldElement][] = [
 	[WE.RIVERS, WE.POND], // Both water-based, conflicting mechanics
 	[WE.ICE, WE.POND], // Vibes don't match (frozen vs lily-pads)
+	[WE.TIDES, WE.ICE], // Beach and frozen don't mix
+	[WE.TIDES, WE.POND], // Too much water mechanics confusion
+	[WE.TIDES, WE.RIVERS], // Too much water mechanics confusion
 ];
 
 function isIncompatible(element: WorldElement): boolean {

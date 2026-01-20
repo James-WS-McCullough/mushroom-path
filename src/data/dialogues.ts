@@ -516,6 +516,65 @@ export const pondIntroDialogue: DialogueScene = {
 	],
 };
 
+// Beach/tides intro - sandy shores with tidal flooding
+export const tidesIntroDialogue: DialogueScene = {
+	id: "tides-intro",
+	background: "",
+	leftCharacter: "sprout",
+	rightCharacter: "dew",
+	overlay: true,
+	lines: [
+		{
+			speaker: "sprout",
+			name: "Sprout",
+			text: "WOW~!! a beach!! i can see the ocean!!",
+			leftSprite: "MushroomGirl-Excited",
+			rightSprite: "BlueGirl-Normal",
+			leftHighlight: true,
+		},
+		{
+			speaker: "dew",
+			name: "Dew",
+			text: "look at those sandy patches near the water... the tide comes in and out!",
+			leftSprite: "MushroomGirl-Excited",
+			rightSprite: "BlueGirl-Thinking",
+			rightHighlight: true,
+		},
+		{
+			speaker: "sprout",
+			name: "Sprout",
+			text: "oooh so the water covers them sometimes?",
+			leftSprite: "MushroomGirl-Happy",
+			rightSprite: "BlueGirl-Thinking",
+			leftHighlight: true,
+		},
+		{
+			speaker: "dew",
+			name: "Dew",
+			text: "yep! see the number? thats how many hops until the tide comes in~",
+			leftSprite: "MushroomGirl-Happy",
+			rightSprite: "BlueGirl-Normal",
+			rightHighlight: true,
+		},
+		{
+			speaker: "dew",
+			name: "Dew",
+			text: "if youre standing on that sand when the tide comes in... youll get stuck!",
+			leftSprite: "MushroomGirl",
+			rightSprite: "BlueGirl-Nervous",
+			rightHighlight: true,
+		},
+		{
+			speaker: "sprout",
+			name: "Sprout",
+			text: "okie dokie~! ill make sure to hop off before it floods!!",
+			leftSprite: "MushroomGirl-Confident",
+			rightSprite: "BlueGirl-Normal",
+			leftHighlight: true,
+		},
+	],
+};
+
 // Map mechanic types to their intro dialogues
 export const mechanicDialogues: Record<string, DialogueScene> = {
 	ice: iceIntroDialogue,
@@ -523,6 +582,7 @@ export const mechanicDialogues: Record<string, DialogueScene> = {
 	rivers: riverIntroDialogue,
 	fairy: fairyIntroDialogue,
 	pond: pondIntroDialogue,
+	tides: tidesIntroDialogue,
 };
 
 // Random adventure scenes - short moments between Sprout and Dew

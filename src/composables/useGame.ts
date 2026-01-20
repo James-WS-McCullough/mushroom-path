@@ -39,6 +39,7 @@ interface MoveHistory {
 	tileState: TileType; // The tile type at the position player left (before mushroom planted)
 	additionalChanges?: ChangedTile[]; // For tracking portal conversions, etc.
 	lilypadSnapshot?: Map<string, LilypadState>; // Snapshot of lily-pad state for undo
+	tidePhase?: number; // Snapshot of tide phase for undo
 }
 
 export type FacingDirection = "left" | "right";
@@ -60,6 +61,24 @@ export function useGame(level: Level) {
 	const moveHistory = ref<MoveHistory[]>([]);
 	const waterFlow = level.waterFlow ?? {};
 	const lilypadState = ref<Map<string, LilypadState>>(new Map());
+
+	// Tides state management
+	const TIDE_PERIOD = 5; // Flood every 5 moves
+	const tidePhase = ref(1); // Start at phase 1 (4 moves until first flood, 0 = flooded)
+
+	// Manual hint toggle (keyboard shortcut 'h')
+	const forceShowHints = ref(false);
+
+	// Check if low sand tiles are currently flooded
+	function isLowSandFlooded(): boolean {
+		return tidePhase.value === 0;
+	}
+
+	// Get moves until next flood (for display)
+	function getMovesUntilFlood(): number {
+		if (tidePhase.value === 0) return TIDE_PERIOD;
+		return TIDE_PERIOD - tidePhase.value;
+	}
 
 	// Idle hint tracking
 	const lastMoveTime = ref(Date.now());
@@ -85,6 +104,7 @@ export function useGame(level: Level) {
 		lastPlantedPosition.value = null;
 		lastCleanedPosition.value = null;
 		moveHistory.value = [];
+		forceShowHints.value = false;
 
 		// Initialize lily-pad state for all pond tiles
 		lilypadState.value = new Map();
@@ -100,6 +120,9 @@ export function useGame(level: Level) {
 				}
 			}
 		}
+
+		// Reset tide state
+		tidePhase.value = 1; // Start at phase 1 (4 moves until first flood)
 
 		// Reset idle tracking
 		lastMoveTime.value = Date.now();
@@ -148,6 +171,18 @@ export function useGame(level: Level) {
 			return state ? !state.submerged : false;
 		}
 
+		// Low sand tiles are landable if they won't be flooded when we land
+		// (tide advances when we leave, so check next phase)
+		if (tile.type === TileType.LOW_SAND) {
+			const nextPhase = (tidePhase.value + 1) % TIDE_PERIOD;
+			return nextPhase !== 0; // Safe to land if next phase isn't flood phase
+		}
+
+		// Sea tiles are never landable
+		if (tile.type === TileType.SEA) {
+			return false;
+		}
+
 		// Can land on grass, stone, water, dirt, ice, or portal tiles
 		return (
 			tile.type === TileType.GRASS ||
@@ -193,9 +228,19 @@ export function useGame(level: Level) {
 			const state = getLilypadState(position);
 			if (state?.submerged) return true;
 		}
+		// Low sand that will be flooded when we land counts as obstacle (can be jumped over)
+		if (tile.type === TileType.LOW_SAND) {
+			const nextPhase = (tidePhase.value + 1) % TIDE_PERIOD;
+			if (nextPhase === 0) return true; // Will be flooded, treat as obstacle
+		}
+		// Sea tiles are always obstacles
+		if (tile.type === TileType.SEA) {
+			return true;
+		}
 		return (
 			tile.type === TileType.BRAMBLE ||
 			tile.type === TileType.MUSHROOM ||
+			tile.type === TileType.SAND_MUSHROOM ||
 			tile.type === TileType.POND_WATER
 		);
 	}
@@ -269,10 +314,12 @@ export function useGame(level: Level) {
 
 	// Get all positions reachable from a given position via BFS
 	// Accounts for walking, jumping over obstacles, and traversal tiles
+	// For connectivity checking, LOW_SAND is always considered walkable since tides cycle
 	function getReachableTiles(
 		fromPos: Position,
 		tileStates: TileType[][],
 		lilypads: Map<string, LilypadState>,
+		_simulatedTidePhase?: number, // Unused - kept for API compatibility
 	): Set<string> {
 		const reachable = new Set<string>();
 		const queue: Position[] = [fromPos];
@@ -303,12 +350,14 @@ export function useGame(level: Level) {
 				if (!adjType) continue;
 
 				// Check if adjacent tile is walkable
+				// LOW_SAND is always considered walkable for connectivity (tides cycle)
 				const isWalkable =
 					adjType === TileType.GRASS ||
 					adjType === TileType.DIRT ||
 					adjType === TileType.STONE ||
 					adjType === TileType.ICE ||
 					adjType === TileType.WATER ||
+					adjType === TileType.LOW_SAND ||
 					isPortalTile(adjType) ||
 					(adjType === TileType.POND && !lilypads.get(adjKey)?.submerged);
 
@@ -318,13 +367,16 @@ export function useGame(level: Level) {
 				}
 
 				// Check if we can jump over an obstacle
-				const isObstacle =
+				// LOW_SAND is NOT an obstacle for connectivity (can walk on it when tide is out)
+				const isObstacleType =
 					adjType === TileType.BRAMBLE ||
 					adjType === TileType.MUSHROOM ||
+					adjType === TileType.SAND_MUSHROOM ||
 					adjType === TileType.POND_WATER ||
+					adjType === TileType.SEA ||
 					(adjType === TileType.POND && lilypads.get(adjKey)?.submerged);
 
-				if (isObstacle) {
+				if (isObstacleType) {
 					const jumpTarget = {
 						x: current.x + dir.x * 2,
 						y: current.y + dir.y * 2,
@@ -343,12 +395,14 @@ export function useGame(level: Level) {
 					const jumpType = tileStates[jumpTarget.y]?.[jumpTarget.x];
 					if (!jumpType) continue;
 
+					// LOW_SAND is always landable for connectivity
 					const isJumpLandable =
 						jumpType === TileType.GRASS ||
 						jumpType === TileType.DIRT ||
 						jumpType === TileType.STONE ||
 						jumpType === TileType.ICE ||
 						jumpType === TileType.WATER ||
+						jumpType === TileType.LOW_SAND ||
 						isPortalTile(jumpType) ||
 						(jumpType === TileType.POND && !lilypads.get(jumpKey)?.submerged);
 
@@ -363,21 +417,26 @@ export function useGame(level: Level) {
 		return reachable;
 	}
 
-	// Check if all unvisited grass/dirt tiles are reachable from player position
+	// Check if all unvisited grass/dirt/low_sand tiles are reachable from player position
 	function isGraphConnected(
 		playerPos: Position,
 		tileStates: TileType[][],
 		lilypads: Map<string, LilypadState>,
+		simulatedTidePhase?: number,
 	): boolean {
-		const reachable = getReachableTiles(playerPos, tileStates, lilypads);
+		const reachable = getReachableTiles(playerPos, tileStates, lilypads, simulatedTidePhase);
 
-		// Check every grass/dirt tile is reachable
+		// Check every grass/dirt/low_sand tile is reachable
 		for (let y = 0; y < tileStates.length; y++) {
 			const row = tileStates[y];
 			if (!row) continue;
 			for (let x = 0; x < row.length; x++) {
 				const t = row[x];
-				if (t === TileType.GRASS || t === TileType.DIRT) {
+				if (
+					t === TileType.GRASS ||
+					t === TileType.DIRT ||
+					t === TileType.LOW_SAND
+				) {
 					if (!reachable.has(`${x},${y}`)) {
 						return false; // Found unreachable tile - graph is disconnected
 					}
@@ -387,9 +446,9 @@ export function useGame(level: Level) {
 		return true;
 	}
 
-	// Check if the given state is a win (all grass/dirt converted, player on last grass)
+	// Check if the given state is a win (all grass/dirt/low_sand converted, player on last required tile)
 	function isWinState(tileStates: TileType[][], playerPos: Position): boolean {
-		let grassCount = 0;
+		let grassCount = 0; // Includes grass and low_sand
 		let dirtCount = 0;
 		let lastGrassPos: Position | null = null;
 
@@ -398,7 +457,7 @@ export function useGame(level: Level) {
 			if (!row) continue;
 			for (let x = 0; x < row.length; x++) {
 				const t = row[x];
-				if (t === TileType.GRASS) {
+				if (t === TileType.GRASS || t === TileType.LOW_SAND) {
 					grassCount++;
 					lastGrassPos = { x, y };
 				} else if (t === TileType.DIRT) {
@@ -407,7 +466,7 @@ export function useGame(level: Level) {
 			}
 		}
 
-		// Win when exactly 1 grass remains (player standing on it) and no dirt
+		// Win when exactly 1 grass/low_sand remains (player standing on it) and no dirt
 		return (
 			grassCount === 1 &&
 			dirtCount === 0 &&
@@ -417,7 +476,7 @@ export function useGame(level: Level) {
 		);
 	}
 
-	// Count remaining grass and dirt tiles
+	// Count remaining grass, dirt, and low_sand tiles
 	function countRemainingTiles(tileStates: TileType[][]): number {
 		let count = 0;
 		for (let y = 0; y < tileStates.length; y++) {
@@ -425,7 +484,11 @@ export function useGame(level: Level) {
 			if (!row) continue;
 			for (let x = 0; x < row.length; x++) {
 				const t = row[x];
-				if (t === TileType.GRASS || t === TileType.DIRT) {
+				if (
+					t === TileType.GRASS ||
+					t === TileType.DIRT ||
+					t === TileType.LOW_SAND
+				) {
 					count++;
 				}
 			}
@@ -444,6 +507,7 @@ export function useGame(level: Level) {
 		path: Position[],
 		maxDepth: number,
 		iterations: { count: number },
+		simulatedTidePhase?: number,
 	): { path: Position[] | null; timedOut: boolean } {
 		// Check iteration limit
 		iterations.count++;
@@ -461,8 +525,9 @@ export function useGame(level: Level) {
 			return { path: null, timedOut: false };
 		}
 
-		// Get valid moves
-		const moves = getValidMovesForPathfinding(pos, tileStates, lilypads);
+		// Get valid moves (passing current tide phase)
+		const currentPhase = simulatedTidePhase ?? tidePhase.value;
+		const moves = getValidMovesForPathfinding(pos, tileStates, lilypads, currentPhase);
 
 		// Filter to moves that preserve connectivity
 		const validMoves: {
@@ -471,6 +536,7 @@ export function useGame(level: Level) {
 				finalPos: Position;
 				newTiles: TileType[][];
 				newLilypads: Map<string, LilypadState>;
+				newTidePhase: number;
 			};
 		}[] = [];
 
@@ -480,26 +546,28 @@ export function useGame(level: Level) {
 				move,
 				tileStates,
 				lilypads,
+				currentPhase,
 			);
 
-			// Check if graph remains connected
+			// Check if graph remains connected (pass new tide phase for LOW_SAND checks)
 			if (
 				isGraphConnected(
 					simResult.finalPos,
 					simResult.newTiles,
 					simResult.newLilypads,
+					simResult.newTidePhase,
 				)
 			) {
 				validMoves.push({ move, simResult });
 			}
 		}
 
-		// Prioritize moves that go to required tiles (grass/dirt) and moves to tiles with fewer neighbors (forced moves)
+		// Prioritize moves that go to required tiles (grass/dirt/low_sand) and moves to tiles with fewer neighbors (forced moves)
 		validMoves.sort((a, b) => {
 			const aType = tileStates[a.move.target.y]?.[a.move.target.x];
 			const bType = tileStates[b.move.target.y]?.[b.move.target.x];
-			const aRequired = aType === TileType.GRASS || aType === TileType.DIRT;
-			const bRequired = bType === TileType.GRASS || bType === TileType.DIRT;
+			const aRequired = aType === TileType.GRASS || aType === TileType.DIRT || aType === TileType.LOW_SAND;
+			const bRequired = bType === TileType.GRASS || bType === TileType.DIRT || bType === TileType.LOW_SAND;
 
 			// Prioritize required tiles
 			if (aRequired && !bRequired) return -1;
@@ -511,11 +579,13 @@ export function useGame(level: Level) {
 					a.move.target,
 					a.simResult.newTiles,
 					a.simResult.newLilypads,
+					a.simResult.newTidePhase,
 				).length;
 				const bNeighbors = getValidMovesForPathfinding(
 					b.move.target,
 					b.simResult.newTiles,
 					b.simResult.newLilypads,
+					b.simResult.newTidePhase,
 				).length;
 				return aNeighbors - bNeighbors; // Prefer tiles with fewer exits (more constrained)
 			}
@@ -533,6 +603,7 @@ export function useGame(level: Level) {
 				newPath,
 				maxDepth,
 				iterations,
+				simResult.newTidePhase,
 			);
 
 			if (result.timedOut) {
@@ -580,13 +651,20 @@ export function useGame(level: Level) {
 	}
 
 	// Get valid moves for pathfinding
+	// simulatedTidePhase: current tide phase for determining LOW_SAND accessibility
 	function getValidMovesForPathfinding(
 		pos: Position,
 		tileStates: TileType[][],
 		lilypads: Map<string, LilypadState>,
+		simulatedTidePhase?: number,
 	): { target: Position; direction: Direction }[] {
 		const moves: { target: Position; direction: Direction }[] = [];
 		const directions: Direction[] = ["up", "down", "left", "right"];
+
+		// Check if LOW_SAND will be flooded after moving (tide advances when we leave)
+		const currentPhase = simulatedTidePhase ?? tidePhase.value;
+		const nextPhase = (currentPhase + 1) % TIDE_PERIOD;
+		const lowSandWillBeFlooded = nextPhase === 0;
 
 		for (const direction of directions) {
 			const delta = getDirectionDelta(direction);
@@ -614,19 +692,23 @@ export function useGame(level: Level) {
 					adjTileType === TileType.WATER ||
 					adjTileType === TileType.DIRT ||
 					adjTileType === TileType.ICE ||
-					(adjTileType && isPortalTile(adjTileType))
+					(adjTileType && isPortalTile(adjTileType)) ||
+					(adjTileType === TileType.LOW_SAND && !lowSandWillBeFlooded)
 				) {
 					moves.push({ target: adjacentPos, direction });
 					continue;
 				}
 
-				// Check jump over obstacle
+				// Check jump over obstacle (including flooded LOW_SAND and SEA)
 				const isAdjacentObstacle =
 					adjTileType === TileType.BRAMBLE ||
 					adjTileType === TileType.MUSHROOM ||
+					adjTileType === TileType.SAND_MUSHROOM ||
 					adjTileType === TileType.POND_WATER ||
+					adjTileType === TileType.SEA ||
 					(adjTileType === TileType.POND &&
-						lilypads.get(`${adjacentPos.x},${adjacentPos.y}`)?.submerged);
+						lilypads.get(`${adjacentPos.x},${adjacentPos.y}`)?.submerged) ||
+					(adjTileType === TileType.LOW_SAND && lowSandWillBeFlooded);
 
 				if (isAdjacentObstacle) {
 					const jumpPos = { x: pos.x + delta.x * 2, y: pos.y + delta.y * 2 };
@@ -650,7 +732,8 @@ export function useGame(level: Level) {
 							jumpTileType === TileType.WATER ||
 							jumpTileType === TileType.DIRT ||
 							jumpTileType === TileType.ICE ||
-							(jumpTileType && isPortalTile(jumpTileType))
+							(jumpTileType && isPortalTile(jumpTileType)) ||
+							(jumpTileType === TileType.LOW_SAND && !lowSandWillBeFlooded)
 						) {
 							moves.push({ target: jumpPos, direction });
 						}
@@ -659,14 +742,14 @@ export function useGame(level: Level) {
 			}
 		}
 
-		// Prioritize moves to grass/dirt tiles
+		// Prioritize moves to grass/dirt/low_sand tiles
 		moves.sort((a, b) => {
 			const aType = tileStates[a.target.y]?.[a.target.x];
 			const bType = tileStates[b.target.y]?.[b.target.x];
 			const aPriority =
-				aType === TileType.GRASS || aType === TileType.DIRT ? 0 : 1;
+				aType === TileType.GRASS || aType === TileType.DIRT || aType === TileType.LOW_SAND ? 0 : 1;
 			const bPriority =
-				bType === TileType.GRASS || bType === TileType.DIRT ? 0 : 1;
+				bType === TileType.GRASS || bType === TileType.DIRT || bType === TileType.LOW_SAND ? 0 : 1;
 			return aPriority - bPriority;
 		});
 
@@ -679,10 +762,12 @@ export function useGame(level: Level) {
 		move: { target: Position; direction: Direction },
 		tileStates: TileType[][],
 		lilypads: Map<string, LilypadState>,
+		simulatedTidePhase?: number,
 	): {
 		finalPos: Position;
 		newTiles: TileType[][];
 		newLilypads: Map<string, LilypadState>;
+		newTidePhase: number;
 	} {
 		// Clone state
 		const newTileStates = tileStates.map((row) => [...row]);
@@ -690,6 +775,10 @@ export function useGame(level: Level) {
 		for (const [key, state] of lilypads) {
 			newLilypads.set(key, { ...state });
 		}
+
+		// Advance tide phase
+		const currentPhase = simulatedTidePhase ?? tidePhase.value;
+		const newTidePhase = (currentPhase + 1) % TIDE_PERIOD;
 
 		// Simulate leaving current tile
 		const currentTileType = newTileStates[pos.y]?.[pos.x];
@@ -699,6 +788,9 @@ export function useGame(level: Level) {
 		} else if (currentTileType === TileType.DIRT) {
 			const row = newTileStates[pos.y];
 			if (row) row[pos.x] = TileType.GRASS;
+		} else if (currentTileType === TileType.LOW_SAND) {
+			const row = newTileStates[pos.y];
+			if (row) row[pos.x] = TileType.SAND_MUSHROOM;
 		} else if (currentTileType === TileType.POND) {
 			const key = `${pos.x},${pos.y}`;
 			const state = newLilypads.get(key);
@@ -765,6 +857,7 @@ export function useGame(level: Level) {
 				if (
 					nextType === TileType.BRAMBLE ||
 					nextType === TileType.MUSHROOM ||
+					nextType === TileType.SAND_MUSHROOM ||
 					nextType === TileType.VOID ||
 					nextType === TileType.POND_WATER
 				) {
@@ -800,7 +893,7 @@ export function useGame(level: Level) {
 			}
 		}
 
-		return { finalPos, newTiles: newTileStates, newLilypads };
+		return { finalPos, newTiles: newTileStates, newLilypads, newTidePhase };
 	}
 
 	function computeSlideDestination(startPos: Position): {
@@ -931,6 +1024,15 @@ export function useGame(level: Level) {
 			setTimeout(() => {
 				lastPlantedPosition.value = null;
 			}, 400);
+		} else if (tile.type === TileType.LOW_SAND) {
+			// Low sand becomes sand mushroom (retains sand visual, still floods)
+			cell.type = TileType.SAND_MUSHROOM;
+			playRandomPop();
+			lastPlantedPosition.value = { ...position };
+			// Clear after animation completes
+			setTimeout(() => {
+				lastPlantedPosition.value = null;
+			}, 400);
 		} else if (tile.type === TileType.DIRT) {
 			// Dirt becomes grass (needs to be stepped on again)
 			cell.type = TileType.GRASS;
@@ -954,17 +1056,28 @@ export function useGame(level: Level) {
 
 		// Decrement lily-pad cooldowns after each move
 		decrementLilypadCooldowns();
+
+		// Advance tide phase after each move
+		advanceTide();
+	}
+
+	// Advance the tide phase (called when leaving a tile)
+	function advanceTide() {
+		tidePhase.value = (tidePhase.value + 1) % TIDE_PERIOD;
 	}
 
 	function checkWinCondition(): boolean {
-		// Win when standing on the only remaining grass tile and no dirt tiles remain
-		let grassCount = 0;
+		// Win when standing on the only remaining grass/low_sand tile and no dirt tiles remain
+		let grassCount = 0; // Includes grass and low_sand
 		let dirtCount = 0;
 		let lastGrassPos: Position | null = null;
 
 		for (const row of tiles.value) {
 			for (const tile of row) {
-				if (tile.type === TileType.GRASS) {
+				if (
+					tile.type === TileType.GRASS ||
+					tile.type === TileType.LOW_SAND
+				) {
 					grassCount++;
 					lastGrassPos = tile.position;
 				} else if (tile.type === TileType.DIRT) {
@@ -973,7 +1086,7 @@ export function useGame(level: Level) {
 			}
 		}
 
-		// Win if there's exactly one grass tile, no dirt tiles, and player is on the grass
+		// Win if there's exactly one grass/low_sand tile, no dirt tiles, and player is on it
 		if (grassCount === 1 && dirtCount === 0 && lastGrassPos) {
 			return (
 				lastGrassPos.x === playerPosition.value.x &&
@@ -1014,6 +1127,7 @@ export function useGame(level: Level) {
 			playerPosition: currentPos,
 			tileState: currentTile?.type ?? TileType.GRASS,
 			lilypadSnapshot: cloneLilypadState(),
+			tidePhase: tidePhase.value,
 		});
 
 		isHopping.value = true;
@@ -1237,6 +1351,8 @@ export function useGame(level: Level) {
 					playStone();
 				} else if (landingTile?.type === TileType.POND) {
 					playWater();
+				} else if (landingTile?.type === TileType.LOW_SAND) {
+					playLand(); // Sand sounds similar to grass
 				}
 			}, 200);
 
@@ -1293,6 +1409,7 @@ export function useGame(level: Level) {
 			playerPosition: currentPos,
 			tileState: currentTile?.type ?? TileType.GRASS,
 			lilypadSnapshot: cloneLilypadState(),
+			tidePhase: tidePhase.value,
 		});
 
 		isHopping.value = true;
@@ -1532,6 +1649,8 @@ export function useGame(level: Level) {
 					playStone();
 				} else if (landingTile?.type === TileType.POND) {
 					playWater();
+				} else if (landingTile?.type === TileType.LOW_SAND) {
+					playLand(); // Sand sounds similar to grass
 				}
 			}, 200);
 
@@ -1545,9 +1664,12 @@ export function useGame(level: Level) {
 		let count = 0;
 		for (const row of tiles.value) {
 			for (const tile of row) {
-				// Count grass and dirt tiles (dirt counts as 2 since it needs two visits)
+				// Count grass, low_sand, and dirt tiles (dirt counts as 2 since it needs two visits)
 				// Portal tiles don't count - they stay as portals and can be reused
-				if (tile.type === TileType.GRASS) {
+				if (
+					tile.type === TileType.GRASS ||
+					tile.type === TileType.LOW_SAND
+				) {
 					count++;
 				} else if (tile.type === TileType.DIRT) {
 					count += 2; // Dirt needs two steps: dirt->grass->mushroom
@@ -1562,7 +1684,10 @@ export function useGame(level: Level) {
 		let count = 0;
 		for (const row of tiles.value) {
 			for (const tile of row) {
-				if (tile.type === TileType.MUSHROOM) {
+				if (
+					tile.type === TileType.MUSHROOM ||
+					tile.type === TileType.SAND_MUSHROOM
+				) {
 					count++;
 				}
 			}
@@ -1576,10 +1701,17 @@ export function useGame(level: Level) {
 
 	const showHints = computed(() => {
 		if (hasWon.value) return false;
+		// Manual hint toggle overrides other conditions
+		if (forceShowHints.value) return true;
 		if (grassTilesRemaining.value >= TILES_HINT_THRESHOLD) return false;
 		const idleTime = currentTime.value - lastMoveTime.value;
 		return idleTime >= IDLE_HINT_THRESHOLD;
 	});
+
+	// Toggle manual hint display
+	function toggleHints() {
+		forceShowHints.value = !forceShowHints.value;
+	}
 
 	const canUndo = computed(() => moveHistory.value.length > 0);
 
@@ -1719,13 +1851,21 @@ export function useGame(level: Level) {
 			lilypadState.value = lastMove.lilypadSnapshot;
 		}
 
+		// Restore tide phase from snapshot
+		if (lastMove.tidePhase !== undefined) {
+			tidePhase.value = lastMove.tidePhase;
+		}
+
 		// Restore the tile at current position (remove mushroom if it was planted)
 		// Stone tiles never have mushrooms planted, so only restore MUSHROOM -> GRASS
+		// and SAND_MUSHROOM -> LOW_SAND
 		const currentPos = playerPosition.value;
 		const currentRow = tiles.value[currentPos.y];
 		const currentCell = currentRow?.[currentPos.x];
 		if (currentCell && currentCell.type === TileType.MUSHROOM) {
 			currentCell.type = TileType.GRASS;
+		} else if (currentCell && currentCell.type === TileType.SAND_MUSHROOM) {
+			currentCell.type = TileType.LOW_SAND;
 		}
 
 		// Restore the previous position's tile state
@@ -1768,10 +1908,16 @@ export function useGame(level: Level) {
 		getLilypadState,
 		lilypadState,
 		showHints,
+		toggleHints,
 		cleanupIdleTimer,
 		mushroomTileCount,
 		hasUnreachableTiles,
 		levelWidth: level.width,
 		levelHeight: level.height,
+		// Tides state
+		tidePhase,
+		isLowSandFlooded,
+		getMovesUntilFlood,
+		TIDE_PERIOD,
 	};
 }

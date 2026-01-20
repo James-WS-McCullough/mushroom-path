@@ -13,6 +13,10 @@ export const TileType = {
 	PORTAL_PINK: "portal_pink",
 	PORTAL_BLUE: "portal_blue",
 	PORTAL_YELLOW: "portal_yellow",
+	// Beach/tides tiles
+	LOW_SAND: "low_sand", // Tidal zone - floods periodically
+	SEA: "sea", // Always impassable, visual tide sync
+	SAND_MUSHROOM: "sand_mushroom", // Mushroom planted on sand - still floods
 } as const;
 
 export type TileType = (typeof TileType)[keyof typeof TileType];
@@ -62,6 +66,7 @@ export const WorldElement = {
 	ICE: "ice",
 	FAIRY: "fairy",
 	POND: "pond",
+	TIDES: "tides",
 } as const;
 
 export type WorldElement = (typeof WorldElement)[keyof typeof WorldElement];
