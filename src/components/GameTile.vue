@@ -23,10 +23,13 @@ const props = defineProps<{
 	hasDirtElement?: boolean;
 	hasPondElement?: boolean;
 	hasTidesElement?: boolean;
+	hasAcornElement?: boolean;
 	shouldShimmer?: boolean;
 	lilypadState?: LilypadState;
 	tidePhase?: number;
 	movesUntilFlood?: number;
+	squirrelRequirement?: number;
+	collectedAcorns?: number;
 }>();
 
 // Check if low sand tiles are currently flooded (tidePhase === 0)
@@ -63,19 +66,23 @@ const isPortal = computed(() => {
 });
 
 const tileClass = computed(() => {
-	// Shimmer applies to grass, dirt, and low_sand tiles when hints are active and player is not here
+	// Shimmer applies to grass, dirt, low_sand, and acorn tiles when hints are active and player is not here
 	const canShimmer =
 		props.shouldShimmer &&
 		!props.isPlayerHere &&
 		(props.tile.type === TileType.GRASS ||
 			props.tile.type === TileType.DIRT ||
-			props.tile.type === TileType.LOW_SAND);
+			props.tile.type === TileType.LOW_SAND ||
+			props.tile.type === TileType.ACORN);
 
 	// Night biome (pond element) overrides other biomes
 	const isNightBiome = props.hasPondElement && !props.hasIceElement;
 
 	// Beach biome (tides element)
 	const isBeachBiome = props.hasTidesElement && !props.hasIceElement && !isNightBiome;
+
+	// Autumn biome (acorn element) - higher priority than swamp
+	const isAutumnBiome = props.hasAcornElement && !props.hasIceElement && !isNightBiome && !isBeachBiome;
 
 	return {
 		tile: true,
@@ -118,8 +125,11 @@ const tileClass = computed(() => {
 			!props.hasIceElement &&
 			!isNightBiome &&
 			!isBeachBiome &&
+			!isAutumnBiome &&
 			props.hasDirtElement &&
 			props.tile.type === TileType.HONEY,
+		"tile--honey-autumn":
+			isAutumnBiome && props.tile.type === TileType.HONEY,
 		// Honey mushroom biome variants (mushroom background for HONEY_MUSHROOM tiles)
 		"tile--honey-mushroom-frosty":
 			props.hasIceElement && props.tile.type === TileType.HONEY_MUSHROOM,
@@ -131,8 +141,18 @@ const tileClass = computed(() => {
 			!props.hasIceElement &&
 			!isNightBiome &&
 			!isBeachBiome &&
+			!isAutumnBiome &&
 			props.hasDirtElement &&
 			props.tile.type === TileType.HONEY_MUSHROOM,
+		"tile--honey-mushroom-autumn":
+			isAutumnBiome && props.tile.type === TileType.HONEY_MUSHROOM,
+		// Acorn tile
+		"tile--acorn": props.tile.type === TileType.ACORN,
+		// Squirrel tile
+		"tile--squirrel": props.tile.type === TileType.SQUIRREL,
+		"tile--squirrel-ready":
+			props.tile.type === TileType.SQUIRREL &&
+			(props.collectedAcorns ?? 0) >= (props.squirrelRequirement ?? 1),
 		// Sand mushroom (mushroom planted on low sand)
 		"tile--sand-mushroom": props.tile.type === TileType.SAND_MUSHROOM,
 		"tile--sand-mushroom-flooded":
@@ -158,37 +178,48 @@ const tileClass = computed(() => {
 		"tile--frosty-mushroom":
 			props.hasIceElement && props.tile.type === TileType.MUSHROOM,
 		"tile--frosty-dirt":
-			props.hasIceElement && props.tile.type === TileType.DIRT,
+			props.hasIceElement && (props.tile.type === TileType.DIRT || props.isJustCleaned),
 		// Night biome (pond element) - dark blues
 		"tile--night":
 			isNightBiome && (props.tile.type === TileType.GRASS || isPortal.value),
 		"tile--night-mushroom":
 			isNightBiome && props.tile.type === TileType.MUSHROOM,
-		"tile--night-dirt": isNightBiome && props.tile.type === TileType.DIRT,
+		"tile--night-dirt": isNightBiome && (props.tile.type === TileType.DIRT || props.isJustCleaned),
 		// Beach biome (tides element) - sandy warm tones
 		"tile--beach":
 			isBeachBiome && (props.tile.type === TileType.GRASS || isPortal.value),
 		"tile--beach-mushroom":
 			isBeachBiome && props.tile.type === TileType.MUSHROOM,
-		// Swamp biome (fallback when no ice, night, or beach)
+		// Autumn biome (acorn element) - warm orange/red tones
+		"tile--autumn":
+			isAutumnBiome &&
+			(props.tile.type === TileType.GRASS || props.tile.type === TileType.ACORN || props.tile.type === TileType.SQUIRREL || isPortal.value),
+		"tile--autumn-mushroom":
+			isAutumnBiome && props.tile.type === TileType.MUSHROOM,
+		"tile--autumn-dirt":
+			isAutumnBiome && (props.tile.type === TileType.DIRT || props.isJustCleaned),
+		// Swamp biome (fallback when no ice, night, beach, or autumn)
 		"tile--swamp":
 			!props.hasIceElement &&
 			!isNightBiome &&
 			!isBeachBiome &&
+			!isAutumnBiome &&
 			props.hasDirtElement &&
 			(props.tile.type === TileType.GRASS || isPortal.value),
 		"tile--swamp-mushroom":
 			!props.hasIceElement &&
 			!isNightBiome &&
 			!isBeachBiome &&
+			!isAutumnBiome &&
 			props.hasDirtElement &&
 			props.tile.type === TileType.MUSHROOM,
 		"tile--swamp-dirt":
 			!props.hasIceElement &&
 			!isNightBiome &&
 			!isBeachBiome &&
+			!isAutumnBiome &&
 			props.hasDirtElement &&
-			props.tile.type === TileType.DIRT,
+			(props.tile.type === TileType.DIRT || props.isJustCleaned),
 	};
 });
 
@@ -255,12 +286,6 @@ function handleClick() {
       <div class="grass-blade"></div>
     </div>
 
-    <!-- Mud vanishing animation when dirt becomes grass -->
-    <div v-if="isJustCleaned" class="mud-vanish">
-      <div class="mud-patch mud-patch--1"></div>
-      <div class="mud-patch mud-patch--2"></div>
-      <div class="mud-patch mud-patch--3"></div>
-    </div>
 
     <!-- Mushroom sprites - different variants -->
     <div v-if="tile.type === TileType.MUSHROOM" :class="['mushroom-container', { 'mushroom--pop': isJustPlanted }]">
@@ -343,8 +368,11 @@ function handleClick() {
       <div class="pebble pebble--3"></div>
     </div>
 
-    <!-- Dirt tile details -->
-    <div v-if="tile.type === TileType.DIRT" class="dirt-detail">
+    <!-- Dirt tile details (also shows during cleaning animation) -->
+    <div
+      v-if="tile.type === TileType.DIRT || isJustCleaned"
+      :class="['dirt-detail', { 'dirt-detail--fading': isJustCleaned }]"
+    >
       <!-- Variant 0: Original layout - clumps top-left, bottom-right, center -->
       <template v-if="dirtVariant === 0">
         <div class="dirt-clump dirt-clump--1"></div>
@@ -870,6 +898,44 @@ function handleClick() {
             <div class="sand-mushroom__stem"></div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Acorn tile - collectible acorn on grass -->
+    <div v-if="tile.type === TileType.ACORN" class="acorn-tile">
+      <div class="grass-detail">
+        <div class="grass-blade"></div>
+        <div class="grass-blade"></div>
+        <div class="grass-blade"></div>
+      </div>
+      <div class="acorn">
+        <div class="acorn__cap"></div>
+        <div class="acorn__body"></div>
+        <div class="acorn__shine"></div>
+      </div>
+    </div>
+
+    <!-- Squirrel tile - needs acorns to pass -->
+    <div v-if="tile.type === TileType.SQUIRREL" class="squirrel-tile">
+      <div class="grass-detail">
+        <div class="grass-blade"></div>
+        <div class="grass-blade"></div>
+        <div class="grass-blade"></div>
+      </div>
+      <div class="squirrel">
+        <div class="squirrel__body"></div>
+        <div class="squirrel__head"></div>
+        <div class="squirrel__ear"></div>
+        <div class="squirrel__tail"></div>
+        <div class="squirrel__eye"></div>
+      </div>
+      <!-- Acorn requirement counter -->
+      <div class="squirrel-requirement">
+        <span class="requirement-count">{{ squirrelRequirement ?? 1 }}</span>
+        <svg class="requirement-acorn" viewBox="0 0 16 20" width="10" height="12">
+          <ellipse cx="8" cy="5" rx="6" ry="4" fill="#8B4513"/>
+          <ellipse cx="8" cy="13" rx="5" ry="7" fill="#D2691E"/>
+        </svg>
       </div>
     </div>
 
@@ -1754,64 +1820,6 @@ function handleClick() {
     linear-gradient(135deg, #4a6b3a 0%, #3a5a2a 100%);
 }
 
-/* Mud vanishing animation */
-.mud-vanish {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 5;
-}
-
-.mud-patch {
-  position: absolute;
-  background: linear-gradient(135deg, #8b6b4a 0%, #6d5238 100%);
-  border-radius: 50% 45% 50% 45%;
-  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.15);
-  animation: mudVanish 0.5s ease-out forwards;
-}
-
-.mud-patch--1 {
-  width: 32px;
-  height: 24px;
-  top: 4px;
-  left: 4px;
-  transform: rotate(-5deg);
-  animation-delay: 0s;
-}
-
-.mud-patch--2 {
-  width: 28px;
-  height: 20px;
-  bottom: 6px;
-  right: 4px;
-  transform: rotate(8deg);
-  animation-delay: 0.05s;
-}
-
-.mud-patch--3 {
-  width: 20px;
-  height: 16px;
-  top: 26px;
-  right: 18px;
-  transform: rotate(-3deg);
-  animation-delay: 0.1s;
-}
-
-@keyframes mudVanish {
-  0% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.6;
-    transform: scale(0.8);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(0.3);
-  }
-}
-
 /* Grass growing animation when cleaned */
 .tile--just-cleaned .grass-detail {
   animation: grassGrow 0.5s ease-out forwards;
@@ -1850,6 +1858,37 @@ function handleClick() {
   100% {
     transform: scaleY(1);
     opacity: 1;
+  }
+}
+
+/* Dirt fading out animation when cleaned */
+.dirt-detail--fading {
+  animation: dirtFadeOut 0.7s ease-out forwards;
+  pointer-events: none;
+}
+
+.dirt-detail--fading .dirt-clump,
+.dirt-detail--fading .dirt-rock {
+  animation: dirtScatter 0.6s ease-out forwards;
+}
+
+@keyframes dirtFadeOut {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes dirtScatter {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.3) translateY(-8px);
+    opacity: 0;
   }
 }
 
@@ -3985,6 +4024,14 @@ function handleClick() {
     linear-gradient(135deg, #4a6b3a 0%, #3a5a2a 100%);
 }
 
+.tile--honey-autumn {
+  /* Matches .tile--autumn exactly */
+  background:
+    radial-gradient(circle at 20% 80%, rgba(201, 160, 84, 0.4) 0%, transparent 30%),
+    radial-gradient(circle at 80% 20%, rgba(212, 168, 79, 0.3) 0%, transparent 25%),
+    linear-gradient(145deg, #c9a054 0%, #b8863a 100%);
+}
+
 /* Biome variants for honey-mushroom tiles - match exact biome MUSHROOM colors */
 .tile--honey-mushroom-frosty {
   /* Matches .tile--frosty-mushroom exactly */
@@ -4012,6 +4059,13 @@ function handleClick() {
   background:
     radial-gradient(circle at 20% 80%, rgba(40, 60, 35, 0.4) 0%, transparent 30%),
     linear-gradient(135deg, #3a5530 0%, #2a4520 100%);
+}
+
+.tile--honey-mushroom-autumn {
+  /* Matches .tile--autumn-mushroom exactly */
+  background:
+    radial-gradient(circle at 20% 80%, rgba(191, 128, 48, 0.4) 0%, transparent 30%),
+    linear-gradient(145deg, #bf8030 0%, #a06620 100%);
 }
 
 .honey-detail,
@@ -4459,5 +4513,304 @@ function handleClick() {
   .flower-petals {
     animation: none;
   }
+}
+
+/* ======================================
+   ACORN TILE STYLES
+   ====================================== */
+
+.tile--acorn {
+  background: linear-gradient(145deg, #8fbc8f, #6b8e6b);
+}
+
+.acorn-tile {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.acorn {
+  position: relative;
+  width: 24px;
+  height: 30px;
+  z-index: 2;
+  animation: acorn-bob 2s ease-in-out infinite;
+}
+
+@keyframes acorn-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+.acorn__cap {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 12px;
+  background: linear-gradient(145deg, #8B4513, #654321);
+  border-radius: 50% 50% 0 0;
+  z-index: 1;
+}
+
+.acorn__cap::before {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 6px;
+  background: #654321;
+  border-radius: 2px 2px 0 0;
+}
+
+/* Crosshatch pattern on acorn cap */
+.acorn__cap::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  right: 3px;
+  bottom: 0;
+  background:
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.15) 2px,
+      rgba(0,0,0,0.15) 3px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.15) 2px,
+      rgba(0,0,0,0.15) 3px
+    );
+  border-radius: 50% 50% 0 0;
+}
+
+.acorn__body {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 18px;
+  height: 20px;
+  background: linear-gradient(145deg, #D2691E, #A0522D);
+  border-radius: 50% 50% 45% 45%;
+}
+
+.acorn__shine {
+  position: absolute;
+  top: 14px;
+  left: 7px;
+  width: 5px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  transform: rotate(-20deg);
+}
+
+/* ======================================
+   SQUIRREL TILE STYLES
+   ====================================== */
+
+.tile--squirrel {
+  background: linear-gradient(145deg, #8fbc8f, #6b8e6b);
+}
+
+.tile--squirrel-ready {
+  background: linear-gradient(145deg, #9fcc9f, #7b9e7b);
+}
+
+.squirrel-tile {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.squirrel {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  z-index: 2;
+}
+
+.squirrel__body {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 18px;
+  height: 16px;
+  background: linear-gradient(145deg, #D2691E, #A0522D);
+  border-radius: 50% 50% 40% 40%;
+}
+
+.squirrel__head {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  transform: translateX(-40%);
+  width: 14px;
+  height: 12px;
+  background: linear-gradient(145deg, #CD853F, #A0522D);
+  border-radius: 50%;
+}
+
+.squirrel__ear {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-20%);
+  width: 6px;
+  height: 8px;
+  background: #D2691E;
+  border-radius: 50% 50% 30% 30%;
+}
+
+.squirrel__tail {
+  position: absolute;
+  bottom: 8px;
+  right: 0;
+  width: 16px;
+  height: 20px;
+  background: linear-gradient(145deg, #CD853F, #A0522D);
+  border-radius: 80% 80% 20% 80%;
+  transform: rotate(-30deg);
+  transform-origin: bottom left;
+}
+
+.squirrel__eye {
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  transform: translateX(-20%);
+  width: 4px;
+  height: 4px;
+  background: #2d2d2d;
+  border-radius: 50%;
+}
+
+.squirrel__eye::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 1px;
+  width: 1px;
+  height: 1px;
+  background: white;
+  border-radius: 50%;
+}
+
+/* Acorn requirement counter on squirrel */
+.squirrel-requirement {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 3px 6px;
+  border-radius: 10px;
+  z-index: 3;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.requirement-count {
+  color: #FFD700;
+  font-size: 14px;
+  font-weight: bold;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+
+.requirement-acorn {
+  opacity: 0.9;
+  width: 12px;
+  height: 12px;
+}
+
+/* Squirrel ready to be fed animation */
+.tile--squirrel-ready .squirrel {
+  animation: squirrel-excited 0.5s ease-in-out infinite;
+}
+
+@keyframes squirrel-excited {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-2px) rotate(-3deg); }
+  75% { transform: translateY(-2px) rotate(3deg); }
+}
+
+.tile--squirrel-ready .squirrel-requirement {
+  background: rgba(0, 128, 0, 0.7);
+}
+
+/* ======================================
+   AUTUMN BIOME STYLES
+   ====================================== */
+
+.tile--autumn {
+  background: linear-gradient(145deg, #c9a054, #b8863a);
+}
+
+.tile--autumn .grass-blade {
+  background: linear-gradient(to top, #c9a054 0%, #d4a84f 50%, #e6c47a 100%);
+}
+
+.tile--autumn-mushroom {
+  background: linear-gradient(145deg, #bf8030, #a06620);
+}
+
+/* Autumn mushroom cap colors - warmer oranges and reds */
+.tile--autumn-mushroom .mushroom--tan .mushroom__cap {
+  background: linear-gradient(145deg, #d4691e, #b85518);
+}
+
+.tile--autumn-mushroom .mushroom--red .mushroom__cap {
+  background: linear-gradient(145deg, #c41e3a, #8b0000);
+}
+
+.tile--autumn-mushroom .mushroom--purple .mushroom__cap {
+  background: linear-gradient(145deg, #8b4513, #654321);
+}
+
+.tile--autumn-dirt {
+  /* Autumn grass showing through dirt - matches autumn grass */
+  background: linear-gradient(145deg, #c9a054, #b8863a);
+}
+
+.tile--autumn-dirt .dirt-clump {
+  background: linear-gradient(145deg, #8b6040, #6a4830);
+}
+
+.tile--autumn-dirt .dirt-rock {
+  background: linear-gradient(135deg, #9a7050, #785838);
+}
+
+/* Autumn acorn tile - slightly warmer */
+.tile--autumn.tile--acorn {
+  background: linear-gradient(145deg, #c9a054, #b8863a);
+}
+
+.tile--autumn .acorn-tile .grass-blade {
+  background: linear-gradient(to top, #c9a054 0%, #d4a84f 50%, #e6c47a 100%);
+}
+
+/* Autumn squirrel tile */
+.tile--autumn.tile--squirrel,
+.tile--autumn.tile--squirrel-ready {
+  background: linear-gradient(145deg, #c9a054, #b8863a);
+}
+
+.tile--autumn .squirrel-tile .grass-blade {
+  background: linear-gradient(to top, #c9a054 0%, #d4a84f 50%, #e6c47a 100%);
 }
 </style>

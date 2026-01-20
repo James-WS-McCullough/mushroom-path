@@ -159,6 +159,9 @@ const ALL_SFX_PATHS = [
 	"/sfx/waves-rise.mp3",
 	"/sfx/waves-fall.mp3",
 	"/sfx/sand-land.mp3",
+	// Acorn and squirrel sounds
+	"/sfx/acorn.mp3",
+	"/sfx/squirrel.mp3",
 	// Voice lines
 	"/voice/voice-stuck01.mp3",
 	"/voice/voice-stuck02.mp3",
@@ -534,6 +537,14 @@ export function playSandLand(volume = 0.3): void {
 
 export function playHoneyLand(volume = 0.3): void {
 	playSound("/sfx/honey-land.mp3", volume);
+}
+
+export function playAcorn(volume = 0.5): void {
+	playSound("/sfx/acorn.mp3", volume);
+}
+
+export function playSquirrel(volume = 0.5): void {
+	playSound("/sfx/squirrel.mp3", volume);
 }
 
 // ============================================

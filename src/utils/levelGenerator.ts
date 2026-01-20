@@ -32,6 +32,7 @@ export interface GeneratorConfig {
 	tidesClusterSize: number;
 	bounceChance: number;
 	honeyChance: number;
+	acornChance: number;
 }
 
 const DEFAULT_CONFIG: GeneratorConfig = {
@@ -56,6 +57,7 @@ const DEFAULT_CONFIG: GeneratorConfig = {
 	tidesClusterSize: 4,
 	bounceChance: 0.08,
 	honeyChance: 0.08,
+	acornChance: 0.1, // 1-3 squirrels when ACORN element is active
 };
 
 // Tide period constant - must match useGame.ts
@@ -1396,6 +1398,188 @@ function selectHoneyCandidates(
 	return honey;
 }
 
+// Place squirrels and acorns along the solved path
+// Squirrels are obstacles that need acorns to pass
+// Strategy: Place squirrels first, then count available acorn positions,
+// place all available acorns, and divide them among squirrels
+function placeSquirrelsAndAcorns(
+	path: Position[],
+	grass: Set<string>,
+	chance: number,
+	// Tiles that would overwrite acorns in createGridFromSets - must exclude these
+	excludedTiles: Set<string>,
+): {
+	squirrels: Set<string>;
+	acorns: Set<string>;
+	squirrelRequirements: Record<string, number>;
+} {
+	const squirrels = new Set<string>();
+	const acorns = new Set<string>();
+	const squirrelRequirements: Record<string, number> = {};
+
+	if (chance <= 0 || path.length < 10) {
+		return { squirrels, acorns, squirrelRequirements };
+	}
+
+	// Helper to check if a position is valid for acorn/squirrel placement
+	// Must be grass AND not in any excluded set (dirt, honey, ice, etc.)
+	const isValidPlacement = (key: string): boolean => {
+		return grass.has(key) && !excludedTiles.has(key);
+	};
+
+	// Determine number of squirrels (1-3)
+	const numSquirrels = Math.floor(Math.random() * 3) + 1;
+
+	// Squirrels should be placed in the latter portion of the path
+	// to ensure room for acorns before the first squirrel
+	const minSquirrelIndex = Math.floor(path.length * 0.4);
+	const maxSquirrelIndex = path.length - 2; // Not at the very end
+
+	// Get candidate positions for squirrels (grass tiles in path range, not excluded)
+	const squirrelCandidates: number[] = [];
+	for (let i = minSquirrelIndex; i <= maxSquirrelIndex; i++) {
+		const pos = path[i];
+		if (pos && isValidPlacement(posKey(pos.x, pos.y))) {
+			squirrelCandidates.push(i);
+		}
+	}
+
+	if (squirrelCandidates.length === 0) {
+		return { squirrels, acorns, squirrelRequirements };
+	}
+
+	// Shuffle and pick squirrel positions, ensuring they're spread out
+	const shuffledCandidates = shuffleArray([...squirrelCandidates]);
+	const selectedSquirrelIndices: number[] = [];
+	const minSpacing = Math.floor(path.length / (numSquirrels + 2));
+
+	for (const idx of shuffledCandidates) {
+		if (selectedSquirrelIndices.length >= numSquirrels) break;
+
+		// Check spacing from other squirrels
+		const tooClose = selectedSquirrelIndices.some(
+			(other) => Math.abs(idx - other) < minSpacing,
+		);
+		if (!tooClose) {
+			selectedSquirrelIndices.push(idx);
+		}
+	}
+
+	if (selectedSquirrelIndices.length === 0) {
+		return { squirrels, acorns, squirrelRequirements };
+	}
+
+	// Sort squirrel indices so we process them in path order
+	selectedSquirrelIndices.sort((a, b) => a - b);
+
+	// Get squirrel positions (we'll assign requirements after counting acorns)
+	const squirrelPositions: { idx: number; key: string }[] = [];
+	for (const sqIdx of selectedSquirrelIndices) {
+		const sqPos = path[sqIdx];
+		if (!sqPos) continue;
+		const sqKey = posKey(sqPos.x, sqPos.y);
+		squirrelPositions.push({ idx: sqIdx, key: sqKey });
+	}
+
+	if (squirrelPositions.length === 0) {
+		return { squirrels, acorns, squirrelRequirements };
+	}
+
+	// Get all valid acorn positions (before the first squirrel, not excluded)
+	const firstSquirrelIdx = squirrelPositions[0]?.idx ?? path.length;
+	const acornCandidates: number[] = [];
+	for (let i = 1; i < firstSquirrelIdx; i++) {
+		// Start at 1 to skip starting position
+		const pos = path[i];
+		if (!pos) continue;
+		const key = posKey(pos.x, pos.y);
+		if (isValidPlacement(key)) {
+			acornCandidates.push(i);
+		}
+	}
+
+	// We need at least as many acorns as squirrels (minimum 1 per squirrel)
+	if (acornCandidates.length < squirrelPositions.length) {
+		// Not enough room - remove squirrels until we have enough acorns
+		while (
+			squirrelPositions.length > 0 &&
+			acornCandidates.length < squirrelPositions.length
+		) {
+			squirrelPositions.shift(); // Remove first squirrel
+			// Recalculate acorn candidates with new first squirrel position
+			const newFirstSquirrelIdx = squirrelPositions[0]?.idx ?? path.length;
+			acornCandidates.length = 0;
+			for (let i = 1; i < newFirstSquirrelIdx; i++) {
+				const pos = path[i];
+				if (!pos) continue;
+				const key = posKey(pos.x, pos.y);
+				if (isValidPlacement(key)) {
+					acornCandidates.push(i);
+				}
+			}
+		}
+	}
+
+	// If no squirrels left after reduction, return empty
+	if (squirrelPositions.length === 0) {
+		return { squirrels, acorns, squirrelRequirements };
+	}
+
+	// Place all available acorns (up to 3 per squirrel max)
+	const maxAcorns = Math.min(acornCandidates.length, squirrelPositions.length * 3);
+	const shuffledAcornCandidates = shuffleArray([...acornCandidates]);
+
+	for (let i = 0; i < maxAcorns && i < shuffledAcornCandidates.length; i++) {
+		const acornIdx = shuffledAcornCandidates[i];
+		if (acornIdx === undefined) continue;
+		const acornPos = path[acornIdx];
+		if (!acornPos) continue;
+		const acornKey = posKey(acornPos.x, acornPos.y);
+		acorns.add(acornKey);
+	}
+
+	// Use ACTUAL placed acorn count (not the expected count)
+	const actualAcornsPlaced = acorns.size;
+
+	// If we somehow have fewer acorns than squirrels, remove squirrels
+	while (squirrelPositions.length > actualAcornsPlaced && squirrelPositions.length > 0) {
+		squirrelPositions.pop();
+	}
+
+	// If no squirrels left, return empty
+	if (squirrelPositions.length === 0) {
+		return { squirrels, acorns: new Set(), squirrelRequirements };
+	}
+
+	// Now divide the ACTUAL acorns among squirrels
+	// Each squirrel gets at least 1, distribute remaining evenly
+	const numSquirrelsPlaced = squirrelPositions.length;
+	const basePerSquirrel = Math.floor(actualAcornsPlaced / numSquirrelsPlaced);
+	let remainder = actualAcornsPlaced % numSquirrelsPlaced;
+
+	for (const sq of squirrelPositions) {
+		squirrels.add(sq.key);
+		// Each squirrel gets base amount, plus 1 extra if there's remainder
+		let requirement = basePerSquirrel;
+		if (remainder > 0) {
+			requirement += 1;
+			remainder--;
+		}
+		// Ensure at least 1 and at most 3
+		requirement = Math.max(1, Math.min(3, requirement));
+		squirrelRequirements[sq.key] = requirement;
+	}
+
+	// Final safety check: ensure total requirements <= total acorns
+	const totalRequirements = Object.values(squirrelRequirements).reduce((a, b) => a + b, 0);
+	if (totalRequirements > actualAcornsPlaced) {
+		// This shouldn't happen, but if it does, return empty to avoid impossible level
+		return { squirrels: new Set(), acorns: new Set(), squirrelRequirements: {} };
+	}
+
+	return { squirrels, acorns, squirrelRequirements };
+}
+
 // Add ice tiles in clusters - ice acts as walkable bridge that causes sliding
 function addIceClusters(
 	grass: Set<string>,
@@ -2134,7 +2318,6 @@ function placeBouncePads(
 	const getValidApproachDirections = (
 		pos: Position,
 	): { dx: number; dy: number }[] => {
-		const key = posKey(pos.x, pos.y);
 		const validApproaches: { dx: number; dy: number }[] = [];
 
 		for (const approachDir of directions) {
@@ -2331,6 +2514,9 @@ function buildLevelFromPath(
 	sea: Set<string> = new Set(),
 	bouncePads: Set<string> = new Set(),
 	honey: Set<string> = new Set(),
+	squirrels: Set<string> = new Set(),
+	acorns: Set<string> = new Set(),
+	squirrelRequirementsInput: Record<string, number> = {},
 ): Level {
 	let minX = Number.POSITIVE_INFINITY;
 	let minY = Number.POSITIVE_INFINITY;
@@ -2381,6 +2567,10 @@ function buildLevelFromPath(
 				row.push(TileType.DIRT);
 			} else if (honey.has(key)) {
 				row.push(TileType.HONEY);
+			} else if (squirrels.has(key)) {
+				row.push(TileType.SQUIRREL);
+			} else if (acorns.has(key)) {
+				row.push(TileType.ACORN);
 			} else if (allShapeTiles.has(key)) {
 				row.push(TileType.GRASS);
 			} else {
@@ -2419,6 +2609,14 @@ function buildLevelFromPath(
 		y: pos.y - minY,
 	}));
 
+	// Adjust squirrel requirements coordinates relative to grid
+	const adjustedSquirrelRequirements: Record<string, number> = {};
+	for (const [key, requirement] of Object.entries(squirrelRequirementsInput)) {
+		const pos = parseKey(key);
+		const adjustedKey = posKey(pos.x - minX, pos.y - minY);
+		adjustedSquirrelRequirements[adjustedKey] = requirement;
+	}
+
 	return {
 		name: "Generated",
 		width,
@@ -2429,6 +2627,10 @@ function buildLevelFromPath(
 		waterFlow:
 			Object.keys(adjustedWaterFlow).length > 0 ? adjustedWaterFlow : undefined,
 		solutionPath: adjustedPath,
+		squirrelRequirements:
+			Object.keys(adjustedSquirrelRequirements).length > 0
+				? adjustedSquirrelRequirements
+				: undefined,
 	};
 }
 
@@ -2449,9 +2651,10 @@ function verifyLevel(level: Level): boolean {
 		return false;
 	}
 
-	// Count grass, dirt, low_sand, and portal tiles - should be at least 8
+	// Count grass, dirt, low_sand, portal, squirrel, and acorn tiles - should be at least 8
 	// Dirt counts as 1 tile (even though it needs 2 visits)
 	// Portal tiles count as grass tiles (walkable, need to be visited)
+	// Squirrel and acorn tiles count as walkable tiles
 	let grassCount = 0;
 	for (const row of level.grid) {
 		for (const tile of row) {
@@ -2461,7 +2664,9 @@ function verifyLevel(level: Level): boolean {
 				tile === TileType.LOW_SAND ||
 				tile === TileType.PORTAL_PINK ||
 				tile === TileType.PORTAL_BLUE ||
-				tile === TileType.PORTAL_YELLOW
+				tile === TileType.PORTAL_YELLOW ||
+				tile === TileType.SQUIRREL ||
+				tile === TileType.ACORN
 			) {
 				grassCount++;
 			}
@@ -2543,6 +2748,14 @@ export function generateLevel(
 		// Boost honey chance to ensure honey tiles appear reliably
 		const baseHoneyChance = config.honeyChance ?? DEFAULT_CONFIG.honeyChance;
 		elementConfig.honeyChance = Math.max(baseHoneyChance * 4, 0.3);
+	}
+
+	// Acorn only generates if the ACORN element is active
+	if (!elements.includes(WE.ACORN)) {
+		elementConfig.acornChance = 0;
+	} else {
+		// Set acorn chance to ensure squirrels appear reliably
+		elementConfig.acornChance = 1.0; // Always generate squirrels when element is active
 	}
 
 	const fullConfig = { ...DEFAULT_CONFIG, ...elementConfig };
@@ -2673,6 +2886,31 @@ export function generateLevel(
 			const pathStartPos = path[0] ?? { x: 0, y: 0 };
 			const portals = placePortalPairs(grass, pathStartPos, fullConfig.portalPairs);
 
+			// Build set of tiles that would overwrite acorns in createGridFromSets
+			// These are all checked BEFORE acorns in the grid creation logic
+			const excludedTiles = new Set<string>([
+				...bramblesAfterPond,
+				...stonesAfterPond,
+				...water,
+				...ice,
+				...pond,
+				...pondWater,
+				...lowSand,
+				...sea,
+				...bouncePads,
+				...dirt,
+				...honey,
+				...portals.keys(),
+			]);
+
+			// Place squirrels and acorns along the solved path
+			const { squirrels, acorns, squirrelRequirements } = placeSquirrelsAndAcorns(
+				path,
+				grass,
+				fullConfig.acornChance,
+				excludedTiles,
+			);
+
 			const level = buildLevelFromPath(
 				path,
 				shape,
@@ -2690,6 +2928,9 @@ export function generateLevel(
 				sea,
 				bouncePads,
 				honey,
+				squirrels,
+				acorns,
+				squirrelRequirements,
 			);
 			if (verifyLevel(level)) {
 				return level;

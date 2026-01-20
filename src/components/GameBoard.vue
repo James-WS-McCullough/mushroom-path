@@ -17,6 +17,7 @@ const props = defineProps<{
 	hasDirtElement?: boolean;
 	hasPondElement?: boolean;
 	hasTidesElement?: boolean;
+	hasAcornElement?: boolean;
 	disabled?: boolean;
 	hintTiles?: Position[];
 	stuckTiles?: Position[];
@@ -374,6 +375,16 @@ function getPoofStyle(position: Position) {
 	};
 }
 
+function getAcornPopupStyle() {
+	const boardPadding = hasRooms.value ? 0 : 3;
+	const pos = game.playerPosition.value;
+	// Position below the character's tile
+	return {
+		left: `${boardPadding + pos.x * 67 + TILE_SIZE / 2}px`,
+		top: `${boardPadding + pos.y * 67 + TILE_SIZE + 8}px`,
+	};
+}
+
 function handleTileClick(position: Position) {
 	if (props.disabled) return;
 	game.moveToPosition(position);
@@ -424,11 +435,6 @@ function handleKeydown(event: KeyboardEvent) {
 		event.preventDefault();
 		game.movePlayer(direction);
 	}
-}
-
-function handleRestart() {
-	playUndo();
-	game.initializeGame();
 }
 
 onMounted(() => {
@@ -504,9 +510,12 @@ defineExpose({
             :has-dirt-element="hasDirtElement"
             :has-pond-element="hasPondElement"
             :has-tides-element="hasTidesElement"
+            :has-acorn-element="hasAcornElement"
             :tide-phase="game.tidePhase.value"
             :moves-until-flood="getMovesUntilFloodForTile(tile.position)"
             :lilypad-state="game.getLilypadState(tile.position)"
+            :squirrel-requirement="game.getSquirrelRequirement(tile.position)"
+            :collected-acorns="game.collectedAcorns.value"
             :should-shimmer="shouldShimmer()"
             @click="handleTileClick(tile.position)"
           />
@@ -574,6 +583,27 @@ defineExpose({
           :board-padding="hasRooms ? 0 : 3"
           :disabled="props.disabled"
         />
+
+        <!-- Acorn popup below player -->
+        <div
+          v-if="game.acornPopupValue.value !== null"
+          class="acorn-popup"
+          :style="getAcornPopupStyle()"
+        >
+          <div class="acorn-popup__bubble">
+            <svg class="acorn-popup__icon" viewBox="0 0 16 20" width="14" height="17">
+              <ellipse cx="8" cy="5" rx="6" ry="4" fill="#8B4513"/>
+              <ellipse cx="8" cy="13" rx="5" ry="7" fill="#D2691E"/>
+            </svg>
+            <span class="acorn-popup__count">{{ game.collectedAcorns.value }}</span>
+          </div>
+          <div
+            class="acorn-popup__change"
+            :class="{ 'acorn-popup__change--positive': game.acornPopupValue.value > 0 }"
+          >
+            {{ game.acornPopupValue.value > 0 ? '+' : '' }}{{ game.acornPopupValue.value }}
+          </div>
+        </div>
 
         <!-- Teleport poof smoke effect -->
         <div
@@ -702,6 +732,82 @@ defineExpose({
   100% {
     opacity: 0;
     transform: scale(2);
+  }
+}
+
+/* Acorn popup that appears below player */
+.acorn-popup {
+  position: absolute;
+  pointer-events: none;
+  z-index: 150;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  animation: acorn-popup-appear 1.6s ease-out forwards;
+}
+
+.acorn-popup__bubble {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(60, 45, 30, 0.9);
+  padding: 4px 10px;
+  border-radius: 14px;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.acorn-popup__icon {
+  flex-shrink: 0;
+}
+
+.acorn-popup__count {
+  font-family: 'Georgia', serif;
+  font-size: 16px;
+  font-weight: bold;
+  color: #f5e6c8;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.acorn-popup__change {
+  font-family: 'Georgia', serif;
+  font-size: 14px;
+  font-weight: bold;
+  color: #e85a3a;
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.5),
+    0 0 6px rgba(232, 90, 58, 0.4);
+}
+
+.acorn-popup__change--positive {
+  color: #7cb668;
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.5),
+    0 0 6px rgba(124, 182, 104, 0.4);
+}
+
+@keyframes acorn-popup-appear {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px) scale(0.7);
+  }
+  15% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1.05);
+  }
+  25% {
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+  75% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(5px) scale(0.95);
   }
 }
 

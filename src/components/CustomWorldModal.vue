@@ -14,8 +14,9 @@ const allElements: { id: WorldElement; name: string; icon: string }[] = [
 	{ id: WE.FAIRY, name: "Fairy Rings", icon: "🍄" },
 	{ id: WE.POND, name: "Lily Pads", icon: "🌙" },
 	{ id: WE.TIDES, name: "Tides", icon: "🏖️" },
-	{ id: WE.BOUNCE, name: "Bounce Pads", icon: "🦘" },
+	{ id: WE.BOUNCE, name: "Bounce", icon: "🦘" },
 	{ id: WE.HONEY, name: "Honey", icon: "🍯" },
+	{ id: WE.ACORN, name: "Acorns", icon: "🌰" },
 ];
 
 const selectedElements = ref<Set<WorldElement>>(new Set());
@@ -29,6 +30,9 @@ const incompatiblePairs: [WorldElement, WorldElement][] = [
 	[WE.TIDES, WE.ICE], // Beach and frozen don't mix
 	[WE.TIDES, WE.POND], // Too much water mechanics confusion
 	[WE.TIDES, WE.RIVERS], // Too much water mechanics confusion
+	[WE.ACORN, WE.ICE], // Autumn and frozen don't mix
+	[WE.ACORN, WE.POND], // Autumn and lily pads don't mix
+	[WE.ACORN, WE.TIDES], // Autumn and beach don't mix
 ];
 
 function isIncompatible(element: WorldElement): boolean {
@@ -193,8 +197,8 @@ function startWorld() {
 
 .elements-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
   margin-bottom: 16px;
 }
 
@@ -202,10 +206,10 @@ function startWorld() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 16px 12px;
+  gap: 4px;
+  padding: 10px 6px;
   border: 2px solid rgba(90, 74, 58, 0.2);
-  border-radius: 12px;
+  border-radius: 10px;
   background: rgba(255, 255, 255, 0.5);
   cursor: pointer;
   transition: all 0.15s ease;
@@ -233,13 +237,13 @@ function startWorld() {
 }
 
 .element-icon {
-  font-size: 28px;
+  font-size: 22px;
   line-height: 1;
 }
 
 .element-name {
   font-family: 'Georgia', serif;
-  font-size: 14px;
+  font-size: 11px;
   color: #5a4a3a;
 }
 

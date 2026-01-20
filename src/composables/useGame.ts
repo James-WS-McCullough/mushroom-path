@@ -9,6 +9,7 @@ import type {
 } from "../types/game";
 import { PortalTypes, TileType } from "../types/game";
 import {
+	playAcorn,
 	playBouncepad,
 	playHoneyLand,
 	playJump,
@@ -19,6 +20,7 @@ import {
 	playRandomPop,
 	playSandLand,
 	playShovelDirt,
+	playSquirrel,
 	playStone,
 	playTeleportPoof,
 	playWater,
@@ -45,6 +47,7 @@ interface MoveHistory {
 	additionalChanges?: ChangedTile[]; // For tracking portal conversions, etc.
 	lilypadSnapshot?: Map<string, LilypadState>; // Snapshot of lily-pad state for undo
 	tidePhase?: number; // Snapshot of tide phase for undo
+	collectedAcorns?: number; // Snapshot of collected acorns before this move
 }
 
 export type FacingDirection = "left" | "right";
@@ -68,6 +71,26 @@ export function useGame(level: Level) {
 	const moveHistory = ref<MoveHistory[]>([]);
 	const waterFlow = level.waterFlow ?? {};
 	const lilypadState = ref<Map<string, LilypadState>>(new Map());
+
+	// Acorn/squirrel state
+	const collectedAcorns = ref(0);
+	const squirrelRequirements = level.squirrelRequirements ?? {};
+
+	// Acorn popup state (shows +X or -X above player when collecting/spending)
+	const acornPopupValue = ref<number | null>(null);
+	let acornPopupTimeout: ReturnType<typeof setTimeout> | null = null;
+
+	function showAcornPopup(value: number) {
+		// Clear any existing popup timeout
+		if (acornPopupTimeout) {
+			clearTimeout(acornPopupTimeout);
+		}
+		acornPopupValue.value = value;
+		// Hide popup after animation
+		acornPopupTimeout = setTimeout(() => {
+			acornPopupValue.value = null;
+		}, 1600);
+	}
 
 	// Tides state management
 	const TIDE_PERIOD = 5; // Flood every 5 moves
@@ -131,6 +154,9 @@ export function useGame(level: Level) {
 		// Reset tide state
 		tidePhase.value = 1; // Start at phase 1 (4 moves until first flood)
 
+		// Reset acorn collection
+		collectedAcorns.value = 0;
+
 		// Reset idle tracking
 		lastMoveTime.value = Date.now();
 		currentTime.value = Date.now();
@@ -167,6 +193,18 @@ export function useGame(level: Level) {
 		return row[position.x] ?? null;
 	}
 
+	// Get the acorn requirement for a squirrel at a position
+	function getSquirrelRequirement(position: Position): number {
+		const key = `${position.x},${position.y}`;
+		return squirrelRequirements[key] ?? 1;
+	}
+
+	// Check if player can feed a squirrel at a position
+	function canFeedSquirrel(position: Position): boolean {
+		const required = getSquirrelRequirement(position);
+		return collectedAcorns.value >= required;
+	}
+
 	function canLandOn(position: Position): boolean {
 		const tile = getTile(position);
 		if (!tile) return false;
@@ -190,7 +228,12 @@ export function useGame(level: Level) {
 			return false;
 		}
 
-		// Can land on grass, stone, water, dirt, ice, bounce pad, honey, or portal tiles
+		// Squirrel tiles are landable only if player has enough acorns
+		if (tile.type === TileType.SQUIRREL) {
+			return canFeedSquirrel(position);
+		}
+
+		// Can land on grass, stone, water, dirt, ice, bounce pad, honey, acorn, or portal tiles
 		return (
 			tile.type === TileType.GRASS ||
 			tile.type === TileType.STONE ||
@@ -199,6 +242,7 @@ export function useGame(level: Level) {
 			tile.type === TileType.ICE ||
 			tile.type === TileType.BOUNCE_PAD ||
 			tile.type === TileType.HONEY ||
+			tile.type === TileType.ACORN ||
 			isPortalTile(tile.type)
 		);
 	}
@@ -244,6 +288,11 @@ export function useGame(level: Level) {
 		}
 		// Sea tiles are always obstacles
 		if (tile.type === TileType.SEA) {
+			return true;
+		}
+		// Squirrel tiles are ALWAYS obstacles - you can never jump over them
+		// You can only walk directly to a squirrel when you have enough acorns
+		if (tile.type === TileType.SQUIRREL) {
 			return true;
 		}
 		return (
@@ -361,6 +410,8 @@ export function useGame(level: Level) {
 
 				// Check if adjacent tile is walkable
 				// LOW_SAND is always considered walkable for connectivity (tides cycle)
+				// ACORN is always walkable
+				// SQUIRREL is considered walkable for connectivity (we might collect acorns before reaching it)
 				const isWalkable =
 					adjType === TileType.GRASS ||
 					adjType === TileType.DIRT ||
@@ -370,6 +421,8 @@ export function useGame(level: Level) {
 					adjType === TileType.LOW_SAND ||
 					adjType === TileType.BOUNCE_PAD ||
 					adjType === TileType.HONEY ||
+					adjType === TileType.ACORN ||
+					adjType === TileType.SQUIRREL ||
 					isPortalTile(adjType) ||
 					(adjType === TileType.POND && !lilypads.get(adjKey)?.submerged);
 
@@ -409,6 +462,7 @@ export function useGame(level: Level) {
 					if (!jumpType) continue;
 
 					// LOW_SAND is always landable for connectivity
+					// ACORN and SQUIRREL are also landable for connectivity
 					const isJumpLandable =
 						jumpType === TileType.GRASS ||
 						jumpType === TileType.DIRT ||
@@ -418,6 +472,8 @@ export function useGame(level: Level) {
 						jumpType === TileType.LOW_SAND ||
 						jumpType === TileType.BOUNCE_PAD ||
 						jumpType === TileType.HONEY ||
+						jumpType === TileType.ACORN ||
+						jumpType === TileType.SQUIRREL ||
 						isPortalTile(jumpType) ||
 						(jumpType === TileType.POND && !lilypads.get(jumpKey)?.submerged);
 
@@ -441,7 +497,7 @@ export function useGame(level: Level) {
 	): boolean {
 		const reachable = getReachableTiles(playerPos, tileStates, lilypads, simulatedTidePhase);
 
-		// Check every grass/dirt/low_sand tile is reachable
+		// Check every grass/dirt/low_sand/acorn/squirrel tile is reachable
 		for (let y = 0; y < tileStates.length; y++) {
 			const row = tileStates[y];
 			if (!row) continue;
@@ -450,7 +506,9 @@ export function useGame(level: Level) {
 				if (
 					t === TileType.GRASS ||
 					t === TileType.DIRT ||
-					t === TileType.LOW_SAND
+					t === TileType.LOW_SAND ||
+					t === TileType.ACORN ||
+					t === TileType.SQUIRREL
 				) {
 					if (!reachable.has(`${x},${y}`)) {
 						return false; // Found unreachable tile - graph is disconnected
@@ -465,6 +523,8 @@ export function useGame(level: Level) {
 	function isWinState(tileStates: TileType[][], playerPos: Position): boolean {
 		let grassCount = 0; // Includes grass and low_sand
 		let dirtCount = 0;
+		let squirrelCount = 0;
+		let acornCount = 0;
 		let lastGrassPos: Position | null = null;
 
 		for (let y = 0; y < tileStates.length; y++) {
@@ -477,21 +537,27 @@ export function useGame(level: Level) {
 					lastGrassPos = { x, y };
 				} else if (t === TileType.DIRT) {
 					dirtCount++;
+				} else if (t === TileType.SQUIRREL) {
+					squirrelCount++;
+				} else if (t === TileType.ACORN) {
+					acornCount++;
 				}
 			}
 		}
 
-		// Win when exactly 1 grass/low_sand remains (player standing on it) and no dirt
+		// Win when exactly 1 grass/low_sand remains (player standing on it) and no dirt/squirrels/acorns
 		return (
 			grassCount === 1 &&
 			dirtCount === 0 &&
+			squirrelCount === 0 &&
+			acornCount === 0 &&
 			lastGrassPos !== null &&
 			lastGrassPos.x === playerPos.x &&
 			lastGrassPos.y === playerPos.y
 		);
 	}
 
-	// Count remaining grass, dirt, low_sand, and honey tiles
+	// Count remaining grass, dirt, low_sand, honey, squirrel, and acorn tiles
 	function countRemainingTiles(tileStates: TileType[][]): number {
 		let count = 0;
 		for (let y = 0; y < tileStates.length; y++) {
@@ -503,7 +569,9 @@ export function useGame(level: Level) {
 					t === TileType.GRASS ||
 					t === TileType.DIRT ||
 					t === TileType.LOW_SAND ||
-					t === TileType.HONEY
+					t === TileType.HONEY ||
+					t === TileType.SQUIRREL ||
+					t === TileType.ACORN
 				) {
 					count++;
 				}
@@ -524,6 +592,7 @@ export function useGame(level: Level) {
 		maxDepth: number,
 		iterations: { count: number },
 		simulatedTidePhase?: number,
+		simulatedAcorns?: number,
 	): { path: Position[] | null; timedOut: boolean } {
 		// Check iteration limit
 		iterations.count++;
@@ -541,9 +610,10 @@ export function useGame(level: Level) {
 			return { path: null, timedOut: false };
 		}
 
-		// Get valid moves (passing current tide phase)
+		// Get valid moves (passing current tide phase and acorn count)
 		const currentPhase = simulatedTidePhase ?? tidePhase.value;
-		const moves = getValidMovesForPathfinding(pos, tileStates, lilypads, currentPhase);
+		const currentAcorns = simulatedAcorns ?? collectedAcorns.value;
+		const moves = getValidMovesForPathfinding(pos, tileStates, lilypads, currentPhase, currentAcorns);
 
 		// Filter to moves that preserve connectivity
 		const validMoves: {
@@ -553,6 +623,7 @@ export function useGame(level: Level) {
 				newTiles: TileType[][];
 				newLilypads: Map<string, LilypadState>;
 				newTidePhase: number;
+				newAcorns: number;
 			};
 		}[] = [];
 
@@ -563,6 +634,7 @@ export function useGame(level: Level) {
 				tileStates,
 				lilypads,
 				currentPhase,
+				currentAcorns,
 			);
 
 			// Check if graph remains connected (pass new tide phase for LOW_SAND checks)
@@ -578,12 +650,22 @@ export function useGame(level: Level) {
 			}
 		}
 
-		// Prioritize moves that go to required tiles (grass/dirt/low_sand) and moves to tiles with fewer neighbors (forced moves)
+		// Prioritize moves that go to required tiles (grass/dirt/low_sand/acorn/squirrel) and moves to tiles with fewer neighbors (forced moves)
 		validMoves.sort((a, b) => {
 			const aType = tileStates[a.move.target.y]?.[a.move.target.x];
 			const bType = tileStates[b.move.target.y]?.[b.move.target.x];
-			const aRequired = aType === TileType.GRASS || aType === TileType.DIRT || aType === TileType.LOW_SAND;
-			const bRequired = bType === TileType.GRASS || bType === TileType.DIRT || bType === TileType.LOW_SAND;
+			const aRequired =
+				aType === TileType.GRASS ||
+				aType === TileType.DIRT ||
+				aType === TileType.LOW_SAND ||
+				aType === TileType.ACORN ||
+				aType === TileType.SQUIRREL;
+			const bRequired =
+				bType === TileType.GRASS ||
+				bType === TileType.DIRT ||
+				bType === TileType.LOW_SAND ||
+				bType === TileType.ACORN ||
+				bType === TileType.SQUIRREL;
 
 			// Prioritize required tiles
 			if (aRequired && !bRequired) return -1;
@@ -596,12 +678,14 @@ export function useGame(level: Level) {
 					a.simResult.newTiles,
 					a.simResult.newLilypads,
 					a.simResult.newTidePhase,
+					a.simResult.newAcorns,
 				).length;
 				const bNeighbors = getValidMovesForPathfinding(
 					b.move.target,
 					b.simResult.newTiles,
 					b.simResult.newLilypads,
 					b.simResult.newTidePhase,
+					b.simResult.newAcorns,
 				).length;
 				return aNeighbors - bNeighbors; // Prefer tiles with fewer exits (more constrained)
 			}
@@ -620,6 +704,7 @@ export function useGame(level: Level) {
 				maxDepth,
 				iterations,
 				simResult.newTidePhase,
+				simResult.newAcorns,
 			);
 
 			if (result.timedOut) {
@@ -668,11 +753,13 @@ export function useGame(level: Level) {
 
 	// Get valid moves for pathfinding
 	// simulatedTidePhase: current tide phase for determining LOW_SAND accessibility
+	// simulatedAcorns: current simulated acorn count for determining SQUIRREL accessibility
 	function getValidMovesForPathfinding(
 		pos: Position,
 		tileStates: TileType[][],
 		lilypads: Map<string, LilypadState>,
 		simulatedTidePhase?: number,
+		simulatedAcorns?: number,
 	): { target: Position; direction: Direction }[] {
 		const moves: { target: Position; direction: Direction }[] = [];
 		const directions: Direction[] = ["up", "down", "left", "right"];
@@ -685,6 +772,15 @@ export function useGame(level: Level) {
 		// Check if standing on honey (can't jump from honey)
 		const currentTileType = tileStates[pos.y]?.[pos.x];
 		const isOnHoney = currentTileType === TileType.HONEY;
+
+		// Current acorn count for squirrel checks
+		const acorns = simulatedAcorns ?? collectedAcorns.value;
+
+		// Helper to check if we can step onto a squirrel tile
+		const canStepOnSquirrel = (squirrelPos: Position): boolean => {
+			const requirement = getSquirrelRequirement(squirrelPos);
+			return acorns >= requirement;
+		};
 
 		for (const direction of directions) {
 			const delta = getDirectionDelta(direction);
@@ -706,6 +802,17 @@ export function useGame(level: Level) {
 						moves.push({ target: adjacentPos, direction });
 						continue;
 					}
+				} else if (adjTileType === TileType.ACORN) {
+					// Acorn tiles are always walkable (collect acorn on landing)
+					moves.push({ target: adjacentPos, direction });
+					continue;
+				} else if (adjTileType === TileType.SQUIRREL) {
+					// Squirrel tiles are walkable only if we have enough acorns
+					if (canStepOnSquirrel(adjacentPos)) {
+						moves.push({ target: adjacentPos, direction });
+						continue;
+					}
+					// If we can't step on squirrel, fall through to obstacle check
 				} else if (
 					adjTileType === TileType.GRASS ||
 					adjTileType === TileType.STONE ||
@@ -725,6 +832,8 @@ export function useGame(level: Level) {
 				// Can't jump from honey tiles
 				if (isOnHoney) continue;
 
+				// Note: Squirrels are NOT jumpable obstacles - you can never jump over them
+				// They completely block the path until you have enough acorns to walk to them directly
 				const isAdjacentObstacle =
 					adjTileType === TileType.BRAMBLE ||
 					adjTileType === TileType.MUSHROOM ||
@@ -752,6 +861,9 @@ export function useGame(level: Level) {
 							if (state && !state.submerged) {
 								moves.push({ target: jumpPos, direction });
 							}
+						} else if (jumpTileType === TileType.ACORN) {
+							// Can jump to acorn tiles
+							moves.push({ target: jumpPos, direction });
 						} else if (
 							jumpTileType === TileType.GRASS ||
 							jumpTileType === TileType.STONE ||
@@ -770,14 +882,24 @@ export function useGame(level: Level) {
 			}
 		}
 
-		// Prioritize moves to grass/dirt/low_sand tiles
+		// Prioritize moves to grass/dirt/low_sand/acorn/squirrel tiles (required tiles)
 		moves.sort((a, b) => {
 			const aType = tileStates[a.target.y]?.[a.target.x];
 			const bType = tileStates[b.target.y]?.[b.target.x];
-			const aPriority =
-				aType === TileType.GRASS || aType === TileType.DIRT || aType === TileType.LOW_SAND ? 0 : 1;
-			const bPriority =
-				bType === TileType.GRASS || bType === TileType.DIRT || bType === TileType.LOW_SAND ? 0 : 1;
+			const aRequired =
+				aType === TileType.GRASS ||
+				aType === TileType.DIRT ||
+				aType === TileType.LOW_SAND ||
+				aType === TileType.ACORN ||
+				aType === TileType.SQUIRREL;
+			const bRequired =
+				bType === TileType.GRASS ||
+				bType === TileType.DIRT ||
+				bType === TileType.LOW_SAND ||
+				bType === TileType.ACORN ||
+				bType === TileType.SQUIRREL;
+			const aPriority = aRequired ? 0 : 1;
+			const bPriority = bRequired ? 0 : 1;
 			return aPriority - bPriority;
 		});
 
@@ -791,12 +913,16 @@ export function useGame(level: Level) {
 		tileStates: TileType[][],
 		lilypads: Map<string, LilypadState>,
 		simulatedTidePhase?: number,
+		simulatedAcorns?: number,
 	): {
 		finalPos: Position;
 		newTiles: TileType[][];
 		newLilypads: Map<string, LilypadState>;
 		newTidePhase: number;
+		newAcorns: number;
 	} {
+		// Track acorn count
+		let acornCount = simulatedAcorns ?? collectedAcorns.value;
 		// Clone state
 		const newTileStates = tileStates.map((row) => [...row]);
 		const newLilypads = new Map<string, LilypadState>();
@@ -1088,7 +1214,22 @@ export function useGame(level: Level) {
 			}
 		}
 
-		return { finalPos, newTiles: newTileStates, newLilypads, newTidePhase };
+		// Handle landing on ACORN or SQUIRREL tiles
+		const landingTileType = newTileStates[finalPos.y]?.[finalPos.x];
+		if (landingTileType === TileType.ACORN) {
+			// Collect the acorn and convert tile to grass
+			acornCount++;
+			const row = newTileStates[finalPos.y];
+			if (row) row[finalPos.x] = TileType.GRASS;
+		} else if (landingTileType === TileType.SQUIRREL) {
+			// Feed the squirrel and convert tile to grass
+			const requirement = getSquirrelRequirement(finalPos);
+			acornCount -= requirement;
+			const row = newTileStates[finalPos.y];
+			if (row) row[finalPos.x] = TileType.GRASS;
+		}
+
+		return { finalPos, newTiles: newTileStates, newLilypads, newTidePhase, newAcorns: acornCount };
 	}
 
 	function computeSlideDestination(startPos: Position): {
@@ -1263,8 +1404,9 @@ export function useGame(level: Level) {
 
 		// Move to first position immediately so horizontal movement starts with vertical
 		let pathIndex = 1;
-		if (path[pathIndex]) {
-			playerPosition.value = path[pathIndex];
+		const firstPos = path[pathIndex];
+		if (firstPos) {
+			playerPosition.value = firstPos;
 			pathIndex++;
 		}
 
@@ -1463,6 +1605,38 @@ export function useGame(level: Level) {
 		return null;
 	}
 
+	// Handle landing on special tiles (acorn collection, squirrel feeding)
+	// Returns any additional tile changes for undo tracking
+	function handleLandingTile(position: Position): ChangedTile[] {
+		const tile = getTile(position);
+		if (!tile) return [];
+
+		const row = tiles.value[position.y];
+		const cell = row?.[position.x];
+		if (!cell) return [];
+
+		const changes: ChangedTile[] = [];
+
+		if (tile.type === TileType.ACORN) {
+			// Collect acorn and convert tile to grass
+			collectedAcorns.value += 1;
+			changes.push({ position: { ...position }, originalType: TileType.ACORN });
+			cell.type = TileType.GRASS;
+			showAcornPopup(1); // Show +1
+			playAcorn();
+		} else if (tile.type === TileType.SQUIRREL) {
+			// Feed squirrel and convert tile to grass
+			const required = getSquirrelRequirement(position);
+			collectedAcorns.value -= required;
+			changes.push({ position: { ...position }, originalType: TileType.SQUIRREL });
+			cell.type = TileType.GRASS;
+			showAcornPopup(-required); // Show -X
+			playSquirrel();
+		}
+
+		return changes;
+	}
+
 	function plantMushroom(position: Position) {
 		const tile = getTile(position);
 		if (!tile) return;
@@ -1497,7 +1671,7 @@ export function useGame(level: Level) {
 			// Clear after animation completes
 			setTimeout(() => {
 				lastCleanedPosition.value = null;
-			}, 500);
+			}, 800);
 		} else if (tile.type === TileType.HONEY) {
 			// Honey becomes honey_mushroom when left (shows honey underneath)
 			cell.type = TileType.HONEY_MUSHROOM;
@@ -1556,27 +1730,31 @@ export function useGame(level: Level) {
 	}
 
 	function checkWinCondition(): boolean {
-		// Win when standing on the only remaining grass/low_sand tile and no dirt tiles remain
-		let grassCount = 0; // Includes grass and low_sand
+		// Win when standing on the only remaining grass/low_sand/acorn tile and no dirt/squirrel tiles remain
+		let grassCount = 0; // Includes grass, low_sand, acorn
 		let dirtCount = 0;
+		let squirrelCount = 0;
 		let lastGrassPos: Position | null = null;
 
 		for (const row of tiles.value) {
 			for (const tile of row) {
 				if (
 					tile.type === TileType.GRASS ||
-					tile.type === TileType.LOW_SAND
+					tile.type === TileType.LOW_SAND ||
+					tile.type === TileType.ACORN
 				) {
 					grassCount++;
 					lastGrassPos = tile.position;
 				} else if (tile.type === TileType.DIRT) {
 					dirtCount++;
+				} else if (tile.type === TileType.SQUIRREL) {
+					squirrelCount++;
 				}
 			}
 		}
 
-		// Win if there's exactly one grass/low_sand tile, no dirt tiles, and player is on it
-		if (grassCount === 1 && dirtCount === 0 && lastGrassPos) {
+		// Win if there's exactly one grass-like tile, no dirt tiles, no squirrels, and player is on it
+		if (grassCount === 1 && dirtCount === 0 && squirrelCount === 0 && lastGrassPos) {
 			return (
 				lastGrassPos.x === playerPosition.value.x &&
 				lastGrassPos.y === playerPosition.value.y
@@ -1610,17 +1788,29 @@ export function useGame(level: Level) {
 		const dy = Math.abs(newPosition.y - playerPosition.value.y);
 		const isJump = dx === 2 || dy === 2;
 
-		// Save history before moving
+		// Save history before moving (including acorn count for undo)
 		const currentPos = { ...playerPosition.value };
-		moveHistory.value.push({
+		const historyEntry: MoveHistory = {
 			playerPosition: currentPos,
 			tileState: currentTile?.type ?? TileType.GRASS,
 			lilypadSnapshot: cloneLilypadState(),
 			tidePhase: tidePhase.value,
-		});
+			collectedAcorns: collectedAcorns.value,
+		};
 
 		isHopping.value = true;
 		plantMushroom(playerPosition.value);
+
+		// Handle landing on acorn/squirrel tiles (changes tile type and updates acorn count)
+		const landingChanges = handleLandingTile(newPosition);
+		if (landingChanges.length > 0) {
+			historyEntry.additionalChanges = [
+				...(historyEntry.additionalChanges ?? []),
+				...landingChanges,
+			];
+		}
+
+		moveHistory.value.push(historyEntry);
 
 		// Play jump sound if jumping
 		if (isJump) {
@@ -2208,12 +2398,15 @@ export function useGame(level: Level) {
 		let count = 0;
 		for (const row of tiles.value) {
 			for (const tile of row) {
-				// Count grass, low_sand, honey, and dirt tiles (dirt counts as 2 since it needs two visits)
+				// Count grass, low_sand, honey, acorn, squirrel, and dirt tiles
+				// Dirt counts as 2 since it needs two visits
 				// Portal tiles don't count - they stay as portals and can be reused
 				if (
 					tile.type === TileType.GRASS ||
 					tile.type === TileType.LOW_SAND ||
-					tile.type === TileType.HONEY
+					tile.type === TileType.HONEY ||
+					tile.type === TileType.ACORN ||
+					tile.type === TileType.SQUIRREL
 				) {
 					count++;
 				} else if (tile.type === TileType.DIRT) {
@@ -2402,6 +2595,11 @@ export function useGame(level: Level) {
 			tidePhase.value = lastMove.tidePhase;
 		}
 
+		// Restore acorn count from snapshot
+		if (lastMove.collectedAcorns !== undefined) {
+			collectedAcorns.value = lastMove.collectedAcorns;
+		}
+
 		// Restore the tile at current position (remove mushroom if it was planted)
 		// Stone tiles never have mushrooms planted, so only restore MUSHROOM -> GRASS,
 		// SAND_MUSHROOM -> LOW_SAND, and HONEY_MUSHROOM -> HONEY
@@ -2469,5 +2667,9 @@ export function useGame(level: Level) {
 		isLowSandFlooded,
 		getMovesUntilFlood,
 		TIDE_PERIOD,
+		// Acorn/squirrel state
+		collectedAcorns,
+		getSquirrelRequirement,
+		acornPopupValue,
 	};
 }

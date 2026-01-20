@@ -114,6 +114,17 @@ const emit = defineEmits<{
             <!-- Highlight -->
             <ellipse cx="9" cy="14" rx="1.5" ry="2" fill="#ffe082" opacity="0.6"/>
           </svg>
+          <!-- Acorn icon -->
+          <svg v-else-if="element === WE.ACORN" viewBox="0 0 24 24" class="element-svg element-svg--acorn" title="Acorn">
+            <!-- Acorn cap -->
+            <ellipse cx="12" cy="8" rx="7" ry="5" fill="#8B4513"/>
+            <!-- Cap stem -->
+            <rect x="11" y="2" width="2" height="4" rx="1" fill="#654321"/>
+            <!-- Acorn body -->
+            <ellipse cx="12" cy="16" rx="6" ry="7" fill="currentColor"/>
+            <!-- Highlight -->
+            <ellipse cx="9" cy="14" rx="2" ry="3" fill="#E89040" opacity="0.5"/>
+          </svg>
         </div>
       </div>
 
@@ -420,6 +431,10 @@ const emit = defineEmits<{
 
 .element-svg--honey {
   color: #f0a830;
+}
+
+.element-svg--acorn {
+  color: #D2691E;
 }
 
 .sound-controls {

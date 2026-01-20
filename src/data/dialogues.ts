@@ -685,6 +685,57 @@ export const honeyIntroDialogue: DialogueScene = {
 	],
 };
 
+// Acorn intro - squirrels need acorns to pass
+export const acornIntroDialogue: DialogueScene = {
+	id: "acorn-intro",
+	background: "",
+	leftCharacter: "sprout",
+	rightCharacter: "dew",
+	overlay: true,
+	lines: [
+		{
+			speaker: "sprout",
+			name: "Sprout",
+			text: "ooh look at all the pretty autumn leaves~! but... theres a squirrel blocking the path!",
+			leftSprite: "MushroomGirl-Excited",
+			rightSprite: "BlueGirl-Normal",
+			leftHighlight: true,
+		},
+		{
+			speaker: "dew",
+			name: "Dew",
+			text: "squirrels are super hungry this time of year! theyre collecting food for winter~",
+			leftSprite: "MushroomGirl-Excited",
+			rightSprite: "BlueGirl-Thinking",
+			rightHighlight: true,
+		},
+		{
+			speaker: "sprout",
+			name: "Sprout",
+			text: "aww the little number on them must be how many acorns they need!",
+			leftSprite: "MushroomGirl-Happy",
+			rightSprite: "BlueGirl-Thinking",
+			leftHighlight: true,
+		},
+		{
+			speaker: "dew",
+			name: "Dew",
+			text: "exactly! pick up acorns as you hop around and bring them to the squirrels~",
+			leftSprite: "MushroomGirl-Happy",
+			rightSprite: "BlueGirl-Laughing",
+			rightHighlight: true,
+		},
+		{
+			speaker: "sprout",
+			name: "Sprout",
+			text: "once they have enough theyll scurry off happy! then i can plant mushrooms there too~",
+			leftSprite: "MushroomGirl-Confident",
+			rightSprite: "BlueGirl-Laughing",
+			leftHighlight: true,
+		},
+	],
+};
+
 // Map mechanic types to their intro dialogues
 export const mechanicDialogues: Record<string, DialogueScene> = {
 	ice: iceIntroDialogue,
@@ -695,6 +746,7 @@ export const mechanicDialogues: Record<string, DialogueScene> = {
 	tides: tidesIntroDialogue,
 	bounce: bounceIntroDialogue,
 	honey: honeyIntroDialogue,
+	acorn: acornIntroDialogue,
 };
 
 // Random adventure scenes - short moments between Sprout and Dew

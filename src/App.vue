@@ -158,6 +158,22 @@ const bounceWorldNames = [
 	"Jumpy Junction",
 ];
 
+const autumnWorldNames = [
+	"Amber Arbor",
+	"Fallen Leaf Lane",
+	"Crimson Canopy",
+	"Harvest Hollow",
+	"Acorn Alley",
+	"Russet Ridge",
+	"Golden Grove",
+	"Chestnut Chase",
+	"Maple Meadow",
+	"Squirrel's Sanctuary",
+	"Copper Clearing",
+	"Tawny Trail",
+	"Pumpkin Patch Path",
+];
+
 const gameStarted = ref(false);
 const currentLevel = ref<Level>(level1);
 const levelKey = ref(0);
@@ -231,6 +247,8 @@ function getMechanicKey(element: WorldElement): string {
 			return "bounce";
 		case WE.HONEY:
 			return "honey";
+		case WE.ACORN:
+			return "acorn";
 		default:
 			return "";
 	}
@@ -397,6 +415,7 @@ const swampNameOffset = ref(Math.floor(Math.random() * swampWorldNames.length));
 const nightNameOffset = ref(Math.floor(Math.random() * nightWorldNames.length));
 const beachNameOffset = ref(Math.floor(Math.random() * beachWorldNames.length));
 const bounceNameOffset = ref(Math.floor(Math.random() * bounceWorldNames.length));
+const autumnNameOffset = ref(Math.floor(Math.random() * autumnWorldNames.length));
 
 // Save game progress to localStorage
 const SAVE_KEY = "mushroom-path-progress";
@@ -412,6 +431,7 @@ interface SavedProgress {
 	swampNameOffset: number;
 	nightNameOffset: number;
 	beachNameOffset: number;
+	autumnNameOffset: number;
 	totalMushroomsPlanted: number;
 }
 
@@ -430,6 +450,7 @@ function saveProgress(): void {
 		swampNameOffset: swampNameOffset.value,
 		nightNameOffset: nightNameOffset.value,
 		beachNameOffset: beachNameOffset.value,
+		autumnNameOffset: autumnNameOffset.value,
 		totalMushroomsPlanted: totalMushroomsPlanted.value,
 	};
 	localStorage.setItem(SAVE_KEY, JSON.stringify(progress));
@@ -462,19 +483,22 @@ const allElements: WorldElement[] = [
 	WE.POND,
 	WE.TIDES,
 	WE.BOUNCE,
+	WE.ACORN,
 ];
 
-// Update body class based on current biome (ice takes priority, then beach, then pond/night, then swamp)
+// Update body class based on current biome (ice takes priority, then beach, then pond/night, then autumn, then swamp)
 watch(
 	currentWorldElements,
 	(elements) => {
-		document.body.classList.remove("biome-ice", "biome-swamp", "biome-night", "biome-beach");
+		document.body.classList.remove("biome-ice", "biome-swamp", "biome-night", "biome-beach", "biome-autumn");
 		if (elements.includes(WE.ICE)) {
 			document.body.classList.add("biome-ice");
 		} else if (elements.includes(WE.TIDES)) {
 			document.body.classList.add("biome-beach");
 		} else if (elements.includes(WE.POND)) {
 			document.body.classList.add("biome-night");
+		} else if (elements.includes(WE.ACORN)) {
+			document.body.classList.add("biome-autumn");
 		} else if (elements.includes(WE.DIRT)) {
 			document.body.classList.add("biome-swamp");
 		}
@@ -566,6 +590,9 @@ function generateWorldElementsInner(): WorldElement[] {
 		[WE.TIDES, WE.ICE], // Beach and frozen don't mix
 		[WE.TIDES, WE.POND], // Too much water mechanics confusion
 		[WE.TIDES, WE.RIVERS], // Too much water mechanics confusion
+		[WE.ACORN, WE.ICE], // Autumn doesn't mix with frozen
+		[WE.ACORN, WE.POND], // Autumn doesn't mix with night/lily-pads
+		[WE.ACORN, WE.TIDES], // Autumn doesn't mix with beach
 	];
 
 	for (const [a, b] of incompatiblePairs) {
@@ -584,7 +611,7 @@ function generateWorldElementsInner(): WorldElement[] {
 }
 
 const currentWorldName = computed(() => {
-	// Select name list based on biome (ice takes priority, then beach, then night, then swamp)
+	// Select name list based on biome (ice takes priority, then beach, then night, then autumn, then swamp)
 	if (currentWorldElements.value.includes(WE.ICE)) {
 		const index =
 			(currentWorldIndex.value + iceNameOffset.value) % iceWorldNames.length;
@@ -599,6 +626,11 @@ const currentWorldName = computed(() => {
 			(currentWorldIndex.value + nightNameOffset.value) %
 			nightWorldNames.length;
 		return nightWorldNames[index] ?? "Moonlit Marsh";
+	} else if (currentWorldElements.value.includes(WE.ACORN)) {
+		const index =
+			(currentWorldIndex.value + autumnNameOffset.value) %
+			autumnWorldNames.length;
+		return autumnWorldNames[index] ?? "Amber Arbor";
 	} else if (currentWorldElements.value.includes(WE.DIRT)) {
 		const index =
 			(currentWorldIndex.value + swampNameOffset.value) %
@@ -1151,6 +1183,7 @@ async function handleContinue() {
 	swampNameOffset.value = saved.swampNameOffset;
 	nightNameOffset.value = saved.nightNameOffset;
 	beachNameOffset.value = saved.beachNameOffset ?? 0;
+	autumnNameOffset.value = saved.autumnNameOffset ?? 0;
 	totalMushroomsPlanted.value = saved.totalMushroomsPlanted ?? 0;
 
 	// Set the level queue to use the current world elements
@@ -1604,6 +1637,7 @@ watch(isPlayerStuck, (isStuck) => {
         :has-dirt-element="currentWorldElements.includes(WE.DIRT)"
         :has-pond-element="currentWorldElements.includes(WE.POND)"
         :has-tides-element="currentWorldElements.includes(WE.TIDES)"
+        :has-acorn-element="currentWorldElements.includes(WE.ACORN)"
         :hint-tiles="hintTiles"
         :stuck-tiles="stuckTiles"
         :disabled="!!currentDialogue || isHelpModeBlocked"

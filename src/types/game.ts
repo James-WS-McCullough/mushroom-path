@@ -22,6 +22,9 @@ export const TileType = {
 	// Honey
 	HONEY: "honey", // Sticky tile - can walk off but cannot jump from here
 	HONEY_MUSHROOM: "honey_mushroom", // Mushroom planted on honey - shows honey underneath
+	// Acorn/Autumn tiles
+	ACORN: "acorn", // Collectible - gives player an acorn when landed on
+	SQUIRREL: "squirrel", // Obstacle that requires acorns to pass, becomes grass when fed
 } as const;
 
 export type TileType = (typeof TileType)[keyof typeof TileType];
@@ -54,6 +57,7 @@ export interface Level {
 	rooms?: Room[];
 	waterFlow?: Record<string, FlowDirection>; // key: "x,y" -> flow direction
 	solutionPath?: Position[]; // Pre-computed winning path from level generation
+	squirrelRequirements?: Record<string, number>; // key: "x,y" -> acorns required (1-3)
 }
 
 export interface GameState {
@@ -74,6 +78,7 @@ export const WorldElement = {
 	TIDES: "tides",
 	BOUNCE: "bounce",
 	HONEY: "honey",
+	ACORN: "acorn", // Autumn biome - squirrels need acorns to pass
 } as const;
 
 export type WorldElement = (typeof WorldElement)[keyof typeof WorldElement];
