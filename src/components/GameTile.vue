@@ -104,6 +104,35 @@ const tileClass = computed(() => {
 		"tile--sea-receding": props.tile.type === TileType.SEA && isTideReceding.value,
 		// Bounce pad
 		"tile--bounce-pad": props.tile.type === TileType.BOUNCE_PAD,
+		// Honey
+		"tile--honey": props.tile.type === TileType.HONEY,
+		"tile--honey-mushroom": props.tile.type === TileType.HONEY_MUSHROOM,
+		// Honey biome variants (grass background for HONEY tiles)
+		"tile--honey-frosty":
+			props.hasIceElement && props.tile.type === TileType.HONEY,
+		"tile--honey-night":
+			isNightBiome && props.tile.type === TileType.HONEY,
+		"tile--honey-beach":
+			isBeachBiome && props.tile.type === TileType.HONEY,
+		"tile--honey-swamp":
+			!props.hasIceElement &&
+			!isNightBiome &&
+			!isBeachBiome &&
+			props.hasDirtElement &&
+			props.tile.type === TileType.HONEY,
+		// Honey mushroom biome variants (mushroom background for HONEY_MUSHROOM tiles)
+		"tile--honey-mushroom-frosty":
+			props.hasIceElement && props.tile.type === TileType.HONEY_MUSHROOM,
+		"tile--honey-mushroom-night":
+			isNightBiome && props.tile.type === TileType.HONEY_MUSHROOM,
+		"tile--honey-mushroom-beach":
+			isBeachBiome && props.tile.type === TileType.HONEY_MUSHROOM,
+		"tile--honey-mushroom-swamp":
+			!props.hasIceElement &&
+			!isNightBiome &&
+			!isBeachBiome &&
+			props.hasDirtElement &&
+			props.tile.type === TileType.HONEY_MUSHROOM,
 		// Sand mushroom (mushroom planted on low sand)
 		"tile--sand-mushroom": props.tile.type === TileType.SAND_MUSHROOM,
 		"tile--sand-mushroom-flooded":
@@ -189,6 +218,18 @@ const mushroomVariant = computed(() => {
 const brambleVariant = computed(() => {
 	const hash = props.tile.position.x * 11 + props.tile.position.y * 17;
 	return hash % 6;
+});
+
+// Deterministic honey splatter variant based on position (0-3)
+const honeyVariant = computed(() => {
+	const hash = props.tile.position.x * 19 + props.tile.position.y * 23;
+	return hash % 4;
+});
+
+// Deterministic dirt layout variant based on position (0-3)
+const dirtVariant = computed(() => {
+	const hash = props.tile.position.x * 29 + props.tile.position.y * 31;
+	return hash % 4;
 });
 
 // Deterministic pond water variant based on position (0-4)
@@ -304,11 +345,38 @@ function handleClick() {
 
     <!-- Dirt tile details -->
     <div v-if="tile.type === TileType.DIRT" class="dirt-detail">
-      <div class="dirt-clump dirt-clump--1"></div>
-      <div class="dirt-clump dirt-clump--2"></div>
-      <div class="dirt-clump dirt-clump--3"></div>
-      <div class="dirt-rock dirt-rock--1"></div>
-      <div class="dirt-rock dirt-rock--2"></div>
+      <!-- Variant 0: Original layout - clumps top-left, bottom-right, center -->
+      <template v-if="dirtVariant === 0">
+        <div class="dirt-clump dirt-clump--1"></div>
+        <div class="dirt-clump dirt-clump--2"></div>
+        <div class="dirt-clump dirt-clump--3"></div>
+        <div class="dirt-rock dirt-rock--1"></div>
+        <div class="dirt-rock dirt-rock--2"></div>
+      </template>
+      <!-- Variant 1: Diagonal stripe - top-right to bottom-left -->
+      <template v-else-if="dirtVariant === 1">
+        <div class="dirt-clump dirt-clump--v1-1"></div>
+        <div class="dirt-clump dirt-clump--v1-2"></div>
+        <div class="dirt-clump dirt-clump--v1-3"></div>
+        <div class="dirt-rock dirt-rock--v1-1"></div>
+        <div class="dirt-rock dirt-rock--v1-2"></div>
+      </template>
+      <!-- Variant 2: Scattered small patches with more rocks -->
+      <template v-else-if="dirtVariant === 2">
+        <div class="dirt-clump dirt-clump--v2-1"></div>
+        <div class="dirt-clump dirt-clump--v2-2"></div>
+        <div class="dirt-rock dirt-rock--v2-1"></div>
+        <div class="dirt-rock dirt-rock--v2-2"></div>
+        <div class="dirt-rock dirt-rock--v2-3"></div>
+        <div class="dirt-rock dirt-rock--v2-4"></div>
+      </template>
+      <!-- Variant 3: Large central patch -->
+      <template v-else>
+        <div class="dirt-clump dirt-clump--v3-1"></div>
+        <div class="dirt-clump dirt-clump--v3-2"></div>
+        <div class="dirt-clump dirt-clump--v3-3"></div>
+        <div class="dirt-rock dirt-rock--v3-1"></div>
+      </template>
     </div>
 
     <!-- Water tile with ripples, flow lines, and chevrons -->
@@ -475,6 +543,260 @@ function handleClick() {
       <!-- Ripple effect when activated -->
       <div v-if="isBounceActivated" class="bounce-ripple"></div>
       <div v-if="isBounceActivated" class="bounce-ripple bounce-ripple--delayed"></div>
+    </div>
+
+    <!-- Honey tile - golden honey splatter on grass -->
+    <div v-if="tile.type === TileType.HONEY" class="honey-detail">
+      <svg class="honey-splatter" viewBox="0 0 100 100" preserveAspectRatio="none">
+        <defs>
+          <radialGradient id="honeyGradient" cx="40%" cy="35%" r="65%">
+            <stop offset="0%" stop-color="#ffca28" stop-opacity="0.92" />
+            <stop offset="50%" stop-color="#ffa000" stop-opacity="0.88" />
+            <stop offset="100%" stop-color="#ff8f00" stop-opacity="0.82" />
+          </radialGradient>
+        </defs>
+        <!-- Variant 0: Single large blob -->
+        <g v-if="honeyVariant === 0">
+          <path
+            class="honey-path"
+            d="M48,8
+               C58,6 68,10 76,16
+               Q82,22 85,32
+               C88,42 92,48 88,58
+               Q84,68 80,75
+               C74,84 65,90 55,92
+               Q45,94 38,90
+               C28,86 20,82 15,72
+               Q10,62 8,50
+               C6,38 10,26 18,18
+               Q26,10 38,8
+               C42,7 45,8 48,8 Z"
+            fill="url(#honeyGradient)"
+          />
+        </g>
+        <!-- Variant 1: Two medium blobs -->
+        <g v-else-if="honeyVariant === 1">
+          <path
+            class="honey-path"
+            d="M35,15
+               C45,12 55,18 58,28
+               Q60,38 55,48
+               C50,58 38,60 28,55
+               Q18,50 18,38
+               C18,26 25,18 35,15 Z"
+            fill="url(#honeyGradient)"
+          />
+          <path
+            class="honey-path"
+            d="M65,45
+               C75,42 85,50 85,62
+               Q85,74 75,80
+               C65,86 52,82 50,70
+               Q48,58 55,50
+               C58,46 62,46 65,45 Z"
+            fill="url(#honeyGradient)"
+          />
+        </g>
+        <!-- Variant 2: One large + two small drops -->
+        <g v-else-if="honeyVariant === 2">
+          <path
+            class="honey-path"
+            d="M50,20
+               C62,18 72,25 75,38
+               Q78,51 70,62
+               C62,73 48,75 38,68
+               Q28,61 28,48
+               C28,35 38,22 50,20 Z"
+            fill="url(#honeyGradient)"
+          />
+          <ellipse class="honey-path" cx="22" cy="30" rx="12" ry="10" fill="url(#honeyGradient)" />
+          <ellipse class="honey-path" cx="78" cy="75" rx="10" ry="12" fill="url(#honeyGradient)" />
+        </g>
+        <!-- Variant 3: Three scattered drops -->
+        <g v-else>
+          <path
+            class="honey-path"
+            d="M30,18
+               C40,15 48,22 48,32
+               Q48,42 40,48
+               C32,54 20,50 18,40
+               Q16,30 22,22
+               C25,18 28,18 30,18 Z"
+            fill="url(#honeyGradient)"
+          />
+          <path
+            class="honey-path"
+            d="M68,35
+               C78,33 86,42 84,52
+               Q82,62 72,65
+               C62,68 55,60 56,50
+               Q57,40 64,36
+               C66,35 67,35 68,35 Z"
+            fill="url(#honeyGradient)"
+          />
+          <path
+            class="honey-path"
+            d="M45,62
+               C55,60 62,68 60,78
+               Q58,88 48,90
+               C38,92 32,84 34,74
+               Q36,64 42,62
+               C44,61 45,62 45,62 Z"
+            fill="url(#honeyGradient)"
+          />
+        </g>
+      </svg>
+      <div class="honey-shine"></div>
+    </div>
+
+    <!-- Honey mushroom tile (mushroom planted on honey) -->
+    <div v-if="tile.type === TileType.HONEY_MUSHROOM" class="honey-mushroom-detail">
+      <!-- Honey splatter visible underneath -->
+      <svg class="honey-splatter honey-splatter--under" viewBox="0 0 100 100" preserveAspectRatio="none">
+        <defs>
+          <radialGradient id="honeyGradientUnder" cx="40%" cy="35%" r="65%">
+            <stop offset="0%" stop-color="#ffca28" stop-opacity="0.88" />
+            <stop offset="50%" stop-color="#ffa000" stop-opacity="0.82" />
+            <stop offset="100%" stop-color="#ff8f00" stop-opacity="0.75" />
+          </radialGradient>
+        </defs>
+        <!-- Variant 0: Single large blob -->
+        <g v-if="honeyVariant === 0">
+          <path
+            class="honey-path"
+            d="M48,8
+               C58,6 68,10 76,16
+               Q82,22 85,32
+               C88,42 92,48 88,58
+               Q84,68 80,75
+               C74,84 65,90 55,92
+               Q45,94 38,90
+               C28,86 20,82 15,72
+               Q10,62 8,50
+               C6,38 10,26 18,18
+               Q26,10 38,8
+               C42,7 45,8 48,8 Z"
+            fill="url(#honeyGradientUnder)"
+          />
+        </g>
+        <!-- Variant 1: Two medium blobs -->
+        <g v-else-if="honeyVariant === 1">
+          <path
+            class="honey-path"
+            d="M35,15
+               C45,12 55,18 58,28
+               Q60,38 55,48
+               C50,58 38,60 28,55
+               Q18,50 18,38
+               C18,26 25,18 35,15 Z"
+            fill="url(#honeyGradientUnder)"
+          />
+          <path
+            class="honey-path"
+            d="M65,45
+               C75,42 85,50 85,62
+               Q85,74 75,80
+               C65,86 52,82 50,70
+               Q48,58 55,50
+               C58,46 62,46 65,45 Z"
+            fill="url(#honeyGradientUnder)"
+          />
+        </g>
+        <!-- Variant 2: One large + two small drops -->
+        <g v-else-if="honeyVariant === 2">
+          <path
+            class="honey-path"
+            d="M50,20
+               C62,18 72,25 75,38
+               Q78,51 70,62
+               C62,73 48,75 38,68
+               Q28,61 28,48
+               C28,35 38,22 50,20 Z"
+            fill="url(#honeyGradientUnder)"
+          />
+          <ellipse class="honey-path" cx="22" cy="30" rx="12" ry="10" fill="url(#honeyGradientUnder)" />
+          <ellipse class="honey-path" cx="78" cy="75" rx="10" ry="12" fill="url(#honeyGradientUnder)" />
+        </g>
+        <!-- Variant 3: Three scattered drops -->
+        <g v-else>
+          <path
+            class="honey-path"
+            d="M30,18
+               C40,15 48,22 48,32
+               Q48,42 40,48
+               C32,54 20,50 18,40
+               Q16,30 22,22
+               C25,18 28,18 30,18 Z"
+            fill="url(#honeyGradientUnder)"
+          />
+          <path
+            class="honey-path"
+            d="M68,35
+               C78,33 86,42 84,52
+               Q82,62 72,65
+               C62,68 55,60 56,50
+               Q57,40 64,36
+               C66,35 67,35 68,35 Z"
+            fill="url(#honeyGradientUnder)"
+          />
+          <path
+            class="honey-path"
+            d="M45,62
+               C55,60 62,68 60,78
+               Q58,88 48,90
+               C38,92 32,84 34,74
+               Q36,64 42,62
+               C44,61 45,62 45,62 Z"
+            fill="url(#honeyGradientUnder)"
+          />
+        </g>
+      </svg>
+      <!-- Mushroom on top with pop animation -->
+      <div :class="['honey-mushroom-container', { 'mushroom--pop': isJustPlanted }]">
+        <!-- Variant 0: Single tan mushroom -->
+        <div v-if="mushroomVariant === 0" class="mushroom mushroom--tan">
+          <div class="mushroom__cap"></div>
+          <div class="mushroom__stem"></div>
+        </div>
+        <!-- Variant 1: Single red mushroom -->
+        <div v-else-if="mushroomVariant === 1" class="mushroom mushroom--red">
+          <div class="mushroom__cap">
+            <div class="mushroom__spots"></div>
+          </div>
+          <div class="mushroom__stem"></div>
+        </div>
+        <!-- Variant 2: Double tan mushrooms -->
+        <div v-else-if="mushroomVariant === 2" class="mushroom-cluster">
+          <div class="mushroom mushroom--tan mushroom--small mushroom--left">
+            <div class="mushroom__cap"></div>
+            <div class="mushroom__stem"></div>
+          </div>
+          <div class="mushroom mushroom--tan mushroom--small mushroom--right">
+            <div class="mushroom__cap"></div>
+            <div class="mushroom__stem"></div>
+          </div>
+        </div>
+        <!-- Variant 3: Single purple mushroom -->
+        <div v-else-if="mushroomVariant === 3" class="mushroom mushroom--purple">
+          <div class="mushroom__cap"></div>
+          <div class="mushroom__stem"></div>
+        </div>
+        <!-- Variant 4: Triple small mushrooms -->
+        <div v-else class="mushroom-cluster mushroom-cluster--triple">
+          <div class="mushroom mushroom--tiny mushroom--tan">
+            <div class="mushroom__cap"></div>
+            <div class="mushroom__stem"></div>
+          </div>
+          <div class="mushroom mushroom--tiny mushroom--red">
+            <div class="mushroom__cap"></div>
+            <div class="mushroom__stem"></div>
+          </div>
+          <div class="mushroom mushroom--tiny mushroom--tan">
+            <div class="mushroom__cap"></div>
+            <div class="mushroom__stem"></div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Sand mushroom tile (mushroom planted on tidal sand) -->
@@ -1300,6 +1622,122 @@ function handleClick() {
   right: 28px;
 }
 
+/* Dirt Variant 1: Diagonal stripe - top-right to bottom-left */
+.dirt-clump--v1-1 {
+  width: 26px;
+  height: 20px;
+  top: 6px;
+  right: 8px;
+  transform: rotate(12deg);
+}
+
+.dirt-clump--v1-2 {
+  width: 30px;
+  height: 22px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-8deg);
+}
+
+.dirt-clump--v1-3 {
+  width: 24px;
+  height: 18px;
+  bottom: 8px;
+  left: 6px;
+  transform: rotate(5deg);
+}
+
+.dirt-rock--v1-1 {
+  width: 7px;
+  height: 5px;
+  top: 12px;
+  left: 14px;
+}
+
+.dirt-rock--v1-2 {
+  width: 6px;
+  height: 5px;
+  bottom: 14px;
+  right: 16px;
+}
+
+/* Dirt Variant 2: Scattered small patches with more rocks */
+.dirt-clump--v2-1 {
+  width: 22px;
+  height: 16px;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%) rotate(-6deg);
+}
+
+.dirt-clump--v2-2 {
+  width: 20px;
+  height: 14px;
+  bottom: 10px;
+  left: 8px;
+  transform: rotate(10deg);
+}
+
+.dirt-rock--v2-1 {
+  width: 9px;
+  height: 7px;
+  top: 28px;
+  left: 10px;
+}
+
+.dirt-rock--v2-2 {
+  width: 8px;
+  height: 6px;
+  top: 20px;
+  right: 8px;
+}
+
+.dirt-rock--v2-3 {
+  width: 7px;
+  height: 5px;
+  bottom: 12px;
+  right: 12px;
+}
+
+.dirt-rock--v2-4 {
+  width: 6px;
+  height: 5px;
+  bottom: 26px;
+  right: 30px;
+}
+
+/* Dirt Variant 3: Large central patch */
+.dirt-clump--v3-1 {
+  width: 36px;
+  height: 26px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-3deg);
+}
+
+.dirt-clump--v3-2 {
+  width: 18px;
+  height: 14px;
+  top: 6px;
+  left: 6px;
+  transform: rotate(15deg);
+}
+
+.dirt-clump--v3-3 {
+  width: 16px;
+  height: 12px;
+  bottom: 8px;
+  right: 10px;
+  transform: rotate(-10deg);
+}
+
+.dirt-rock--v3-1 {
+  width: 8px;
+  height: 6px;
+  bottom: 10px;
+  left: 14px;
+}
+
 /* Frosty dirt tile (ice biome) - frosty grass with mud */
 .tile--frosty-dirt {
   background:
@@ -1880,6 +2318,10 @@ function handleClick() {
 
 .sand-mushroom-container.mushroom--pop {
   animation: sandMushroomPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.honey-mushroom-container.mushroom--pop {
+  animation: mushroomPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
 @keyframes mushroomPop {
@@ -3490,6 +3932,213 @@ function handleClick() {
     transform: translate(-50%, -50%) scale(4);
     opacity: 0;
   }
+}
+
+/* ========== HONEY TILES ========== */
+/* Honey tiles use EXACT same grass colors as the biomes */
+.tile--honey {
+  /* Default grass base - matches .tile--grass exactly */
+  background:
+    radial-gradient(circle at 20% 80%, rgba(120, 180, 100, 0.4) 0%, transparent 30%),
+    radial-gradient(circle at 80% 20%, rgba(140, 200, 120, 0.3) 0%, transparent 25%),
+    linear-gradient(135deg, #7cb668 0%, #5a9a4a 100%);
+}
+
+/* Honey mushroom uses MUSHROOM colors (darker than grass) */
+.tile--honey-mushroom {
+  /* Default mushroom base - matches .tile--mushroom exactly */
+  background:
+    radial-gradient(circle at 20% 80%, rgba(90, 140, 70, 0.4) 0%, transparent 30%),
+    linear-gradient(135deg, #5a9a4a 0%, #4a8040 100%);
+}
+
+/* Biome variants for honey tiles - match exact biome grass colors */
+.tile--honey-frosty {
+  /* Matches .tile--frosty exactly */
+  background:
+    radial-gradient(circle at 20% 80%, rgba(220, 225, 245, 0.5) 0%, transparent 30%),
+    radial-gradient(circle at 80% 20%, rgba(235, 240, 255, 0.4) 0%, transparent 25%),
+    linear-gradient(135deg, #c8d0e8 0%, #b0b8d0 100%);
+}
+
+.tile--honey-night {
+  /* Matches .tile--night exactly */
+  background:
+    radial-gradient(circle at 20% 80%, rgba(50, 90, 70, 0.4) 0%, transparent 30%),
+    radial-gradient(circle at 80% 20%, rgba(60, 100, 80, 0.3) 0%, transparent 25%),
+    linear-gradient(135deg, #2a5848 0%, #1e4838 100%);
+}
+
+.tile--honey-beach {
+  /* Beach uses default grass colors */
+  background:
+    radial-gradient(circle at 20% 80%, rgba(120, 180, 100, 0.4) 0%, transparent 30%),
+    radial-gradient(circle at 80% 20%, rgba(140, 200, 120, 0.3) 0%, transparent 25%),
+    linear-gradient(135deg, #7cb668 0%, #5a9a4a 100%);
+}
+
+.tile--honey-swamp {
+  /* Matches .tile--swamp exactly */
+  background:
+    radial-gradient(circle at 20% 80%, rgba(60, 90, 50, 0.5) 0%, transparent 30%),
+    radial-gradient(circle at 80% 20%, rgba(70, 100, 55, 0.4) 0%, transparent 25%),
+    linear-gradient(135deg, #4a6b3a 0%, #3a5a2a 100%);
+}
+
+/* Biome variants for honey-mushroom tiles - match exact biome MUSHROOM colors */
+.tile--honey-mushroom-frosty {
+  /* Matches .tile--frosty-mushroom exactly */
+  background:
+    radial-gradient(circle at 20% 80%, rgba(160, 168, 200, 0.4) 0%, transparent 30%),
+    linear-gradient(135deg, #a0a8c8 0%, #8890b0 100%);
+}
+
+.tile--honey-mushroom-night {
+  /* Matches .tile--night-mushroom exactly */
+  background:
+    radial-gradient(circle at 20% 80%, rgba(40, 70, 50, 0.4) 0%, transparent 30%),
+    linear-gradient(135deg, #1e4838 0%, #153828 100%);
+}
+
+.tile--honey-mushroom-beach {
+  /* Beach mushroom uses default mushroom colors */
+  background:
+    radial-gradient(circle at 20% 80%, rgba(90, 140, 70, 0.4) 0%, transparent 30%),
+    linear-gradient(135deg, #5a9a4a 0%, #4a8040 100%);
+}
+
+.tile--honey-mushroom-swamp {
+  /* Matches .tile--swamp-mushroom exactly */
+  background:
+    radial-gradient(circle at 20% 80%, rgba(40, 60, 35, 0.4) 0%, transparent 30%),
+    linear-gradient(135deg, #3a5530 0%, #2a4520 100%);
+}
+
+.honey-detail,
+.honey-mushroom-detail {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.honey-splatter {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 90%;
+  height: 90%;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.15));
+}
+
+.honey-splatter--under {
+  /* Slightly smaller when under mushroom */
+  width: 85%;
+  height: 85%;
+}
+
+.honey-path {
+  /* Flat appearance - no heavy shadows */
+}
+
+.honey-shine {
+  position: absolute;
+  top: 25%;
+  left: 30%;
+  width: 20%;
+  height: 12%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 255, 255, 0.5) 0%,
+    rgba(255, 255, 255, 0.2) 50%,
+    transparent 75%
+  );
+  border-radius: 50%;
+  transform: rotate(-15deg);
+  pointer-events: none;
+}
+
+/* Honey mushroom container */
+.honey-mushroom-container {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Honey mushroom variants - golden/amber themed with variety */
+
+/* Shared glossy honey coating effect for all honey mushroom caps */
+.honey-mushroom-container .mushroom__cap {
+  box-shadow:
+    inset 0 -3px 6px rgba(180, 120, 20, 0.4),
+    inset 0 2px 4px rgba(255, 230, 150, 0.5),
+    0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+/* Variant 0: Tan -> Light golden honey */
+.honey-mushroom-container .mushroom--tan .mushroom__cap {
+  background: linear-gradient(135deg, #f5d070 0%, #e8b840 50%, #d0a030 100%);
+}
+
+.honey-mushroom-container .mushroom--tan .mushroom__cap::before,
+.honey-mushroom-container .mushroom--tan .mushroom__cap::after {
+  background: rgba(255, 245, 200, 0.7);
+}
+
+/* Variant 1: Red -> Deep amber/orange */
+.honey-mushroom-container .mushroom--red .mushroom__cap {
+  background: linear-gradient(135deg, #e89050 0%, #d06820 50%, #b85010 100%);
+}
+
+.honey-mushroom-container .mushroom--red .mushroom__spots::before,
+.honey-mushroom-container .mushroom--red .mushroom__spots::after {
+  background: #fff0c0 !important;
+}
+
+/* Variant 2: Double tan -> Warm caramel */
+.honey-mushroom-container .mushroom-cluster .mushroom--tan .mushroom__cap {
+  background: linear-gradient(135deg, #e0a850 0%, #c88830 50%, #a87020 100%);
+}
+
+.honey-mushroom-container .mushroom-cluster .mushroom--tan .mushroom__cap::before,
+.honey-mushroom-container .mushroom-cluster .mushroom--tan .mushroom__cap::after {
+  background: rgba(255, 235, 180, 0.65);
+}
+
+/* Variant 3: Purple -> Rich butterscotch */
+.honey-mushroom-container .mushroom--purple .mushroom__cap {
+  background: linear-gradient(135deg, #d8a040 0%, #c08020 50%, #986810 100%);
+}
+
+.honey-mushroom-container .mushroom--purple .mushroom__cap::before,
+.honey-mushroom-container .mushroom--purple .mushroom__cap::after {
+  background: rgba(255, 230, 170, 0.6);
+}
+
+/* Variant 4: Triple -> Mixed honey tones */
+.honey-mushroom-container .mushroom-cluster--triple .mushroom:nth-child(1) .mushroom__cap {
+  background: linear-gradient(135deg, #f0c860 0%, #d8a830 50%, #c09020 100%);
+}
+
+.honey-mushroom-container .mushroom-cluster--triple .mushroom:nth-child(2) .mushroom__cap {
+  background: linear-gradient(135deg, #e8a048 0%, #d08028 50%, #b06818 100%);
+}
+
+.honey-mushroom-container .mushroom-cluster--triple .mushroom:nth-child(3) .mushroom__cap {
+  background: linear-gradient(135deg, #ddb850 0%, #c09830 50%, #a08020 100%);
+}
+
+/* Warm honey-tinted stems for all variants */
+.honey-mushroom-container .mushroom__stem {
+  background: linear-gradient(
+    to bottom,
+    #f5e8d0 0%,
+    #e8d8c0 50%,
+    #d8c8b0 100%
+  ) !important;
 }
 
 /* ========== SAND MUSHROOM TILES (Mushroom planted on tidal sand) ========== */

@@ -19,6 +19,9 @@ export const TileType = {
 	SAND_MUSHROOM: "sand_mushroom", // Mushroom planted on sand - still floods
 	// Bounce pad
 	BOUNCE_PAD: "bounce_pad", // Bounces player 3 tiles in movement direction
+	// Honey
+	HONEY: "honey", // Sticky tile - can walk off but cannot jump from here
+	HONEY_MUSHROOM: "honey_mushroom", // Mushroom planted on honey - shows honey underneath
 } as const;
 
 export type TileType = (typeof TileType)[keyof typeof TileType];
@@ -70,6 +73,7 @@ export const WorldElement = {
 	POND: "pond",
 	TIDES: "tides",
 	BOUNCE: "bounce",
+	HONEY: "honey",
 } as const;
 
 export type WorldElement = (typeof WorldElement)[keyof typeof WorldElement];

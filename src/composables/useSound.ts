@@ -532,6 +532,10 @@ export function playSandLand(volume = 0.3): void {
 	playSound("/sfx/sand-land.mp3", volume);
 }
 
+export function playHoneyLand(volume = 0.3): void {
+	playSound("/sfx/honey-land.mp3", volume);
+}
+
 // ============================================
 // Voice Lines
 // ============================================

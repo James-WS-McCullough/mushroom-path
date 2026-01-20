@@ -31,6 +31,7 @@ export interface GeneratorConfig {
 	tidesChance: number;
 	tidesClusterSize: number;
 	bounceChance: number;
+	honeyChance: number;
 }
 
 const DEFAULT_CONFIG: GeneratorConfig = {
@@ -54,6 +55,7 @@ const DEFAULT_CONFIG: GeneratorConfig = {
 	tidesChance: 0.1,
 	tidesClusterSize: 4,
 	bounceChance: 0.08,
+	honeyChance: 0.08,
 };
 
 // Tide period constant - must match useGame.ts
@@ -709,6 +711,7 @@ function findHamiltonianPath(
 	pondTiles: Set<string> = new Set(),
 	lowSandTiles: Set<string> = new Set(),
 	bouncePadTiles: Set<string> = new Set(),
+	honeyTiles: Set<string> = new Set(),
 ): Position[] | null {
 	const grassSet = new Set(grassTiles.map((t) => posKey(t.x, t.y)));
 
@@ -837,12 +840,24 @@ function findHamiltonianPath(
 		const wouldBeFloodedAtNextDepth =
 			nextDepth % TIDE_PERIOD === TIDE_PERIOD - 1;
 
+		// Check if current tile is honey (no jumping allowed from honey)
+		const isOnHoney = honeyTiles.has(key);
+
 		const standardNeighbors = getReachableNeighbors(
 			current,
 			walkableTiles,
 			currentObstacles,
 		).filter((n) => {
 			const nKey = posKey(n.x, n.y);
+
+			// Check if this is a jump (distance of 2) - not allowed from honey
+			const dx = Math.abs(n.x - current.x);
+			const dy = Math.abs(n.y - current.y);
+			const isJump = dx === 2 || dy === 2;
+			if (isOnHoney && isJump) {
+				return false;
+			}
+
 			if (stoneTiles.has(nKey)) return true;
 			// Pond tiles (lily-pads) - walkable if not on cooldown
 			if (pondTiles.has(nKey)) return !recentMoves.has(nKey);
@@ -1282,6 +1297,32 @@ function selectDirtCandidates(
 	}
 
 	return dirt;
+}
+
+// Select honey candidates - honey tiles prevent jumping but allow walking
+// Similar to dirt selection but honey doesn't need revisiting
+function selectHoneyCandidates(
+	grass: Set<string>,
+	chance: number,
+): Set<string> {
+	const honey = new Set<string>();
+	if (chance <= 0) return honey;
+
+	// Any grass tile can potentially be honey
+	const candidates = Array.from(grass);
+
+	// Select some candidates as honey (fewer than dirt to not make levels too restrictive)
+	const shuffled = shuffleArray(candidates);
+	const targetHoney = Math.max(1, Math.floor(grass.size * chance));
+
+	for (let i = 0; i < Math.min(targetHoney, shuffled.length); i++) {
+		const key = shuffled[i];
+		if (key) {
+			honey.add(key);
+		}
+	}
+
+	return honey;
 }
 
 // Add ice tiles in clusters - ice acts as walkable bridge that causes sliding
@@ -2218,6 +2259,7 @@ function buildLevelFromPath(
 	lowSand: Set<string> = new Set(),
 	sea: Set<string> = new Set(),
 	bouncePads: Set<string> = new Set(),
+	honey: Set<string> = new Set(),
 ): Level {
 	let minX = Number.POSITIVE_INFINITY;
 	let minY = Number.POSITIVE_INFINITY;
@@ -2266,6 +2308,8 @@ function buildLevelFromPath(
 				row.push(TileType.BOUNCE_PAD);
 			} else if (dirt.has(key)) {
 				row.push(TileType.DIRT);
+			} else if (honey.has(key)) {
+				row.push(TileType.HONEY);
 			} else if (allShapeTiles.has(key)) {
 				row.push(TileType.GRASS);
 			} else {
@@ -2421,6 +2465,15 @@ export function generateLevel(
 		elementConfig.bounceChance = Math.max(baseBounceChance * 6, 0.5);
 	}
 
+	// Honey only generates if the HONEY element is active
+	if (!elements.includes(WE.HONEY)) {
+		elementConfig.honeyChance = 0;
+	} else {
+		// Boost honey chance to ensure honey tiles appear reliably
+		const baseHoneyChance = config.honeyChance ?? DEFAULT_CONFIG.honeyChance;
+		elementConfig.honeyChance = Math.max(baseHoneyChance * 4, 0.3);
+	}
+
 	const fullConfig = { ...DEFAULT_CONFIG, ...elementConfig };
 	const maxRetries = 100;
 
@@ -2512,6 +2565,10 @@ export function generateLevel(
 			fullConfig.dirtChance,
 		);
 
+		// Select honey candidates BEFORE path finding
+		// Honey tiles prevent jumping but allow walking
+		const honey = selectHoneyCandidates(grass, fullConfig.honeyChance);
+
 		// Place bounce pads BEFORE pathfinding
 		// They need valid placement (accessible + room to bounce)
 		const startPos = grassTiles[0] ?? { x: 0, y: 0 };
@@ -2524,7 +2581,7 @@ export function generateLevel(
 		);
 
 		// Find path - path finder will visit dirt tiles twice, handle ice sliding,
-		// avoid low sand during floods, and handle bounce pad mechanics
+		// avoid low sand during floods, handle bounce pad mechanics, and respect honey no-jump restriction
 		const path = findHamiltonianPath(
 			grassTiles,
 			bramblesAfterPond,
@@ -2537,6 +2594,7 @@ export function generateLevel(
 			pond,
 			lowSand,
 			bouncePads,
+			honey,
 		);
 
 		if (path) {
@@ -2560,6 +2618,7 @@ export function generateLevel(
 				lowSand,
 				sea,
 				bouncePads,
+				honey,
 			);
 			if (verifyLevel(level)) {
 				return level;

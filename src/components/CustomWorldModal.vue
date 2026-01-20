@@ -15,6 +15,7 @@ const allElements: { id: WorldElement; name: string; icon: string }[] = [
 	{ id: WE.POND, name: "Lily Pads", icon: "🌙" },
 	{ id: WE.TIDES, name: "Tides", icon: "🏖️" },
 	{ id: WE.BOUNCE, name: "Bounce Pads", icon: "🦘" },
+	{ id: WE.HONEY, name: "Honey", icon: "🍯" },
 ];
 
 const selectedElements = ref<Set<WorldElement>>(new Set());

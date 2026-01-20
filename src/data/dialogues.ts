@@ -626,6 +626,65 @@ export const bounceIntroDialogue: DialogueScene = {
 	],
 };
 
+// Honey intro - sticky golden honey patches
+export const honeyIntroDialogue: DialogueScene = {
+	id: "honey-intro",
+	background: "",
+	leftCharacter: "sprout",
+	rightCharacter: "dew",
+	overlay: true,
+	lines: [
+		{
+			speaker: "sprout",
+			name: "Sprout",
+			text: "oooh~!! whats that golden gooey stuff??",
+			leftSprite: "MushroomGirl-Excited",
+			rightSprite: "BlueGirl-Normal",
+			leftHighlight: true,
+		},
+		{
+			speaker: "dew",
+			name: "Dew",
+			text: "thats honey! its super sweet but also really sticky~",
+			leftSprite: "MushroomGirl-Excited",
+			rightSprite: "BlueGirl-Laughing",
+			rightHighlight: true,
+		},
+		{
+			speaker: "sprout",
+			name: "Sprout",
+			text: "sticky? what do you mean??",
+			leftSprite: "MushroomGirl-Happy",
+			rightSprite: "BlueGirl-Laughing",
+			leftHighlight: true,
+		},
+		{
+			speaker: "dew",
+			name: "Dew",
+			text: "you can walk through honey just fine... but you cant jump from it!",
+			leftSprite: "MushroomGirl-Happy",
+			rightSprite: "BlueGirl-Thinking",
+			rightHighlight: true,
+		},
+		{
+			speaker: "dew",
+			name: "Dew",
+			text: "your feet get all gooey and you have to take a step first~",
+			leftSprite: "MushroomGirl",
+			rightSprite: "BlueGirl-Normal",
+			rightHighlight: true,
+		},
+		{
+			speaker: "sprout",
+			name: "Sprout",
+			text: "ohhh so no hopping over things when im in the honey! got it~",
+			leftSprite: "MushroomGirl-Happy",
+			rightSprite: "BlueGirl-Laughing",
+			leftHighlight: true,
+		},
+	],
+};
+
 // Map mechanic types to their intro dialogues
 export const mechanicDialogues: Record<string, DialogueScene> = {
 	ice: iceIntroDialogue,
@@ -635,6 +694,7 @@ export const mechanicDialogues: Record<string, DialogueScene> = {
 	pond: pondIntroDialogue,
 	tides: tidesIntroDialogue,
 	bounce: bounceIntroDialogue,
+	honey: honeyIntroDialogue,
 };
 
 // Random adventure scenes - short moments between Sprout and Dew

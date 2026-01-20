@@ -229,6 +229,8 @@ function getMechanicKey(element: WorldElement): string {
 			return "tides";
 		case WE.BOUNCE:
 			return "bounce";
+		case WE.HONEY:
+			return "honey";
 		default:
 			return "";
 	}
@@ -518,6 +520,9 @@ function generateWorldElementsInner(): WorldElement[] {
 	// World 2 (index 1) should have at most 1 element - we just met Dew!
 	const maxElements = currentWorldIndex.value === 1 ? 1 : 2;
 
+	// World 2+ (index >= 1) must have at least 1 element to avoid consecutive empty worlds
+	const minElements = currentWorldIndex.value >= 1 ? 1 : 0;
+
 	// Decide whether to introduce a new element or remix seen elements
 	// Higher chance to introduce new elements early, remix more later
 	const shouldIntroduceNew =
@@ -532,13 +537,20 @@ function generateWorldElementsInner(): WorldElement[] {
 		return [randomUnseen];
 	}
 
-	// REMIX WORLD: Combine previously seen elements (or have none)
+	// REMIX WORLD: Combine previously seen elements
+	// If no seen elements but we need at least 1, pick a random unseen element
 	if (seenElements.length === 0) {
+		if (minElements > 0 && unseenElements.length > 0) {
+			const randomUnseen =
+				unseenElements[Math.floor(Math.random() * unseenElements.length)]!;
+			return [randomUnseen];
+		}
 		return [];
 	}
 
-	// Randomly select 0 to maxElements from seen elements
-	const elementCount = Math.floor(Math.random() * (maxElements + 1));
+	// Randomly select minElements to maxElements from seen elements
+	const range = maxElements - minElements + 1;
+	const elementCount = minElements + Math.floor(Math.random() * range);
 
 	if (elementCount === 0) {
 		return [];

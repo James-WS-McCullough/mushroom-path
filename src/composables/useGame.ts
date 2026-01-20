@@ -10,6 +10,7 @@ import type {
 import { PortalTypes, TileType } from "../types/game";
 import {
 	playBouncepad,
+	playHoneyLand,
 	playJump,
 	playLand,
 	playLilypadSink,
@@ -189,7 +190,7 @@ export function useGame(level: Level) {
 			return false;
 		}
 
-		// Can land on grass, stone, water, dirt, ice, bounce pad, or portal tiles
+		// Can land on grass, stone, water, dirt, ice, bounce pad, honey, or portal tiles
 		return (
 			tile.type === TileType.GRASS ||
 			tile.type === TileType.STONE ||
@@ -197,6 +198,7 @@ export function useGame(level: Level) {
 			tile.type === TileType.DIRT ||
 			tile.type === TileType.ICE ||
 			tile.type === TileType.BOUNCE_PAD ||
+			tile.type === TileType.HONEY ||
 			isPortalTile(tile.type)
 		);
 	}
@@ -248,6 +250,7 @@ export function useGame(level: Level) {
 			tile.type === TileType.BRAMBLE ||
 			tile.type === TileType.MUSHROOM ||
 			tile.type === TileType.SAND_MUSHROOM ||
+			tile.type === TileType.HONEY_MUSHROOM ||
 			tile.type === TileType.POND_WATER
 		);
 	}
@@ -365,6 +368,8 @@ export function useGame(level: Level) {
 					adjType === TileType.ICE ||
 					adjType === TileType.WATER ||
 					adjType === TileType.LOW_SAND ||
+					adjType === TileType.BOUNCE_PAD ||
+					adjType === TileType.HONEY ||
 					isPortalTile(adjType) ||
 					(adjType === TileType.POND && !lilypads.get(adjKey)?.submerged);
 
@@ -379,6 +384,7 @@ export function useGame(level: Level) {
 					adjType === TileType.BRAMBLE ||
 					adjType === TileType.MUSHROOM ||
 					adjType === TileType.SAND_MUSHROOM ||
+					adjType === TileType.HONEY_MUSHROOM ||
 					adjType === TileType.POND_WATER ||
 					adjType === TileType.SEA ||
 					(adjType === TileType.POND && lilypads.get(adjKey)?.submerged);
@@ -410,6 +416,8 @@ export function useGame(level: Level) {
 						jumpType === TileType.ICE ||
 						jumpType === TileType.WATER ||
 						jumpType === TileType.LOW_SAND ||
+						jumpType === TileType.BOUNCE_PAD ||
+						jumpType === TileType.HONEY ||
 						isPortalTile(jumpType) ||
 						(jumpType === TileType.POND && !lilypads.get(jumpKey)?.submerged);
 
@@ -483,7 +491,7 @@ export function useGame(level: Level) {
 		);
 	}
 
-	// Count remaining grass, dirt, and low_sand tiles
+	// Count remaining grass, dirt, low_sand, and honey tiles
 	function countRemainingTiles(tileStates: TileType[][]): number {
 		let count = 0;
 		for (let y = 0; y < tileStates.length; y++) {
@@ -494,7 +502,8 @@ export function useGame(level: Level) {
 				if (
 					t === TileType.GRASS ||
 					t === TileType.DIRT ||
-					t === TileType.LOW_SAND
+					t === TileType.LOW_SAND ||
+					t === TileType.HONEY
 				) {
 					count++;
 				}
@@ -673,6 +682,10 @@ export function useGame(level: Level) {
 		const nextPhase = (currentPhase + 1) % TIDE_PERIOD;
 		const lowSandWillBeFlooded = nextPhase === 0;
 
+		// Check if standing on honey (can't jump from honey)
+		const currentTileType = tileStates[pos.y]?.[pos.x];
+		const isOnHoney = currentTileType === TileType.HONEY;
+
 		for (const direction of directions) {
 			const delta = getDirectionDelta(direction);
 			const adjacentPos = { x: pos.x + delta.x, y: pos.y + delta.y };
@@ -700,6 +713,7 @@ export function useGame(level: Level) {
 					adjTileType === TileType.DIRT ||
 					adjTileType === TileType.ICE ||
 					adjTileType === TileType.BOUNCE_PAD ||
+					adjTileType === TileType.HONEY ||
 					(adjTileType && isPortalTile(adjTileType)) ||
 					(adjTileType === TileType.LOW_SAND && !lowSandWillBeFlooded)
 				) {
@@ -708,10 +722,14 @@ export function useGame(level: Level) {
 				}
 
 				// Check jump over obstacle (including flooded LOW_SAND and SEA)
+				// Can't jump from honey tiles
+				if (isOnHoney) continue;
+
 				const isAdjacentObstacle =
 					adjTileType === TileType.BRAMBLE ||
 					adjTileType === TileType.MUSHROOM ||
 					adjTileType === TileType.SAND_MUSHROOM ||
+					adjTileType === TileType.HONEY_MUSHROOM ||
 					adjTileType === TileType.POND_WATER ||
 					adjTileType === TileType.SEA ||
 					(adjTileType === TileType.POND &&
@@ -741,6 +759,7 @@ export function useGame(level: Level) {
 							jumpTileType === TileType.DIRT ||
 							jumpTileType === TileType.ICE ||
 							jumpTileType === TileType.BOUNCE_PAD ||
+							jumpTileType === TileType.HONEY ||
 							(jumpTileType && isPortalTile(jumpTileType)) ||
 							(jumpTileType === TileType.LOW_SAND && !lowSandWillBeFlooded)
 						) {
@@ -800,6 +819,9 @@ export function useGame(level: Level) {
 		} else if (currentTileType === TileType.LOW_SAND) {
 			const row = newTileStates[pos.y];
 			if (row) row[pos.x] = TileType.SAND_MUSHROOM;
+		} else if (currentTileType === TileType.HONEY) {
+			const row = newTileStates[pos.y];
+			if (row) row[pos.x] = TileType.HONEY_MUSHROOM;
 		} else if (currentTileType === TileType.POND) {
 			const key = `${pos.x},${pos.y}`;
 			const state = newLilypads.get(key);
@@ -867,6 +889,7 @@ export function useGame(level: Level) {
 					nextType === TileType.BRAMBLE ||
 					nextType === TileType.MUSHROOM ||
 					nextType === TileType.SAND_MUSHROOM ||
+					nextType === TileType.HONEY_MUSHROOM ||
 					nextType === TileType.VOID ||
 					nextType === TileType.POND_WATER
 				) {
@@ -896,6 +919,7 @@ export function useGame(level: Level) {
 					if (tileType === TileType.BRAMBLE) return false;
 					if (tileType === TileType.MUSHROOM) return false;
 					if (tileType === TileType.SAND_MUSHROOM) return false;
+					if (tileType === TileType.HONEY_MUSHROOM) return false;
 					if (tileType === TileType.POND_WATER) return false;
 					if (tileType === TileType.SEA) return false;
 					return true;
@@ -967,6 +991,7 @@ export function useGame(level: Level) {
 				if (tileType === TileType.BRAMBLE) return false;
 				if (tileType === TileType.MUSHROOM) return false;
 				if (tileType === TileType.SAND_MUSHROOM) return false;
+				if (tileType === TileType.HONEY_MUSHROOM) return false;
 				if (tileType === TileType.POND_WATER) return false;
 				if (tileType === TileType.SEA) return false;
 				return true;
@@ -1047,8 +1072,8 @@ export function useGame(level: Level) {
 						if (next.x < 0 || next.x >= level.width || next.y < 0 || next.y >= level.height) break;
 						const nextType = newTileStates[next.y]?.[next.x];
 						if (nextType === TileType.BRAMBLE || nextType === TileType.MUSHROOM ||
-							nextType === TileType.SAND_MUSHROOM || nextType === TileType.VOID ||
-							nextType === TileType.POND_WATER) {
+							nextType === TileType.SAND_MUSHROOM || nextType === TileType.HONEY_MUSHROOM ||
+							nextType === TileType.VOID || nextType === TileType.POND_WATER) {
 							break;
 						}
 						if (nextType === TileType.ICE) {
@@ -1164,6 +1189,7 @@ export function useGame(level: Level) {
 			if (tile.type === TileType.BRAMBLE) return false;
 			if (tile.type === TileType.MUSHROOM) return false;
 			if (tile.type === TileType.SAND_MUSHROOM) return false;
+			if (tile.type === TileType.HONEY_MUSHROOM) return false;
 			if (tile.type === TileType.POND_WATER) return false;
 			if (tile.type === TileType.SEA) return false;
 			return true;
@@ -1394,6 +1420,8 @@ export function useGame(level: Level) {
 						playStone();
 					} else if (finalTile?.type === TileType.POND) {
 						playWater();
+					} else if (finalTile?.type === TileType.HONEY) {
+						playHoneyLand();
 					}
 					onComplete();
 				}
@@ -1413,8 +1441,12 @@ export function useGame(level: Level) {
 			return adjacentPos;
 		}
 
-		// If adjacent tile is an obstacle, check if we can jump over it
-		if (isObstacle(adjacentPos)) {
+		// Check if player is on honey tile (can't jump from honey)
+		const currentTile = getTile(playerPosition.value);
+		const isOnHoney = currentTile?.type === TileType.HONEY;
+
+		// If adjacent tile is an obstacle, check if we can jump over it (unless on honey)
+		if (!isOnHoney && isObstacle(adjacentPos)) {
 			const jumpPos = {
 				x: playerPosition.value.x + delta.x * 2,
 				y: playerPosition.value.y + delta.y * 2,
@@ -1464,6 +1496,15 @@ export function useGame(level: Level) {
 			setTimeout(() => {
 				lastCleanedPosition.value = null;
 			}, 500);
+		} else if (tile.type === TileType.HONEY) {
+			// Honey becomes honey_mushroom when left (shows honey underneath)
+			cell.type = TileType.HONEY_MUSHROOM;
+			playRandomPop();
+			lastPlantedPosition.value = { ...position };
+			// Clear after animation completes
+			setTimeout(() => {
+				lastPlantedPosition.value = null;
+			}, 400);
 		} else if (tile.type === TileType.POND) {
 			// Pond lily-pad sinks when left, resurfaces after 4 moves
 			const key = `${position.x},${position.y}`;
@@ -1730,6 +1771,8 @@ export function useGame(level: Level) {
 								playStone();
 							} else if (finalTile?.type === TileType.POND) {
 								playWater();
+							} else if (finalTile?.type === TileType.HONEY) {
+								playHoneyLand();
 							}
 
 							if (checkWinCondition()) {
@@ -1820,6 +1863,8 @@ export function useGame(level: Level) {
 					playWater();
 				} else if (landingTile?.type === TileType.LOW_SAND) {
 					playSandLand();
+				} else if (landingTile?.type === TileType.HONEY) {
+					playHoneyLand();
 				}
 			}, 200);
 
@@ -1833,6 +1878,13 @@ export function useGame(level: Level) {
 		// Check if adjacent and landable
 		if (isAdjacent(playerPosition.value, target) && canLandOn(target)) {
 			return true;
+		}
+
+		// Check if player is on honey tile (can't jump from honey)
+		const currentTile = getTile(playerPosition.value);
+		const isOnHoney = currentTile?.type === TileType.HONEY;
+		if (isOnHoney) {
+			return false; // Can only walk to adjacent tiles from honey
 		}
 
 		// Check if it's a valid jump (2 tiles away in straight line)
@@ -2049,6 +2101,8 @@ export function useGame(level: Level) {
 								playStone();
 							} else if (finalTile?.type === TileType.POND) {
 								playWater();
+							} else if (finalTile?.type === TileType.HONEY) {
+								playHoneyLand();
 							}
 
 							if (checkWinCondition()) {
@@ -2137,6 +2191,8 @@ export function useGame(level: Level) {
 					playWater();
 				} else if (landingTile?.type === TileType.LOW_SAND) {
 					playSandLand();
+				} else if (landingTile?.type === TileType.HONEY) {
+					playHoneyLand();
 				}
 			}, 200);
 
@@ -2150,11 +2206,12 @@ export function useGame(level: Level) {
 		let count = 0;
 		for (const row of tiles.value) {
 			for (const tile of row) {
-				// Count grass, low_sand, and dirt tiles (dirt counts as 2 since it needs two visits)
+				// Count grass, low_sand, honey, and dirt tiles (dirt counts as 2 since it needs two visits)
 				// Portal tiles don't count - they stay as portals and can be reused
 				if (
 					tile.type === TileType.GRASS ||
-					tile.type === TileType.LOW_SAND
+					tile.type === TileType.LOW_SAND ||
+					tile.type === TileType.HONEY
 				) {
 					count++;
 				} else if (tile.type === TileType.DIRT) {
@@ -2172,7 +2229,8 @@ export function useGame(level: Level) {
 			for (const tile of row) {
 				if (
 					tile.type === TileType.MUSHROOM ||
-					tile.type === TileType.SAND_MUSHROOM
+					tile.type === TileType.SAND_MUSHROOM ||
+					tile.type === TileType.HONEY_MUSHROOM
 				) {
 					count++;
 				}
@@ -2343,8 +2401,8 @@ export function useGame(level: Level) {
 		}
 
 		// Restore the tile at current position (remove mushroom if it was planted)
-		// Stone tiles never have mushrooms planted, so only restore MUSHROOM -> GRASS
-		// and SAND_MUSHROOM -> LOW_SAND
+		// Stone tiles never have mushrooms planted, so only restore MUSHROOM -> GRASS,
+		// SAND_MUSHROOM -> LOW_SAND, and HONEY_MUSHROOM -> HONEY
 		const currentPos = playerPosition.value;
 		const currentRow = tiles.value[currentPos.y];
 		const currentCell = currentRow?.[currentPos.x];
@@ -2352,6 +2410,8 @@ export function useGame(level: Level) {
 			currentCell.type = TileType.GRASS;
 		} else if (currentCell && currentCell.type === TileType.SAND_MUSHROOM) {
 			currentCell.type = TileType.LOW_SAND;
+		} else if (currentCell && currentCell.type === TileType.HONEY_MUSHROOM) {
+			currentCell.type = TileType.HONEY;
 		}
 
 		// Restore the previous position's tile state

@@ -51,7 +51,7 @@ const emit = defineEmits<{
           :key="element"
           class="element-icon"
           :class="{ 'element-icon--dirt': element === WE.DIRT }"
-          :title="element === WE.RIVERS ? 'Rivers' : element === WE.DIRT ? 'Dirt Patches' : element === WE.ICE ? 'Ice' : element === WE.FAIRY ? 'Fairy Rings' : element === WE.POND ? 'Lily Pads' : element === WE.TIDES ? 'Tides' : element === WE.BOUNCE ? 'Bounce Pads' : element"
+          :title="element === WE.RIVERS ? 'Rivers' : element === WE.DIRT ? 'Dirt Patches' : element === WE.ICE ? 'Ice' : element === WE.FAIRY ? 'Fairy Rings' : element === WE.POND ? 'Lily Pads' : element === WE.TIDES ? 'Tides' : element === WE.BOUNCE ? 'Bounce Pads' : element === WE.HONEY ? 'Honey' : element"
         >
           <!-- Water droplet icon for rivers -->
           <svg v-if="element === WE.RIVERS" viewBox="0 0 24 24" class="element-svg element-svg--water">
@@ -102,6 +102,17 @@ const emit = defineEmits<{
             <circle cx="11" cy="15" r="1.2" fill="white"/>
             <!-- Bounce arrow -->
             <path d="M12 2l3 4h-2v3h-2V6H9l3-4z" fill="#ffeb3b"/>
+          </svg>
+          <!-- Honey pot icon -->
+          <svg v-else-if="element === WE.HONEY" viewBox="0 0 24 24" class="element-svg element-svg--honey">
+            <!-- Honey pot body -->
+            <path d="M6 10c0-1.5 1-3 3-3h6c2 0 3 1.5 3 3v8c0 2-1.5 3-3 3H9c-1.5 0-3-1-3-3v-8z" fill="currentColor"/>
+            <!-- Pot rim -->
+            <rect x="5" y="8" width="14" height="3" rx="1" fill="#d4a030"/>
+            <!-- Honey drip -->
+            <path d="M12 3c-1.5 0-2.5 1.5-2.5 3s1 2.5 2.5 2.5 2.5-1 2.5-2.5S13.5 3 12 3z" fill="#ffa000"/>
+            <!-- Highlight -->
+            <ellipse cx="9" cy="14" rx="1.5" ry="2" fill="#ffe082" opacity="0.6"/>
           </svg>
         </div>
       </div>
@@ -405,6 +416,10 @@ const emit = defineEmits<{
 
 .element-svg--bounce {
   color: #e85a5a;
+}
+
+.element-svg--honey {
+  color: #f0a830;
 }
 
 .sound-controls {
