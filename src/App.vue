@@ -145,6 +145,19 @@ const beachWorldNames = [
 	"Wavecrest Walk",
 ];
 
+const bounceWorldNames = [
+	"Springcap Meadows",
+	"Bouncy Bog",
+	"Trampo Trails",
+	"Leap Lichen Lane",
+	"Boingshroom Basin",
+	"Hopscotch Hollow",
+	"Springy Spore Fields",
+	"Fungal Funhouse",
+	"Reboundia",
+	"Jumpy Junction",
+];
+
 const gameStarted = ref(false);
 const currentLevel = ref<Level>(level1);
 const levelKey = ref(0);
@@ -214,6 +227,8 @@ function getMechanicKey(element: WorldElement): string {
 			return "pond";
 		case WE.TIDES:
 			return "tides";
+		case WE.BOUNCE:
+			return "bounce";
 		default:
 			return "";
 	}
@@ -379,6 +394,7 @@ const iceNameOffset = ref(Math.floor(Math.random() * iceWorldNames.length));
 const swampNameOffset = ref(Math.floor(Math.random() * swampWorldNames.length));
 const nightNameOffset = ref(Math.floor(Math.random() * nightWorldNames.length));
 const beachNameOffset = ref(Math.floor(Math.random() * beachWorldNames.length));
+const bounceNameOffset = ref(Math.floor(Math.random() * bounceWorldNames.length));
 
 // Save game progress to localStorage
 const SAVE_KEY = "mushroom-path-progress";
@@ -443,6 +459,7 @@ const allElements: WorldElement[] = [
 	WE.FAIRY,
 	WE.POND,
 	WE.TIDES,
+	WE.BOUNCE,
 ];
 
 // Update body class based on current biome (ice takes priority, then beach, then pond/night, then swamp)
@@ -575,6 +592,11 @@ const currentWorldName = computed(() => {
 			(currentWorldIndex.value + swampNameOffset.value) %
 			swampWorldNames.length;
 		return swampWorldNames[index] ?? "Murky Marsh";
+	} else if (currentWorldElements.value.includes(WE.BOUNCE)) {
+		const index =
+			(currentWorldIndex.value + bounceNameOffset.value) %
+			bounceWorldNames.length;
+		return bounceWorldNames[index] ?? "Springcap Meadows";
 	} else {
 		const index =
 			(currentWorldIndex.value + forestNameOffset.value) %

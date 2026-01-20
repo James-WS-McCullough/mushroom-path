@@ -17,6 +17,8 @@ export const TileType = {
 	LOW_SAND: "low_sand", // Tidal zone - floods periodically
 	SEA: "sea", // Always impassable, visual tide sync
 	SAND_MUSHROOM: "sand_mushroom", // Mushroom planted on sand - still floods
+	// Bounce pad
+	BOUNCE_PAD: "bounce_pad", // Bounces player 3 tiles in movement direction
 } as const;
 
 export type TileType = (typeof TileType)[keyof typeof TileType];
@@ -67,6 +69,7 @@ export const WorldElement = {
 	FAIRY: "fairy",
 	POND: "pond",
 	TIDES: "tides",
+	BOUNCE: "bounce",
 } as const;
 
 export type WorldElement = (typeof WorldElement)[keyof typeof WorldElement];

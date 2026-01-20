@@ -17,6 +17,7 @@ const props = defineProps<{
 	isJustCleaned?: boolean;
 	isHinted?: boolean;
 	isStuckHighlight?: boolean;
+	isBounceActivated?: boolean;
 	flowDirection?: FlowDirection | null;
 	hasIceElement?: boolean;
 	hasDirtElement?: boolean;
@@ -81,6 +82,8 @@ const tileClass = computed(() => {
 			props.tile.type === TileType.LOW_SAND && props.movesUntilFlood === 1,
 		"tile--sea": props.tile.type === TileType.SEA,
 		"tile--sea-high-tide": props.tile.type === TileType.SEA && isLowSandFlooded.value,
+		// Bounce pad
+		"tile--bounce-pad": props.tile.type === TileType.BOUNCE_PAD,
 		// Sand mushroom (mushroom planted on low sand)
 		"tile--sand-mushroom": props.tile.type === TileType.SAND_MUSHROOM,
 		"tile--sand-mushroom-flooded":
@@ -437,6 +440,19 @@ function handleClick() {
         <div class="foam-patch foam-patch--1"></div>
         <div class="foam-patch foam-patch--2"></div>
       </div>
+    </div>
+
+    <!-- Bounce pad tile - red mushroom square with white dots -->
+    <div v-if="tile.type === TileType.BOUNCE_PAD" :class="['bounce-pad-detail', { 'bounce-pad--activated': isBounceActivated }]">
+      <!-- White dots on red background -->
+      <div class="bounce-dot bounce-dot--1"></div>
+      <div class="bounce-dot bounce-dot--2"></div>
+      <div class="bounce-dot bounce-dot--3"></div>
+      <div class="bounce-dot bounce-dot--4"></div>
+      <div class="bounce-dot bounce-dot--5"></div>
+      <!-- Ripple effect when activated -->
+      <div v-if="isBounceActivated" class="bounce-ripple"></div>
+      <div v-if="isBounceActivated" class="bounce-ripple bounce-ripple--delayed"></div>
     </div>
 
     <!-- Sand mushroom tile (mushroom planted on tidal sand) -->
@@ -3237,6 +3253,176 @@ function handleClick() {
   50% {
     transform: scale(1.1);
     opacity: 0.9;
+  }
+}
+
+/* ========== BOUNCE PAD TILES ========== */
+.tile--bounce-pad {
+  background: linear-gradient(
+    135deg,
+    #e85a5a 0%,
+    #d42a2a 50%,
+    #b81a1a 100%
+  );
+  border-radius: 6px;
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, 0.25),
+    inset 0 -4px 0 rgba(0, 0, 0, 0.25),
+    0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.bounce-pad-detail {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* White dots on red mushroom cap */
+.bounce-dot {
+  position: absolute;
+  background: radial-gradient(
+    ellipse at 30% 30%,
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(255, 250, 245, 0.85) 50%,
+    rgba(240, 235, 230, 0.7) 100%
+  );
+  border-radius: 50%;
+  box-shadow:
+    inset 0 -1px 2px rgba(0, 0, 0, 0.1),
+    0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+.bounce-dot--1 {
+  width: 14px;
+  height: 12px;
+  top: 15%;
+  left: 20%;
+}
+
+.bounce-dot--2 {
+  width: 10px;
+  height: 9px;
+  top: 20%;
+  right: 18%;
+}
+
+.bounce-dot--3 {
+  width: 12px;
+  height: 10px;
+  bottom: 25%;
+  left: 35%;
+}
+
+.bounce-dot--4 {
+  width: 8px;
+  height: 7px;
+  bottom: 18%;
+  right: 25%;
+}
+
+.bounce-dot--5 {
+  width: 6px;
+  height: 5px;
+  top: 45%;
+  left: 55%;
+}
+
+/* Subtle pulse animation for bounce pads */
+.tile--bounce-pad {
+  animation: bouncePadPulse 2s ease-in-out infinite;
+}
+
+@keyframes bouncePadPulse {
+  0%, 100% {
+    box-shadow:
+      inset 0 3px 0 rgba(255, 255, 255, 0.25),
+      inset 0 -4px 0 rgba(0, 0, 0, 0.25),
+      0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+  50% {
+    box-shadow:
+      inset 0 3px 0 rgba(255, 255, 255, 0.35),
+      inset 0 -4px 0 rgba(0, 0, 0, 0.2),
+      0 3px 8px rgba(200, 50, 50, 0.4);
+  }
+}
+
+/* Player on bounce pad - ready to bounce */
+.tile--bounce-pad.tile--has-player {
+  animation: bouncePadActive 0.4s ease-in-out infinite;
+}
+
+@keyframes bouncePadActive {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow:
+      inset 0 3px 0 rgba(255, 255, 255, 0.3),
+      inset 0 -4px 0 rgba(0, 0, 0, 0.25),
+      0 2px 6px rgba(200, 50, 50, 0.5);
+  }
+  50% {
+    transform: scale(1.02);
+    box-shadow:
+      inset 0 3px 0 rgba(255, 255, 255, 0.4),
+      inset 0 -4px 0 rgba(0, 0, 0, 0.2),
+      0 4px 12px rgba(200, 50, 50, 0.6);
+  }
+}
+
+/* Bounce pad activation - squish and spring effect */
+.bounce-pad--activated {
+  animation: bouncePadSquish 0.4s ease-out forwards;
+}
+
+@keyframes bouncePadSquish {
+  0% {
+    transform: scale(1, 1);
+  }
+  15% {
+    transform: scale(1.15, 0.7);
+  }
+  30% {
+    transform: scale(0.9, 1.1);
+  }
+  45% {
+    transform: scale(1.05, 0.95);
+  }
+  60% {
+    transform: scale(0.98, 1.02);
+  }
+  100% {
+    transform: scale(1, 1);
+  }
+}
+
+/* Ripple effect expanding outward */
+.bounce-ripple {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 200, 200, 0.8);
+  transform: translate(-50%, -50%) scale(0);
+  animation: bounceRippleExpand 0.5s ease-out forwards;
+  pointer-events: none;
+}
+
+.bounce-ripple--delayed {
+  animation-delay: 0.1s;
+  border-color: rgba(255, 150, 150, 0.6);
+}
+
+@keyframes bounceRippleExpand {
+  0% {
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(4);
+    opacity: 0;
   }
 }
 

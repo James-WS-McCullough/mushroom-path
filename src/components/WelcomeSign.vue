@@ -154,7 +154,6 @@ onUnmounted(() => {
     inset 0 3px 0 rgba(255, 255, 255, 0.15),
     inset 0 -3px 0 rgba(0, 0, 0, 0.15);
   z-index: 2;
-  overflow: hidden;
 }
 
 .wood-texture {
@@ -196,13 +195,17 @@ onUnmounted(() => {
 
 .world-name {
   font-family: 'Georgia', serif;
-  font-size: 36px;
+  font-size: clamp(20px, 4vw, 28px);
   color: #fff8e7;
   margin: 0;
   text-shadow:
     0 2px 0 #4a3a2a,
     0 3px 6px rgba(0, 0, 0, 0.4);
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  hyphens: auto;
+  line-height: 1.2;
 }
 
 .nail {

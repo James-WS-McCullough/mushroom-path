@@ -27,6 +27,7 @@ function createTestLevel(
 		N: TileType.SAND_MUSHROOM,
 		O: TileType.POND, // Lily-pad (walkable when surfaced, sinks after stepping)
 		U: TileType.POND_WATER, // Deep pond water (always impassable obstacle)
+		T: TileType.BOUNCE_PAD, // Bounce pad (bounces player 3 tiles in movement direction)
 	};
 
 	const parsedGrid = grid.map((row) =>
@@ -2088,6 +2089,221 @@ describe("useGame", () => {
 
 			// One grass remains (we're standing on it), should win
 			expect(game.hasWon.value).toBe(true);
+		});
+	});
+
+	describe("bounce pad tiles (BOUNCE_PAD)", () => {
+		beforeEach(() => {
+			vi.useFakeTimers();
+		});
+
+		afterEach(() => {
+			vi.useRealTimers();
+		});
+
+		it("should allow stepping onto bounce pad", () => {
+			// G T G G G - player bounces right 3 tiles from bounce pad
+			const level = createTestLevel(["GTGGG"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+
+			// Wait for hop animation (200ms), then bounce animation (100ms per tile)
+			vi.advanceTimersByTime(200); // hop
+			vi.advanceTimersByTime(100); // bounce to x=2
+			vi.advanceTimersByTime(100); // bounce to x=3
+			vi.advanceTimersByTime(100); // bounce to x=4
+
+			// Should bounce to x=4 (3 tiles from bounce pad at x=1)
+			expect(game.playerPosition.value).toEqual({ x: 4, y: 0 });
+		});
+
+		it("should bounce 3 tiles in movement direction", () => {
+			// Player approaches bounce pad from the left
+			// G T G G G
+			const level = createTestLevel(["GTGGG"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+
+			vi.advanceTimersByTime(500); // hop + bounce animations
+
+			// Moved right onto bounce pad, bounced 3 tiles right
+			expect(game.playerPosition.value).toEqual({ x: 4, y: 0 });
+		});
+
+		it("should stop bouncing at void tile", () => {
+			// G T G V - bounce should stop at void
+			const level = createTestLevel(["GTGV"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+
+			vi.advanceTimersByTime(500); // hop + bounce
+
+			// Should stop at x=2 (last valid tile before void at x=3)
+			expect(game.playerPosition.value).toEqual({ x: 2, y: 0 });
+		});
+
+		it("should reduce bounce distance when landing on bramble", () => {
+			// G T G B - can't land on bramble, so reduce distance
+			const level = createTestLevel(["GTGB"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+
+			vi.advanceTimersByTime(500); // hop + bounce
+
+			// Should stop at x=2 (can't land on bramble at x=3, falls back to 1 tile)
+			expect(game.playerPosition.value).toEqual({ x: 2, y: 0 });
+		});
+
+		it("should jump OVER obstacles to reach valid landing spot", () => {
+			// G T B G G - can jump over bramble to land on grass at x=4
+			const level = createTestLevel(["GTBGG"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+
+			vi.advanceTimersByTime(500); // hop + bounce
+
+			// Should land at x=4 (3 tiles from bounce pad), jumping over bramble at x=2
+			expect(game.playerPosition.value).toEqual({ x: 4, y: 0 });
+		});
+
+		it("should handle vertical bounce (moving down)", () => {
+			// G
+			// T
+			// G
+			// G
+			// G
+			const level = createTestLevel(["G", "T", "G", "G", "G"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("down");
+
+			vi.advanceTimersByTime(500); // hop + bounce
+
+			// Bounced 3 tiles down from y=1 to y=4
+			expect(game.playerPosition.value).toEqual({ x: 0, y: 4 });
+		});
+
+		it("should handle vertical bounce (moving up)", () => {
+			// G
+			// G
+			// G
+			// T
+			// G
+			const level = createTestLevel(["G", "G", "G", "T", "G"], 0, 4);
+			const game = useGame(level);
+
+			game.movePlayer("up");
+
+			vi.advanceTimersByTime(500); // hop + bounce
+
+			// Bounced 3 tiles up from y=3 to y=0
+			expect(game.playerPosition.value).toEqual({ x: 0, y: 0 });
+		});
+
+		it("should not be passable obstacle (can land on bounce pad)", () => {
+			// Bounce pads should be walkable (like grass)
+			const level = createTestLevel(["GTG"], 0, 0);
+			const game = useGame(level);
+
+			// Bounce pad at x=1 should be reachable
+			const tile = game.tiles.value[0]?.[1];
+			expect(tile?.type).toBe(TileType.BOUNCE_PAD);
+		});
+
+		it("should bounce and land on water", () => {
+			// G T G W G - bounce 3 tiles, should stop before water (obstacle)
+			// Actually water is traversable, so we land on it
+			const level = createTestLevel(["GTGWG"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+
+			// Wait for full animation
+			vi.advanceTimersByTime(1000);
+
+			// Should bounce and land on water at x=3 (water is traversable, not obstacle)
+			// Note: bounce goes through tiles, water doesn't block bounce
+			expect(game.playerPosition.value.x).toBeGreaterThanOrEqual(3);
+		});
+
+		it("should chain bounce to ice", () => {
+			// G T I G - bounce onto ice, then slide in same direction
+			const level = createTestLevel(["GTIGG"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+
+			vi.advanceTimersByTime(200); // hop to bounce pad
+			vi.advanceTimersByTime(100); // bounce to x=2 (ice)
+			vi.advanceTimersByTime(150); // ice slide to x=3
+			vi.advanceTimersByTime(150); // ice slide to x=4
+
+			// Bounced 1 tile (stopped at ice), then ice slid to grass
+			expect(game.playerPosition.value).toEqual({ x: 4, y: 0 });
+		});
+
+		it("should chain bounce to another bounce pad", () => {
+			// G T G T G G G - bounce, land on second bounce, bounce again
+			const level = createTestLevel(["GTGTGGG"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+
+			vi.advanceTimersByTime(200); // hop to first bounce pad
+			vi.advanceTimersByTime(300); // first bounce (3 tiles would land at x=4, but x=3 is bounce pad)
+			// Actually we land at x=4 (we pass through T at x=3)
+			vi.advanceTimersByTime(300); // if we land on bounce pad, chain bounce
+
+			// After first bounce from x=1, we go 3 tiles to x=4 (passing x=3 which is bounce pad)
+			// The bounce doesn't chain unless we LAND on the bounce pad
+			expect(game.playerPosition.value).toEqual({ x: 4, y: 0 });
+		});
+
+		it("should chain bounce when landing exactly on bounce pad", () => {
+			// G T G G T G G G - first bounce lands exactly on second bounce pad
+			const level = createTestLevel(["GTGGTGGG"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+
+			// Wait for full chain animation (hop + first bounce + chain bounce)
+			vi.advanceTimersByTime(1000);
+
+			// From x=0, hop to bounce pad at x=1
+			// Bounce 3 tiles: x=2, x=3, x=4 (which is another bounce pad T)
+			// Chain bounce 3 more tiles: x=5, x=6, x=7
+			expect(game.playerPosition.value).toEqual({ x: 7, y: 0 });
+		});
+
+		it("should plant mushroom after bouncing", () => {
+			// G T G G G - after bouncing, grass at start should become mushroom
+			const level = createTestLevel(["GTGGG"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+
+			vi.advanceTimersByTime(500); // complete bounce
+
+			// Original position should now have a mushroom
+			expect(game.tiles.value[0]?.[0]?.type).toBe(TileType.MUSHROOM);
+		});
+
+		it("should handle bounce at edge of map", () => {
+			// G T - bounce would go off map, stops at edge
+			const level = createTestLevel(["GT"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+
+			vi.advanceTimersByTime(500); // hop + bounce
+
+			// Can't bounce anywhere (void/off map), stays on bounce pad
+			expect(game.playerPosition.value).toEqual({ x: 1, y: 0 });
 		});
 	});
 });

@@ -360,3 +360,174 @@ Introduce new content gradually:
 | 17-18 | Tides | Lily Pads | Mangrove |
 | 19-20 | Seasons | Frozen Grass | Cherry Blossom |
 | 21+ | Combinations | Mixed | Mixed |
+
+---
+
+## Autumn Biome - Detailed Design
+
+### Autumn Grove Theme
+
+**Color Palette**: Warm oranges, deep reds, golden yellows, rustic browns, touches of remaining green
+
+**Atmosphere**: Cozy, nostalgic, the crisp feeling of fall. Leaves gently falling, warm afternoon light filtering through trees.
+
+### Autumn-Specific Tiles
+
+| Tile | Visual | Behavior | Notes |
+|------|--------|----------|-------|
+| **Leaf Pile** | Heap of colorful fallen leaves | Like grass, but leaves scatter when you plant a mushroom | Satisfying crunch visual/audio |
+| **Acorn** | Golden acorn on grass | Collectible bonus item (optional objective) | Squirrels might appear nearby |
+| **Pumpkin Patch** | Orange pumpkins in grass | Obstacle like bramble, but can be jumped over | Seasonal Halloween variant |
+| **Hay Bale** | Stacked hay cube | Like stone - walkable, reusable, doesn't grow mushrooms | Farm aesthetic |
+| **Corn Maze Wall** | Dried corn stalks | Impassable barrier, like bramble but taller visual | Creates maze-like levels |
+| **Muddy Leaves** | Wet leaves in puddle | Hybrid: leaf pile + water slide mechanics | Slippery autumn rain |
+| **Bare Branch** | Fallen tree branch | One-use bridge over gaps, breaks after crossing | Like crumbling stone |
+| **Toadstool Ring** | Circle of red-capped mushrooms | Decorative grass variant, extra cozy | Visual only |
+| **Harvest Basket** | Woven basket | Goal tile - must end on this to "complete harvest" | Alternative win condition? |
+
+### Autumn World Element: "Falling Leaves"
+
+**Mechanic**: Leaves drift down and accumulate on tiles over time.
+
+| Turn | Effect |
+|------|--------|
+| Start | Some tiles have leaf piles, others are clear |
+| Every 3 moves | New leaves fall onto 1-2 random empty grass tiles, creating leaf piles |
+| Leaf pile stepped on | Scatters (becomes mushroom as normal) |
+
+**Puzzle implications**:
+- Plan around where leaves will fall
+- Leaves can block paths if not cleared in time
+- Creates dynamic, changing board state
+
+### Autumn World Element: "Harvest"
+
+**Mechanic**: Certain tiles contain harvestable items (apples, acorns, pumpkins). Must collect all before completing the level.
+
+- Adds collection objective on top of path-finding
+- Items don't block movement, just need to be stepped on
+- Counter shows "3/5 acorns collected"
+
+### Autumn World Names
+
+| Name | Vibe |
+|------|------|
+| Amber Woods | Classic autumn forest |
+| Cider Hollow | Cozy orchard feel |
+| Harvest Glen | Farmland adjacent |
+| Maple Heights | Scenic overlook |
+| Rustling Vale | Wind through leaves |
+| Acorn Ridge | Squirrel territory |
+| Twilight Meadow | Late afternoon golden hour |
+| Pumpkin Patch | Halloween-adjacent |
+| Crimson Trail | Deep red maples |
+| Foggy Orchard | Mysterious morning mist |
+
+### Autumn Characters
+
+| Character | Species | Personality | Role |
+|-----------|---------|-------------|------|
+| **Maple** | Red squirrel | Hyperactive collector, always hoarding acorns, speaks quickly, easily distracted by shiny things | Harvest element guide, bonus objectives |
+| **Bramley** | Hedgehog (brown/orange) | Preparing for hibernation, sleepy but determined, gives cozy advice | Appears when player is idle |
+| **Gourd** | Pumpkin sprite | Round, jolly, slightly spooky, loves Halloween, tells "scary" stories that aren't scary | Comic relief, Halloween event |
+| **Rustle** | Owl with autumn plumage | Wise about the changing seasons, melancholic about leaves falling, poetic | Lore/story moments |
+| **Cider** | Apple worm | Lives in apples, pops out unexpectedly, very apologetic about startling you | Hidden character, appears randomly |
+
+### Autumn Audio Suggestions
+
+**Ambient sounds**:
+- Leaves crunching underfoot
+- Wind rustling through trees
+- Distant geese honking
+- Acorns dropping
+- Crackling (distant bonfire?)
+
+**Music mood**: Warm acoustic guitar, soft piano, gentle strings. Think "cozy sweater" energy. Slower tempo than forest, more contemplative.
+
+---
+
+## Additional Game Element Ideas
+
+### Movement Modifiers
+
+| Element | Mechanic | Complexity |
+|---------|----------|------------|
+| **Sticky Honey** | Tiles covered in honey slow you - takes 2 inputs to leave | Low |
+| **Boost Pads** | Step on to launch 2-3 tiles in a direction | Medium |
+| **Rotating Tiles** | Platform rotates 90° after you step off, changing connections | Medium |
+| **Mirror Tiles** | Your input is reversed (left = right) while on these | Medium |
+| **Momentum** | Moving in a direction gives +1 move in same direction | High |
+
+### State-Change Mechanics
+
+| Element | Mechanic | Complexity |
+|---------|----------|------------|
+| **Day/Night Cycle** | Some tiles only passable at day or night, cycles every X moves | Medium |
+| **Temperature** | Hot tiles melt ice, cold tiles freeze water, player carries temperature | High |
+| **Weight Plates** | Standing on plate A opens gate B, need to route carefully | Medium |
+| **Color Switches** | Red switch toggles red tiles (solid ↔ passable) | Medium |
+| **Growing Vines** | Vines spread each turn, must complete before blocked | Medium |
+
+### Risk/Reward Mechanics
+
+| Element | Mechanic | Complexity |
+|---------|----------|------------|
+| **Shortcuts** | Dangerous path is shorter but risky (thorns, crumbling) | Low |
+| **Bonus Collectibles** | Optional items off the main path for completionists | Low |
+| **Time Pressure** | Optional timer for bonus stars, no penalty for slow | Low |
+| **Fragile Tiles** | Some grass breaks after 2 visits instead of 1 | Medium |
+| **Score Multiplier** | Chain moves without undoing for higher score | Low |
+
+### Visual/Feel Improvements
+
+| Idea | Description |
+|------|-------------|
+| **Footprints** | Show where you've walked on dirt/sand/snow |
+| **Trail particles** | Spores/leaves/sparkles follow the player |
+| **Tile reactions** | Grass sways when you pass, water ripples |
+| **Weather states** | Rain, snow, sunshine affect biome feel |
+| **Wildlife** | Butterflies, birds, rabbits appear in background |
+| **Growth animation** | Mushrooms visibly sprout with particle effects |
+
+### Puzzle Modifiers (for difficulty)
+
+| Modifier | Effect |
+|----------|--------|
+| **No Undo** | Hardcore mode, mistakes are permanent |
+| **Limited Moves** | Must complete in exactly N moves |
+| **Blind** | Tiles only revealed when adjacent |
+| **Mirrored** | Second mushroom spawns in mirrored position |
+| **Shrinking** | Border tiles fall away every X turns |
+
+---
+
+## Beach/Tides Biome - Implementation Notes
+
+*Already partially implemented as TIDES world element*
+
+### Current Implementation
+- LOW_SAND: Floods every 5 moves (TIDE_PERIOD)
+- SEA: Always impassable water
+- SAND_MUSHROOM: Mushroom on sand (still floods)
+- Global tide phase counter
+
+### Expansion Ideas
+
+| Tile | Behavior |
+|------|----------|
+| **Sandcastle** | Like bramble but washes away when flooded |
+| **Tide Pool** | Safe during flood, like stone but coastal |
+| **Seaweed** | Slippery when wet (flood = ice physics) |
+| **Driftwood** | Moves with tide direction each flood cycle |
+| **Crab** | Moves sideways each turn, obstacle that relocates |
+| **Buried Treasure** | Revealed only at low tide, collectible |
+
+### Beach World Names
+- Sandy Shores
+- Tidal Pools
+- Coral Cove
+- Driftwood Beach
+- Seashell Bay
+- Sunset Strand
+- Kelp Coast
+- Foam Flats

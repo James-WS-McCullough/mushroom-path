@@ -51,7 +51,7 @@ const emit = defineEmits<{
           :key="element"
           class="element-icon"
           :class="{ 'element-icon--dirt': element === WE.DIRT }"
-          :title="element === WE.RIVERS ? 'Rivers' : element === WE.DIRT ? 'Dirt Patches' : element === WE.ICE ? 'Ice' : element === WE.FAIRY ? 'Fairy Rings' : element === WE.POND ? 'Lily Pads' : element"
+          :title="element === WE.RIVERS ? 'Rivers' : element === WE.DIRT ? 'Dirt Patches' : element === WE.ICE ? 'Ice' : element === WE.FAIRY ? 'Fairy Rings' : element === WE.POND ? 'Lily Pads' : element === WE.TIDES ? 'Tides' : element === WE.BOUNCE ? 'Bounce Pads' : element"
         >
           <!-- Water droplet icon for rivers -->
           <svg v-if="element === WE.RIVERS" viewBox="0 0 24 24" class="element-svg element-svg--water">
@@ -85,6 +85,23 @@ const emit = defineEmits<{
             <!-- Small flower -->
             <circle cx="14" cy="8" r="2.5" fill="#ff9eb5"/>
             <circle cx="14" cy="8" r="1" fill="#ffeb3b"/>
+          </svg>
+          <!-- Wave icon for tides -->
+          <svg v-else-if="element === WE.TIDES" viewBox="0 0 24 24" class="element-svg element-svg--tides">
+            <path d="M2 12c2-2 4-3 6-3s4 1 6 3 4 3 6 3" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+            <path d="M2 17c2-2 4-3 6-3s4 1 6 3 4 3 6 3" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" opacity="0.6"/>
+            <path d="M2 7c2-2 4-3 6-3s4 1 6 3 4 3 6 3" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" opacity="0.6"/>
+          </svg>
+          <!-- Bounce pad icon (red mushroom with dots) -->
+          <svg v-else-if="element === WE.BOUNCE" viewBox="0 0 24 24" class="element-svg element-svg--bounce">
+            <!-- Red mushroom cap -->
+            <ellipse cx="12" cy="14" rx="9" ry="6" fill="currentColor"/>
+            <!-- White dots -->
+            <circle cx="8" cy="12" r="1.5" fill="white"/>
+            <circle cx="14" cy="11" r="1.8" fill="white"/>
+            <circle cx="11" cy="15" r="1.2" fill="white"/>
+            <!-- Bounce arrow -->
+            <path d="M12 2l3 4h-2v3h-2V6H9l3-4z" fill="#ffeb3b"/>
           </svg>
         </div>
       </div>
@@ -380,6 +397,14 @@ const emit = defineEmits<{
 
 .element-svg--pond {
   color: #4a9a6a;
+}
+
+.element-svg--tides {
+  color: #5ab8d9;
+}
+
+.element-svg--bounce {
+  color: #e85a5a;
 }
 
 .sound-controls {

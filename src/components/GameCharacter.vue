@@ -8,6 +8,7 @@ const props = defineProps<{
 	position: Position;
 	isHopping: boolean;
 	isSliding: boolean;
+	isBouncing: boolean;
 	isStuck: boolean;
 	isTeleporting: boolean;
 	teleportPhase: TeleportPhase;
@@ -193,9 +194,9 @@ const spriteUrl = computed(() => {
     }"
   >
     <!-- Ground shadow -->
-    <div :class="['character__shadow', { 'character__shadow--hopping': isHopping, 'character__shadow--waving': isWaving }]"></div>
+    <div :class="['character__shadow', { 'character__shadow--hopping': isHopping && !isBouncing, 'character__shadow--bouncing': isBouncing, 'character__shadow--waving': isWaving }]"></div>
 
-    <div :class="['character__sprite', { 'character__sprite--hopping': isHopping, 'character__sprite--stuck': isStuck, 'character__sprite--waving': isWaving, 'character__sprite--facing-right': facingDirection === 'right' }]">
+    <div :class="['character__sprite', { 'character__sprite--hopping': isHopping && !isBouncing, 'character__sprite--bouncing': isBouncing, 'character__sprite--stuck': isStuck, 'character__sprite--waving': isWaving, 'character__sprite--facing-right': facingDirection === 'right' }]">
       <img :src="spriteUrl" alt="Mushroom Girl" class="sprite-img" />
     </div>
   </div>
@@ -360,6 +361,58 @@ const spriteUrl = computed(() => {
   }
   100% {
     transform: translateX(-50%) translateY(0) scale(1, 1);
+  }
+}
+
+/* Dramatic bounce from bounce pad - much higher with symmetric arc */
+.character__sprite--bouncing {
+  animation: dramatic-bounce 0.4s linear forwards;
+}
+
+@keyframes dramatic-bounce {
+  0% {
+    transform: translateX(-50%) translateY(0) scale(1, 1);
+  }
+  15% {
+    transform: translateX(-50%) translateY(-35px) scale(0.92, 1.12);
+  }
+  35% {
+    transform: translateX(-50%) translateY(-52px) scale(0.9, 1.1);
+  }
+  50% {
+    transform: translateX(-50%) translateY(-55px) scale(0.9, 1.08);
+  }
+  65% {
+    transform: translateX(-50%) translateY(-52px) scale(0.92, 1.06);
+  }
+  85% {
+    transform: translateX(-50%) translateY(-35px) scale(1.05, 0.95);
+  }
+  95% {
+    transform: translateX(-50%) translateY(-8px) scale(1.1, 0.9);
+  }
+  100% {
+    transform: translateX(-50%) translateY(0) scale(1, 1);
+  }
+}
+
+/* Shadow shrinks more during bounce - symmetric */
+.character__shadow--bouncing {
+  animation: shadow-bounce 0.4s linear forwards;
+}
+
+@keyframes shadow-bounce {
+  0% {
+    transform: translateX(-50%) scale(1, 1);
+    opacity: 0.3;
+  }
+  50% {
+    transform: translateX(-50%) scale(0.4, 0.4);
+    opacity: 0.15;
+  }
+  100% {
+    transform: translateX(-50%) scale(1, 1);
+    opacity: 0.3;
   }
 }
 

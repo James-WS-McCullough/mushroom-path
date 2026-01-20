@@ -330,6 +330,12 @@ function isJustCleaned(tilePos: Position): boolean {
 	return cleaned.x === tilePos.x && cleaned.y === tilePos.y;
 }
 
+function isBounceActivated(tilePos: Position): boolean {
+	const bouncePos = game.lastBouncePadPosition.value;
+	if (!bouncePos) return false;
+	return bouncePos.x === tilePos.x && bouncePos.y === tilePos.y;
+}
+
 function shouldShimmer(): boolean {
 	return game.showHints.value;
 }
@@ -492,6 +498,7 @@ defineExpose({
             :is-just-cleaned="isJustCleaned(tile.position)"
             :is-hinted="isHintTile(tile.position)"
             :is-stuck-highlight="isStuckTile(tile.position)"
+            :is-bounce-activated="isBounceActivated(tile.position)"
             :flow-direction="game.getWaterFlow(tile.position)"
             :has-ice-element="hasIceElement"
             :has-dirt-element="hasDirtElement"
@@ -559,6 +566,7 @@ defineExpose({
           :position="game.playerPosition.value"
           :is-hopping="game.isHopping.value"
           :is-sliding="game.isSliding.value"
+          :is-bouncing="game.isBouncing.value"
           :is-stuck="game.isStuck.value"
           :is-teleporting="game.isTeleporting.value"
           :teleport-phase="game.teleportPhase.value"

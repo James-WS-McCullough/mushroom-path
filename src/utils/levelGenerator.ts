@@ -30,6 +30,7 @@ export interface GeneratorConfig {
 	pondClusterSize: number;
 	tidesChance: number;
 	tidesClusterSize: number;
+	bounceChance: number;
 }
 
 const DEFAULT_CONFIG: GeneratorConfig = {
@@ -52,6 +53,7 @@ const DEFAULT_CONFIG: GeneratorConfig = {
 	pondClusterSize: 3,
 	tidesChance: 0.1,
 	tidesClusterSize: 4,
+	bounceChance: 0.08,
 };
 
 // Tide period constant - must match useGame.ts
@@ -706,6 +708,7 @@ function findHamiltonianPath(
 	allShapeTiles: Set<string> = new Set(),
 	pondTiles: Set<string> = new Set(),
 	lowSandTiles: Set<string> = new Set(),
+	bouncePadTiles: Set<string> = new Set(),
 ): Position[] | null {
 	const grassSet = new Set(grassTiles.map((t) => posKey(t.x, t.y)));
 
@@ -894,7 +897,7 @@ function findHamiltonianPath(
 			}
 		}
 
-		// Ice slide destinations
+		// Ice slide destinations (with bounce pad chaining)
 		const iceSlideDestinations: {
 			iceEntry: Position;
 			destination: Position;
@@ -908,14 +911,26 @@ function findHamiltonianPath(
 			const adjacentKey = posKey(adjacentPos.x, adjacentPos.y);
 			if (iceTiles.has(adjacentKey)) {
 				// Compute where we'd slide to from this entry direction
-				const slideEnd = computeIceSlideDestination(
+				let slideEnd = computeIceSlideDestination(
 					adjacentPos,
 					dir,
 					iceTiles,
 					currentObstacles,
 					allShapeTiles,
 				);
-				const slideEndKey = posKey(slideEnd.x, slideEnd.y);
+				let slideEndKey = posKey(slideEnd.x, slideEnd.y);
+
+				// If ice slide ends on a bounce pad, follow the bounce chain
+				if (bouncePadTiles.has(slideEndKey)) {
+					const bounceResult = calculateBounceChainDestination(slideEnd, d);
+					if (bounceResult) {
+						slideEnd = bounceResult;
+						slideEndKey = posKey(slideEnd.x, slideEnd.y);
+					} else {
+						continue; // Bounce chain failed, skip this ice slide
+					}
+				}
+
 				// Check if the landing tile is valid (grass, dirt, or stone - not ice)
 				if (!iceTiles.has(slideEndKey)) {
 					const isValidLanding =
@@ -944,10 +959,96 @@ function findHamiltonianPath(
 			}
 		}
 
+		// Bounce pad destinations (with chaining support)
+		const bouncePadDestinations: {
+			bouncePad: Position;
+			destination: Position;
+		}[] = [];
+
+		// Helper to calculate final bounce destination, following chains
+		function calculateBounceChainDestination(
+			startPadPos: Position,
+			direction: { x: number; y: number },
+			visitedPads: Set<string> = new Set(),
+		): Position | null {
+			const padKey = posKey(startPadPos.x, startPadPos.y);
+			if (visitedPads.has(padKey)) return null; // Infinite loop prevention
+			visitedPads.add(padKey);
+
+			// Try distances 3, 2, 1
+			for (let dist = 3; dist >= 1; dist--) {
+				const landPos = {
+					x: startPadPos.x + direction.x * dist,
+					y: startPadPos.y + direction.y * dist,
+				};
+				const landKey = posKey(landPos.x, landPos.y);
+
+				// Check if landing is valid
+				if (!allShapeTiles.has(landKey)) continue; // Out of bounds
+				if (currentObstacles.has(landKey)) continue; // Bramble or mushroom
+				if (waterTiles.has(landKey)) continue; // Water
+				if (pondTiles.has(landKey)) continue; // Pond
+				if (iceTiles.has(landKey)) continue; // Can't land on ice from bounce
+				if (lowSandTiles.has(landKey) && wouldBeFloodedAtNextDepth)
+					continue; // Flooded low sand
+
+				// If landing on another bounce pad, follow the chain
+				if (bouncePadTiles.has(landKey)) {
+					const chainResult = calculateBounceChainDestination(
+						landPos,
+						direction,
+						visitedPads,
+					);
+					if (chainResult) return chainResult;
+					continue; // Chain failed, try shorter distance
+				}
+
+				// Valid non-bounce landing found
+				return landPos;
+			}
+
+			return null; // No valid landing found
+		}
+
+		if (bouncePadTiles.size > 0) {
+			for (let i = 0; i < deltas.length; i++) {
+				const d = deltas[i];
+				if (!d) continue;
+				const adjacentPos = { x: current.x + d.x, y: current.y + d.y };
+				const adjacentKey = posKey(adjacentPos.x, adjacentPos.y);
+
+				if (bouncePadTiles.has(adjacentKey)) {
+					// Calculate final destination after any bounce chains
+					const finalDest = calculateBounceChainDestination(adjacentPos, d);
+					if (!finalDest) continue;
+
+					const landKey = posKey(finalDest.x, finalDest.y);
+					const landVisitedOnce = visitedOnce.has(landKey);
+					const landVisitedTwice = visitedTwice.has(landKey);
+					const landIsDirt = dirtTiles.has(landKey);
+					const landIsStone = stoneTiles.has(landKey);
+					const landIsGrass = grassSet.has(landKey);
+
+					// Valid landing: unvisited grass/dirt, dirt visited once, or stone
+					if (
+						landIsStone ||
+						(landIsGrass &&
+							(!landVisitedOnce || (landIsDirt && !landVisitedTwice)))
+					) {
+						bouncePadDestinations.push({
+							bouncePad: adjacentPos,
+							destination: finalDest,
+						});
+					}
+				}
+			}
+		}
+
 		// Shuffle options
 		const allNeighbors = shuffleArray([...standardNeighbors]);
 		const shuffledWaterSlides = shuffleArray(waterSlideDestinations);
 		const shuffledIceSlides = shuffleArray(iceSlideDestinations);
+		const shuffledBouncePads = shuffleArray(bouncePadDestinations);
 
 		// Try standard neighbors
 		for (const neighbor of allNeighbors) {
@@ -1034,6 +1135,56 @@ function findHamiltonianPath(
 
 		// Try ice slides
 		for (const { destination } of shuffledIceSlides) {
+			const destKey = posKey(destination.x, destination.y);
+
+			if (stoneTiles.has(destKey)) {
+				// Landed on stone - need to step off to grass/dirt
+				const stoneNeighbors = getReachableNeighbors(
+					destination,
+					walkableTiles,
+					currentObstacles,
+				).filter((n) => {
+					const snKey = posKey(n.x, n.y);
+					if (!grassSet.has(snKey)) return false;
+
+					const snVisitedOnce = visitedOnce.has(snKey);
+					const snVisitedTwice = visitedTwice.has(snKey);
+					const snIsDirt = dirtTiles.has(snKey);
+
+					if (!snVisitedOnce) return true;
+					if (snIsDirt && !snVisitedTwice) return true;
+					return false;
+				});
+
+				for (const stoneNeighbor of shuffleArray(stoneNeighbors)) {
+					const result = dfs(
+						stoneNeighbor,
+						visitedOnce,
+						visitedTwice,
+						depth + 1,
+						newRecentPath,
+					);
+					if (result) {
+						return [current, destination, ...result];
+					}
+				}
+			} else {
+				// Landed on grass/dirt - continue path from there
+				const result = dfs(
+					destination,
+					visitedOnce,
+					visitedTwice,
+					depth + 1,
+					newRecentPath,
+				);
+				if (result) {
+					return [current, ...result];
+				}
+			}
+		}
+
+		// Try bounce pads
+		for (const { destination } of shuffledBouncePads) {
 			const destKey = posKey(destination.x, destination.y);
 
 			if (stoneTiles.has(destKey)) {
@@ -1810,6 +1961,121 @@ function computeIceSlideDestination(
 	}
 }
 
+// Place bounce pads on grass tiles BEFORE pathfinding
+// Bounce pads need:
+// 1. At least one accessible adjacent grass tile (to step onto the pad)
+// 2. Room to bounce (at least 1 tile) in some direction
+// Returns a set of position keys where bounce pads are placed
+function placeBouncePads(
+	grass: Set<string>,
+	startPosition: Position,
+	allShapeTiles: Set<string>,
+	brambles: Set<string>,
+	bounceChance: number,
+): Set<string> {
+	const bouncePads = new Set<string>();
+
+	if (bounceChance <= 0) return bouncePads;
+
+	const startKey = posKey(startPosition.x, startPosition.y);
+
+	const directions = [
+		{ dx: 0, dy: -1 }, // up
+		{ dx: 0, dy: 1 }, // down
+		{ dx: -1, dy: 0 }, // left
+		{ dx: 1, dy: 0 }, // right
+	];
+
+	// Check if a position is a valid landing spot (grass, not bramble, not already a bounce pad)
+	const canLandOn = (key: string): boolean => {
+		if (!allShapeTiles.has(key)) return false;
+		if (brambles.has(key)) return false;
+		if (bouncePads.has(key)) return false;
+		return true;
+	};
+
+	// Check if a tile has valid bounce potential
+	// Must have: accessible approach from one side AND room to bounce on another side
+	const hasValidBouncePotential = (pos: Position): boolean => {
+		const key = posKey(pos.x, pos.y);
+
+		// For each pair of opposite directions, check if one side is accessible
+		// and the opposite side has room to bounce
+		const oppositePairs = [
+			[
+				{ dx: -1, dy: 0 },
+				{ dx: 1, dy: 0 },
+			], // left-right
+			[
+				{ dx: 0, dy: -1 },
+				{ dx: 0, dy: 1 },
+			], // up-down
+		];
+
+		for (const [dir1, dir2] of oppositePairs) {
+			if (!dir1 || !dir2) continue;
+
+			// Check dir1 as approach, dir2 as bounce direction (and vice versa)
+			for (const [approachDir, bounceDir] of [
+				[dir1, dir2],
+				[dir2, dir1],
+			]) {
+				if (!approachDir || !bounceDir) continue;
+
+				// Check if approach side is accessible (adjacent grass tile)
+				const approachKey = posKey(
+					pos.x + approachDir.dx,
+					pos.y + approachDir.dy,
+				);
+				const approachIsAccessible =
+					grass.has(approachKey) &&
+					!brambles.has(approachKey) &&
+					!bouncePads.has(approachKey);
+
+				if (!approachIsAccessible) continue;
+
+				// Check if bounce side has room (at least 1 tile, prefer 2-3)
+				// Try distances 3, 2, 1 - need at least one valid landing
+				for (let dist = 3; dist >= 1; dist--) {
+					const landKey = posKey(
+						pos.x + bounceDir.dx * dist,
+						pos.y + bounceDir.dy * dist,
+					);
+					if (canLandOn(landKey) && landKey !== key) {
+						return true;
+					}
+				}
+			}
+		}
+
+		return false;
+	};
+
+	// Candidates are grass tiles (excluding start)
+	const candidates = Array.from(grass).filter((key) => {
+		if (key === startKey) return false;
+		if (brambles.has(key)) return false;
+		return Math.random() < bounceChance;
+	});
+
+	// Shuffle and limit the number of bounce pads (max 2-3 per level)
+	const shuffled = shuffleArray(candidates);
+	const maxPads = Math.min(3, Math.ceil(shuffled.length * 0.15));
+
+	for (let i = 0; i < maxPads && i < shuffled.length; i++) {
+		const key = shuffled[i];
+		if (!key) continue;
+
+		const pos = parseKey(key);
+
+		if (hasValidBouncePotential(pos)) {
+			bouncePads.add(key);
+		}
+	}
+
+	return bouncePads;
+}
+
 // Place portal pairs on grass tiles
 // Portals come in pairs - each pair teleports between each other
 // Returns a map of position key -> portal type
@@ -1894,6 +2160,7 @@ function buildLevelFromPath(
 	rooms: Rectangle[],
 	lowSand: Set<string> = new Set(),
 	sea: Set<string> = new Set(),
+	bouncePads: Set<string> = new Set(),
 ): Level {
 	let minX = Number.POSITIVE_INFINITY;
 	let minY = Number.POSITIVE_INFINITY;
@@ -1937,6 +2204,9 @@ function buildLevelFromPath(
 			} else if (portals.has(key)) {
 				// Portal tiles replace grass tiles
 				row.push(portals.get(key)!);
+			} else if (bouncePads.has(key)) {
+				// Bounce pad tiles replace grass tiles
+				row.push(TileType.BOUNCE_PAD);
 			} else if (dirt.has(key)) {
 				row.push(TileType.DIRT);
 			} else if (allShapeTiles.has(key)) {
@@ -2085,6 +2355,15 @@ export function generateLevel(
 		elementConfig.tidesChance = Math.max(baseTidesChance * 8, 0.8);
 	}
 
+	// Bounce pads only generate if the BOUNCE element is active
+	if (!elements.includes(WE.BOUNCE)) {
+		elementConfig.bounceChance = 0;
+	} else {
+		// Boost bounce chance to ensure bounce pads appear reliably
+		const baseBounceChance = config.bounceChance ?? DEFAULT_CONFIG.bounceChance;
+		elementConfig.bounceChance = Math.max(baseBounceChance * 6, 0.5);
+	}
+
 	const fullConfig = { ...DEFAULT_CONFIG, ...elementConfig };
 	const maxRetries = 100;
 
@@ -2176,7 +2455,19 @@ export function generateLevel(
 			fullConfig.dirtChance,
 		);
 
-		// Find path - path finder will visit dirt tiles twice, handle ice sliding, and avoid low sand during floods
+		// Place bounce pads BEFORE pathfinding
+		// They need valid placement (accessible + room to bounce)
+		const startPos = grassTiles[0] ?? { x: 0, y: 0 };
+		const bouncePads = placeBouncePads(
+			grass,
+			startPos,
+			shape,
+			bramblesAfterPond,
+			fullConfig.bounceChance,
+		);
+
+		// Find path - path finder will visit dirt tiles twice, handle ice sliding,
+		// avoid low sand during floods, and handle bounce pad mechanics
 		const path = findHamiltonianPath(
 			grassTiles,
 			bramblesAfterPond,
@@ -2188,12 +2479,13 @@ export function generateLevel(
 			shape,
 			pond,
 			lowSand,
+			bouncePads,
 		);
 
 		if (path) {
 			// Place portal pairs AFTER pathfinding (portals don't affect the path - they're teleports)
-			const startPos = path[0] ?? { x: 0, y: 0 };
-			const portals = placePortalPairs(grass, startPos, fullConfig.portalPairs);
+			const pathStartPos = path[0] ?? { x: 0, y: 0 };
+			const portals = placePortalPairs(grass, pathStartPos, fullConfig.portalPairs);
 
 			const level = buildLevelFromPath(
 				path,
@@ -2210,6 +2502,7 @@ export function generateLevel(
 				rooms,
 				lowSand,
 				sea,
+				bouncePads,
 			);
 			if (verifyLevel(level)) {
 				return level;

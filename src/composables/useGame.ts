@@ -51,6 +51,8 @@ export function useGame(level: Level) {
 	const hasWon = ref(false);
 	const isHopping = ref(false);
 	const isSliding = ref(false);
+	const isBouncing = ref(false);
+	const lastBouncePadPosition = ref<Position | null>(null);
 	const isTeleporting = ref(false);
 	const teleportPhase = ref<TeleportPhase>(null);
 	const poofPositions = ref<Position[]>([]);
@@ -183,13 +185,14 @@ export function useGame(level: Level) {
 			return false;
 		}
 
-		// Can land on grass, stone, water, dirt, ice, or portal tiles
+		// Can land on grass, stone, water, dirt, ice, bounce pad, or portal tiles
 		return (
 			tile.type === TileType.GRASS ||
 			tile.type === TileType.STONE ||
 			tile.type === TileType.WATER ||
 			tile.type === TileType.DIRT ||
 			tile.type === TileType.ICE ||
+			tile.type === TileType.BOUNCE_PAD ||
 			isPortalTile(tile.type)
 		);
 	}
@@ -692,6 +695,7 @@ export function useGame(level: Level) {
 					adjTileType === TileType.WATER ||
 					adjTileType === TileType.DIRT ||
 					adjTileType === TileType.ICE ||
+					adjTileType === TileType.BOUNCE_PAD ||
 					(adjTileType && isPortalTile(adjTileType)) ||
 					(adjTileType === TileType.LOW_SAND && !lowSandWillBeFlooded)
 				) {
@@ -732,6 +736,7 @@ export function useGame(level: Level) {
 							jumpTileType === TileType.WATER ||
 							jumpTileType === TileType.DIRT ||
 							jumpTileType === TileType.ICE ||
+							jumpTileType === TileType.BOUNCE_PAD ||
 							(jumpTileType && isPortalTile(jumpTileType)) ||
 							(jumpTileType === TileType.LOW_SAND && !lowSandWillBeFlooded)
 						) {
@@ -841,7 +846,7 @@ export function useGame(level: Level) {
 			}
 			finalPos = current;
 		} else if (nextTileType === TileType.ICE) {
-			// Simulate ice slide
+			// Simulate ice slide (with bounce pad chaining)
 			const delta = getDirectionDelta(move.direction);
 			let current = move.target;
 			while (true) {
@@ -876,6 +881,62 @@ export function useGame(level: Level) {
 				}
 			}
 			finalPos = current;
+
+			// Check if ice slide ends on bounce pad - chain into bounce
+			const iceEndType = newTileStates[current.y]?.[current.x];
+			if (iceEndType === TileType.BOUNCE_PAD) {
+				// Helper to check if a tile can be landed on
+				const canLandOnForBounce = (tileType: TileType | undefined): boolean => {
+					if (!tileType) return false;
+					if (tileType === TileType.VOID) return false;
+					if (tileType === TileType.BRAMBLE) return false;
+					if (tileType === TileType.MUSHROOM) return false;
+					if (tileType === TileType.SAND_MUSHROOM) return false;
+					if (tileType === TileType.POND_WATER) return false;
+					if (tileType === TileType.SEA) return false;
+					return true;
+				};
+
+				// Recursive function to follow bounce chains
+				const calculateBounceChain = (
+					padPos: Position,
+					dir: { x: number; y: number },
+					visitedPads: Set<string> = new Set(),
+				): Position | null => {
+					const padKey = `${padPos.x},${padPos.y}`;
+					if (visitedPads.has(padKey)) return null;
+					visitedPads.add(padKey);
+
+					for (let distance = 3; distance >= 1; distance--) {
+						const landingPos = {
+							x: padPos.x + dir.x * distance,
+							y: padPos.y + dir.y * distance,
+						};
+						if (
+							landingPos.x >= 0 &&
+							landingPos.x < level.width &&
+							landingPos.y >= 0 &&
+							landingPos.y < level.height
+						) {
+							const landingType = newTileStates[landingPos.y]?.[landingPos.x];
+							if (landingType === TileType.BOUNCE_PAD) {
+								const chainResult = calculateBounceChain(landingPos, dir, visitedPads);
+								if (chainResult) return chainResult;
+								continue;
+							}
+							if (canLandOnForBounce(landingType)) {
+								return landingPos;
+							}
+						}
+					}
+					return null;
+				};
+
+				const bounceResult = calculateBounceChain(current, delta);
+				if (bounceResult) {
+					finalPos = bounceResult;
+				}
+			}
 		} else if (nextTileType && isPortalTile(nextTileType)) {
 			// Find matching portal
 			for (let y = 0; y < newTileStates.length; y++) {
@@ -889,6 +950,111 @@ export function useGame(level: Level) {
 						finalPos = { x, y };
 						break;
 					}
+				}
+			}
+		} else if (nextTileType === TileType.BOUNCE_PAD) {
+			// Simulate bounce with chaining support
+			const delta = getDirectionDelta(move.direction);
+
+			// Helper to check if a tile can be landed on (excluding bounce pads for chain logic)
+			const canLandOnForPathfinding = (tileType: TileType | undefined): boolean => {
+				if (!tileType) return false;
+				if (tileType === TileType.VOID) return false;
+				if (tileType === TileType.BRAMBLE) return false;
+				if (tileType === TileType.MUSHROOM) return false;
+				if (tileType === TileType.SAND_MUSHROOM) return false;
+				if (tileType === TileType.POND_WATER) return false;
+				if (tileType === TileType.SEA) return false;
+				return true;
+			};
+
+			// Recursive function to follow bounce chains
+			const calculateBounceChainDestination = (
+				padPos: Position,
+				dir: { x: number; y: number },
+				visitedPads: Set<string> = new Set(),
+			): Position | null => {
+				const padKey = `${padPos.x},${padPos.y}`;
+				if (visitedPads.has(padKey)) return null; // Infinite loop prevention
+				visitedPads.add(padKey);
+
+				for (let distance = 3; distance >= 1; distance--) {
+					const landingPos = {
+						x: padPos.x + dir.x * distance,
+						y: padPos.y + dir.y * distance,
+					};
+
+					if (
+						landingPos.x >= 0 &&
+						landingPos.x < level.width &&
+						landingPos.y >= 0 &&
+						landingPos.y < level.height
+					) {
+						const landingType = newTileStates[landingPos.y]?.[landingPos.x];
+
+						// If landing on another bounce pad, follow the chain
+						if (landingType === TileType.BOUNCE_PAD) {
+							const chainResult = calculateBounceChainDestination(
+								landingPos,
+								dir,
+								visitedPads,
+							);
+							if (chainResult) return chainResult;
+							continue; // Chain failed, try shorter distance
+						}
+
+						if (canLandOnForPathfinding(landingType)) {
+							return landingPos;
+						}
+					}
+				}
+				return null;
+			};
+
+			const chainDest = calculateBounceChainDestination(move.target, delta);
+			if (chainDest) {
+				finalPos = chainDest;
+
+				// Handle chaining - if we land on water or ice, simulate that too
+				const landingType = newTileStates[chainDest.y]?.[chainDest.x];
+				if (landingType === TileType.WATER) {
+					let current = chainDest;
+					while (true) {
+						const flow = getWaterFlow(current);
+						if (!flow) break;
+						const waterDelta = getDirectionDelta(flow);
+						const next = { x: current.x + waterDelta.x, y: current.y + waterDelta.y };
+						if (next.x < 0 || next.x >= level.width || next.y < 0 || next.y >= level.height) break;
+						const nextType = newTileStates[next.y]?.[next.x];
+						if (nextType === TileType.WATER) {
+							current = next;
+						} else if (nextType === TileType.STONE) {
+							current = next;
+							break;
+						} else {
+							break;
+						}
+					}
+					finalPos = current;
+				} else if (landingType === TileType.ICE) {
+					let current = chainDest;
+					while (true) {
+						const next = { x: current.x + delta.x, y: current.y + delta.y };
+						if (next.x < 0 || next.x >= level.width || next.y < 0 || next.y >= level.height) break;
+						const nextType = newTileStates[next.y]?.[next.x];
+						if (nextType === TileType.BRAMBLE || nextType === TileType.MUSHROOM ||
+							nextType === TileType.SAND_MUSHROOM || nextType === TileType.VOID ||
+							nextType === TileType.POND_WATER) {
+							break;
+						}
+						if (nextType === TileType.ICE) {
+							current = next;
+						} else {
+							current = next;
+							break;
+						}
+					}
+					finalPos = current;
 				}
 			}
 		}
@@ -977,6 +1143,258 @@ export function useGame(level: Level) {
 		}
 
 		return { destination: current, path };
+	}
+
+	function computeBounceDestination(
+		startPos: Position,
+		direction: Direction,
+	): { destination: Position; path: Position[]; didMove: boolean } {
+		const MAX_BOUNCE_DISTANCE = 3;
+		const delta = getDirectionDelta(direction);
+
+		// Check if a tile can be landed on (only check landing spot, not tiles we jump over)
+		function canLandOnTile(tile: Tile | null): boolean {
+			if (!tile) return false;
+			// Can't land on these tile types
+			if (tile.type === TileType.VOID) return false;
+			if (tile.type === TileType.BRAMBLE) return false;
+			if (tile.type === TileType.MUSHROOM) return false;
+			if (tile.type === TileType.SAND_MUSHROOM) return false;
+			if (tile.type === TileType.POND_WATER) return false;
+			if (tile.type === TileType.SEA) return false;
+			return true;
+		}
+
+		// Try bouncing at progressively shorter distances (3, 2, 1) if landing spot is blocked
+		for (
+			let bounceDistance = MAX_BOUNCE_DISTANCE;
+			bounceDistance >= 1;
+			bounceDistance--
+		) {
+			// Calculate the landing position
+			const landingPos = {
+				x: startPos.x + delta.x * bounceDistance,
+				y: startPos.y + delta.y * bounceDistance,
+			};
+			const landingTile = getTile(landingPos);
+
+			// Check if we can land there (we can jump OVER obstacles, only landing matters)
+			if (canLandOnTile(landingTile)) {
+				// Build the path for animation (includes all positions we pass through)
+				const path: Position[] = [startPos];
+				for (let i = 1; i <= bounceDistance; i++) {
+					path.push({
+						x: startPos.x + delta.x * i,
+						y: startPos.y + delta.y * i,
+					});
+				}
+				return { destination: landingPos, path, didMove: true };
+			}
+		}
+
+		// No valid bounce - stay in place
+		return { destination: startPos, path: [startPos], didMove: false };
+	}
+
+	// Helper function for recursive bounce chaining
+	function animateBounceChain(
+		startPos: Position,
+		direction: Direction,
+		onComplete: () => void,
+	): void {
+		const { path, destination, didMove } =
+			computeBounceDestination(startPos, direction);
+
+		// If we can't move at all, just complete immediately
+		if (!didMove) {
+			isBouncing.value = false;
+			onComplete();
+			return;
+		}
+
+		slidePath.value = path;
+		playJump();
+		isSliding.value = true;
+		isBouncing.value = true;
+		lastBouncePadPosition.value = { ...startPos };
+
+		// Clear the bounce pad effect after animation completes
+		setTimeout(() => {
+			lastBouncePadPosition.value = null;
+		}, 500);
+
+		// Calculate interval timing to sync with animation duration (400ms)
+		// For smooth movement, spread position updates evenly across the animation
+		const animationDuration = 400;
+		const steps = path.length - 1; // Number of position changes
+		const intervalTime = steps > 0 ? Math.floor(animationDuration / steps) : 100;
+
+		// Move to first position immediately so horizontal movement starts with vertical
+		let pathIndex = 1;
+		if (path[pathIndex]) {
+			playerPosition.value = path[pathIndex];
+			pathIndex++;
+		}
+
+		const bounceInterval = setInterval(() => {
+			const nextPos = path[pathIndex];
+			if (pathIndex < path.length && nextPos) {
+				playerPosition.value = nextPos;
+				pathIndex++;
+			} else {
+				clearInterval(bounceInterval);
+				isSliding.value = false;
+				slidePath.value = [];
+
+				// Check what we landed on
+				const finalTile = getTile(destination);
+
+				if (finalTile?.type === TileType.BOUNCE_PAD) {
+					// Chain into another bounce recursively!
+					animateBounceChain(destination, direction, onComplete);
+				} else if (finalTile?.type === TileType.WATER) {
+					// Chain into water slide
+					isBouncing.value = false;
+					const { path: waterPath } = computeSlideDestination(destination);
+					slidePath.value = waterPath;
+					playWater();
+					isSliding.value = true;
+
+					let waterPathIndex = 1;
+					const waterSlideInterval = setInterval(() => {
+						const waterNextPos = waterPath[waterPathIndex];
+						if (waterPathIndex < waterPath.length && waterNextPos) {
+							playerPosition.value = waterNextPos;
+							waterPathIndex++;
+						} else {
+							clearInterval(waterSlideInterval);
+							isSliding.value = false;
+							slidePath.value = [];
+							onComplete();
+						}
+					}, 150);
+				} else if (finalTile?.type === TileType.ICE) {
+					// Chain into ice slide
+					isBouncing.value = false;
+					const { path: icePath, destination: iceDestination } = computeIceSlideDestination(
+						destination,
+						direction,
+					);
+					slidePath.value = icePath;
+					startIceSlide();
+					isSliding.value = true;
+
+					let icePathIndex = 1;
+					const iceSlideInterval = setInterval(() => {
+						const iceNextPos = icePath[icePathIndex];
+						if (icePathIndex < icePath.length && iceNextPos) {
+							playerPosition.value = iceNextPos;
+							icePathIndex++;
+						} else {
+							clearInterval(iceSlideInterval);
+							stopIceSlide();
+							isSliding.value = false;
+							slidePath.value = [];
+
+							// Check for chaining after ice slide
+							const iceEndTile = getTile(iceDestination);
+							if (iceEndTile?.type === TileType.BOUNCE_PAD) {
+								// Chain into bounce pad
+								animateBounceChain(iceDestination, direction, onComplete);
+							} else if (iceEndTile?.type === TileType.WATER) {
+								// Chain into water slide
+								const { path: waterPath } = computeSlideDestination(iceDestination);
+								slidePath.value = waterPath;
+								playWater();
+								isSliding.value = true;
+
+								let waterPathIndex = 1;
+								const waterSlideInterval = setInterval(() => {
+									const waterNextPos = waterPath[waterPathIndex];
+									if (waterPathIndex < waterPath.length && waterNextPos) {
+										playerPosition.value = waterNextPos;
+										waterPathIndex++;
+									} else {
+										clearInterval(waterSlideInterval);
+										isSliding.value = false;
+										slidePath.value = [];
+										onComplete();
+									}
+								}, 150);
+							} else if (iceEndTile && isPortalTile(iceEndTile.type)) {
+								// Chain into portal
+								const portalType = iceEndTile.type as PortalType;
+								const matchingPortal = findMatchingPortal(portalType, iceDestination);
+								if (matchingPortal) {
+									isTeleporting.value = true;
+									teleportPhase.value = "shrinking";
+									setTimeout(() => {
+										poofPositions.value = [{ ...iceDestination }];
+										playTeleportPoof();
+										playerPosition.value = { ...matchingPortal };
+										setTimeout(() => {
+											poofPositions.value = [{ ...matchingPortal }];
+											playTeleportPoof();
+											teleportPhase.value = "growing";
+											setTimeout(() => {
+												isTeleporting.value = false;
+												teleportPhase.value = null;
+												poofPositions.value = [];
+												onComplete();
+											}, 200);
+										}, 350);
+									}, 200);
+								} else {
+									onComplete();
+								}
+							} else {
+								onComplete();
+							}
+						}
+					}, 150);
+				} else if (finalTile && isPortalTile(finalTile.type)) {
+					// Chain into portal
+					isBouncing.value = false;
+					const portalType = finalTile.type as PortalType;
+					const matchingPortal = findMatchingPortal(portalType, destination);
+					if (matchingPortal) {
+						isTeleporting.value = true;
+						teleportPhase.value = "shrinking";
+						setTimeout(() => {
+							poofPositions.value = [{ ...destination }];
+							playTeleportPoof();
+							playerPosition.value = { ...matchingPortal };
+							setTimeout(() => {
+								poofPositions.value = [{ ...matchingPortal }];
+								playTeleportPoof();
+								teleportPhase.value = "growing";
+								setTimeout(() => {
+									isTeleporting.value = false;
+									teleportPhase.value = null;
+									poofPositions.value = [];
+									onComplete();
+								}, 200);
+							}, 350);
+						}, 200);
+					} else {
+						onComplete();
+					}
+				} else {
+					// Normal landing - play sound based on tile
+					isBouncing.value = false;
+					if (finalTile?.type === TileType.GRASS) {
+						playLand();
+					} else if (finalTile?.type === TileType.DIRT) {
+						playRandomDirt();
+					} else if (finalTile?.type === TileType.STONE) {
+						playStone();
+					} else if (finalTile?.type === TileType.POND) {
+						playWater();
+					}
+					onComplete();
+				}
+			}
+		}, intervalTime);
 	}
 
 	function tryMove(direction: Direction): Position | null {
@@ -1267,6 +1685,13 @@ export function useGame(level: Level) {
 									hasWon.value = true;
 								}
 							}
+						} else if (finalTile?.type === TileType.BOUNCE_PAD) {
+							// Chain into bounce pad
+							animateBounceChain(destination, direction, () => {
+								if (checkWinCondition()) {
+									hasWon.value = true;
+								}
+							});
 						} else {
 							// Play landing sound based on final tile type
 							if (finalTile?.type === TileType.GRASS) {
@@ -1285,6 +1710,20 @@ export function useGame(level: Level) {
 						}
 					}
 				}, 150); // Ice slide speed
+			}, 200);
+		} else if (landingTile?.type === TileType.BOUNCE_PAD) {
+			// Bounce pad - bounce player 3 tiles in movement direction
+			playerPosition.value = newPosition;
+
+			// Start bouncing animation after hop completes
+			setTimeout(() => {
+				isHopping.value = false;
+				// Use recursive helper for chain bouncing
+				animateBounceChain(newPosition, direction, () => {
+					if (checkWinCondition()) {
+						hasWon.value = true;
+					}
+				});
 			}, 200);
 		} else if (landingTile && isPortalTile(landingTile.type)) {
 			// Portal teleportation - portals stay active for bidirectional travel
@@ -1565,6 +2004,13 @@ export function useGame(level: Level) {
 									hasWon.value = true;
 								}
 							}
+						} else if (finalTile?.type === TileType.BOUNCE_PAD) {
+							// Chain into bounce pad
+							animateBounceChain(destination, direction, () => {
+								if (checkWinCondition()) {
+									hasWon.value = true;
+								}
+							});
 						} else {
 							// Play landing sound based on final tile type
 							if (finalTile?.type === TileType.GRASS) {
@@ -1583,6 +2029,18 @@ export function useGame(level: Level) {
 						}
 					}
 				}, 150); // Ice slide speed
+			}, 200);
+		} else if (landingTile?.type === TileType.BOUNCE_PAD) {
+			// Bounce pad - use recursive helper for chaining
+			playerPosition.value = target;
+
+			setTimeout(() => {
+				isHopping.value = false;
+				animateBounceChain(target, direction, () => {
+					if (checkWinCondition()) {
+						hasWon.value = true;
+					}
+				});
 			}, 200);
 		} else if (landingTile && isPortalTile(landingTile.type)) {
 			// Portal teleportation - portals stay active for bidirectional travel
@@ -1888,6 +2346,8 @@ export function useGame(level: Level) {
 		hasWon,
 		isHopping,
 		isSliding,
+		isBouncing,
+		lastBouncePadPosition,
 		isTeleporting,
 		teleportPhase,
 		poofPositions,

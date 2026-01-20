@@ -575,6 +575,57 @@ export const tidesIntroDialogue: DialogueScene = {
 	],
 };
 
+// Bounce pad intro - springy mushroom trampolines
+export const bounceIntroDialogue: DialogueScene = {
+	id: "bounce-intro",
+	background: "",
+	leftCharacter: "sprout",
+	rightCharacter: "dew",
+	overlay: true,
+	lines: [
+		{
+			speaker: "sprout",
+			name: "Sprout",
+			text: "ooooh~!! look at those squishy mushroom pads!!",
+			leftSprite: "MushroomGirl-Excited",
+			rightSprite: "BlueGirl-Normal",
+			leftHighlight: true,
+		},
+		{
+			speaker: "dew",
+			name: "Dew",
+			text: "those are bounce pads! theyre super springy~",
+			leftSprite: "MushroomGirl-Excited",
+			rightSprite: "BlueGirl-Happy",
+			rightHighlight: true,
+		},
+		{
+			speaker: "sprout",
+			name: "Sprout",
+			text: "so if i hop on one... what happens??",
+			leftSprite: "MushroomGirl-Happy",
+			rightSprite: "BlueGirl-Happy",
+			leftHighlight: true,
+		},
+		{
+			speaker: "dew",
+			name: "Dew",
+			text: "youll bounce three whole tiles in the direction youre going!",
+			leftSprite: "MushroomGirl-Happy",
+			rightSprite: "BlueGirl-Normal",
+			rightHighlight: true,
+		},
+		{
+			speaker: "sprout",
+			name: "Sprout",
+			text: "WHEEE~!! this is gonna be so fun!! boing boing boing!!",
+			leftSprite: "MushroomGirl-Excited",
+			rightSprite: "BlueGirl-Nervous",
+			leftHighlight: true,
+		},
+	],
+};
+
 // Map mechanic types to their intro dialogues
 export const mechanicDialogues: Record<string, DialogueScene> = {
 	ice: iceIntroDialogue,
@@ -583,6 +634,7 @@ export const mechanicDialogues: Record<string, DialogueScene> = {
 	fairy: fairyIntroDialogue,
 	pond: pondIntroDialogue,
 	tides: tidesIntroDialogue,
+	bounce: bounceIntroDialogue,
 };
 
 // Random adventure scenes - short moments between Sprout and Dew
