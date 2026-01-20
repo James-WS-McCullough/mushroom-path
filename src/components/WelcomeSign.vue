@@ -74,8 +74,9 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  justify-content: center;
+  justify-content: flex-end;
   padding-left: 24px;
+  padding-bottom: 100px;
   z-index: 150;
   animation: fadeIn 0.4s ease;
   transition: opacity 0.4s ease;
@@ -100,11 +101,13 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
+  /* Give the signpost a height so flexbox can position it properly */
+  height: 160px;
 }
 
 .post {
   position: absolute;
-  top: 0;
+  top: -30px;
   width: 20px;
   height: 100vh;
   background: linear-gradient(90deg, #6d5243 0%, #8b6b52 50%, #6d5243 100%);
@@ -140,9 +143,7 @@ onUnmounted(() => {
 }
 
 .sign-board {
-  position: absolute;
-  top: 12px;
-  left: 0;
+  position: relative;
   width: 340px;
   min-height: 130px;
   background: linear-gradient(180deg, #a08060 0%, #8b6b4a 50%, #7a5c3d 100%);
