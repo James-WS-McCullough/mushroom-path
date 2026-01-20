@@ -7,27 +7,45 @@ const QUEUE_SIZE = 3; // Number of levels to keep pre-generated
 
 interface LevelQueue {
 	getNextLevel: () => Level;
-	setWorldElements: (elements: WorldElement[]) => void;
+	setWorldElements: (elements: WorldElement[], startImmediately?: boolean) => void;
 	startGenerating: () => void;
+	pauseGeneration: () => void;
+	resumeGeneration: () => void;
 }
+
+// Polyfill for requestIdleCallback
+const requestIdle =
+	typeof requestIdleCallback !== "undefined"
+		? requestIdleCallback
+		: (cb: () => void) => setTimeout(cb, 1);
+
+const cancelIdle =
+	typeof cancelIdleCallback !== "undefined"
+		? cancelIdleCallback
+		: (id: number) => clearTimeout(id);
 
 export function useLevelQueue(): LevelQueue {
 	const levelQueue: Ref<Level[]> = ref([]);
 	const currentElements: Ref<WorldElement[]> = ref([]);
 	let isGenerating = false;
 	let generationScheduled = false;
+	let isPaused = false;
+	let pendingIdleCallback: number | null = null;
 
 	function generateInBackground() {
-		if (isGenerating || generationScheduled) return;
+		if (isGenerating || generationScheduled || isPaused) return;
 		if (levelQueue.value.length >= QUEUE_SIZE) return;
 
 		generationScheduled = true;
 
-		// Use setTimeout to avoid blocking the main thread
-		setTimeout(() => {
+		// Use requestIdleCallback to only generate when browser is idle
+		// This prevents blocking animations and user interactions
+		pendingIdleCallback = requestIdle(() => {
+			pendingIdleCallback = null;
 			generationScheduled = false;
 
-			if (levelQueue.value.length >= QUEUE_SIZE) return;
+			// Check again in case state changed while waiting
+			if (isPaused || levelQueue.value.length >= QUEUE_SIZE) return;
 
 			isGenerating = true;
 
@@ -42,11 +60,11 @@ export function useLevelQueue(): LevelQueue {
 
 			isGenerating = false;
 
-			// Continue generating if queue isn't full
-			if (levelQueue.value.length < QUEUE_SIZE) {
+			// Continue generating if queue isn't full and not paused
+			if (levelQueue.value.length < QUEUE_SIZE && !isPaused) {
 				generateInBackground();
 			}
-		}, 50); // Small delay to let other work happen
+		});
 	}
 
 	function getNextLevel(): Level {
@@ -69,23 +87,52 @@ export function useLevelQueue(): LevelQueue {
 		return newLevel ?? level1;
 	}
 
-	function setWorldElements(elements: WorldElement[]) {
+	function setWorldElements(elements: WorldElement[], startImmediately = true) {
 		// Clear queue when world elements change (new world)
 		levelQueue.value = [];
 		currentElements.value = elements;
 
-		// Start generating levels for the new world
-		generateInBackground();
+		// Cancel any pending generation
+		if (pendingIdleCallback !== null) {
+			cancelIdle(pendingIdleCallback);
+			pendingIdleCallback = null;
+			generationScheduled = false;
+		}
+
+		// Only start generating if not paused and requested
+		if (startImmediately && !isPaused) {
+			generateInBackground();
+		}
 	}
 
 	function startGenerating() {
 		generateInBackground();
 	}
 
+	function pauseGeneration() {
+		isPaused = true;
+		// Cancel any pending idle callback
+		if (pendingIdleCallback !== null) {
+			cancelIdle(pendingIdleCallback);
+			pendingIdleCallback = null;
+			generationScheduled = false;
+		}
+	}
+
+	function resumeGeneration() {
+		isPaused = false;
+		// Resume generation if queue isn't full
+		if (levelQueue.value.length < QUEUE_SIZE) {
+			generateInBackground();
+		}
+	}
+
 	return {
 		getNextLevel,
 		setWorldElements,
 		startGenerating,
+		pauseGeneration,
+		resumeGeneration,
 	};
 }
 

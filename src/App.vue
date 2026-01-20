@@ -440,16 +440,32 @@ watch(
 );
 
 function generateWorldElements(): WorldElement[] {
-	// World 2 (index 1) should have at most 1 element - we just met Dew!
-	const maxElements = currentWorldIndex.value === 1 ? 1 : 2;
+	// Get previous world's elements to avoid repetition
+	const prevWorldElements =
+		worldElementHistory.value[currentWorldIndex.value - 1] ?? [];
 
-	// Randomly select 0 to maxElements
-	const elementCount = Math.floor(Math.random() * (maxElements + 1));
+	// Helper to check if two element arrays are the same
+	const isSameElements = (a: WorldElement[], b: WorldElement[]) => {
+		if (a.length !== b.length) return false;
+		const sortedA = [...a].sort();
+		const sortedB = [...b].sort();
+		return sortedA.every((el, i) => el === sortedB[i]);
+	};
 
-	if (elementCount === 0) {
-		return [];
+	// Try to generate different elements (max 10 attempts)
+	for (let attempt = 0; attempt < 10; attempt++) {
+		const result = generateWorldElementsInner();
+
+		// Accept if different from previous world (or last attempt)
+		if (!isSameElements(result, prevWorldElements) || attempt === 9) {
+			return result;
+		}
 	}
 
+	return []; // Fallback (shouldn't reach here)
+}
+
+function generateWorldElementsInner(): WorldElement[] {
 	// Separate elements into seen and unseen
 	const seenElements = allElements.filter((el) =>
 		hasSeenMechanic(getMechanicKey(el)),
@@ -458,21 +474,37 @@ function generateWorldElements(): WorldElement[] {
 		(el) => !hasSeenMechanic(getMechanicKey(el)),
 	);
 
-	const result: WorldElement[] = [];
+	// World 2 (index 1) should have at most 1 element - we just met Dew!
+	const maxElements = currentWorldIndex.value === 1 ? 1 : 2;
 
-	// Add at most ONE unseen element (to introduce one mechanic at a time)
-	if (unseenElements.length > 0 && elementCount > 0) {
+	// Decide whether to introduce a new element or remix seen elements
+	// Higher chance to introduce new elements early, remix more later
+	const shouldIntroduceNew =
+		unseenElements.length > 0 &&
+		(seenElements.length === 0 || Math.random() < 0.6);
+
+	if (shouldIntroduceNew) {
+		// INTRODUCTION WORLD: Only the new element, no mixing
+		// This lets players learn one mechanic at a time
 		const randomUnseen =
 			unseenElements[Math.floor(Math.random() * unseenElements.length)]!;
-		result.push(randomUnseen);
+		return [randomUnseen];
 	}
 
-	// Fill remaining slots with seen elements
-	if (result.length < elementCount && seenElements.length > 0) {
-		const shuffledSeen = [...seenElements].sort(() => Math.random() - 0.5);
-		const remaining = elementCount - result.length;
-		result.push(...shuffledSeen.slice(0, remaining));
+	// REMIX WORLD: Combine previously seen elements (or have none)
+	if (seenElements.length === 0) {
+		return [];
 	}
+
+	// Randomly select 0 to maxElements from seen elements
+	const elementCount = Math.floor(Math.random() * (maxElements + 1));
+
+	if (elementCount === 0) {
+		return [];
+	}
+
+	const shuffledSeen = [...seenElements].sort(() => Math.random() - 0.5);
+	const result = shuffledSeen.slice(0, elementCount);
 
 	// Handle incompatible elements
 	const incompatiblePairs: [WE, WE][] = [
@@ -546,7 +578,9 @@ function advanceLevel(): boolean {
 		currentLevelNumber.value = 1;
 		const newElements = generateWorldElements();
 		currentWorldElements.value = newElements;
-		levelQueue.setWorldElements(newElements);
+		// Don't start generating immediately - wait until map screen completes
+		// This prevents blocking the map screen animation
+		levelQueue.setWorldElements(newElements, false);
 		// Queue mechanic intro dialogues for any new mechanics
 		queueUnseenMechanicDialogues(newElements);
 		return true; // Entered new world
@@ -623,6 +657,9 @@ function startTransition() {
 
 	// If entering a new world, show the map screen instead of normal fade
 	if (pendingNewWorld.value) {
+		// Pause background generation during map animation to prevent freezing
+		levelQueue.pauseGeneration();
+
 		// Set up map transition data
 		mapTransitionData.value = {
 			fromWorld: currentWorldIndex.value - 1,
@@ -709,6 +746,9 @@ function handleMapComplete() {
 
 	// Clear the world dialogue since it was shown on the map screen
 	pendingWorldDialogue.value = null;
+
+	// Resume background level generation now that map animation is done
+	levelQueue.resumeGeneration();
 
 	// Note: Don't call changeWorldBGM() here - performFadeTransition() will handle it
 	// since pendingNewWorld is still true

@@ -748,8 +748,9 @@ function findHamiltonianPath(
 		// Count completed tiles
 		// Grass tiles: completed after 1 visit
 		// Dirt tiles: completed after 2 visits
+		// Only count actual grass tiles (not lilypads or other visited tiles)
 		const completedGrass = [...visitedOnce].filter(
-			(k) => !dirtTiles.has(k),
+			(k) => grassSet.has(k) && !dirtTiles.has(k),
 		).length;
 		const completedDirt = visitedTwice.size;
 
