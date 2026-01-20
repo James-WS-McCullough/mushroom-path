@@ -1153,6 +1153,8 @@ export function useGame(level: Level) {
 			if (
 				nextTile.type === TileType.BRAMBLE ||
 				nextTile.type === TileType.MUSHROOM ||
+				nextTile.type === TileType.SAND_MUSHROOM ||
+				nextTile.type === TileType.HONEY_MUSHROOM ||
 				nextTile.type === TileType.VOID ||
 				nextTile.type === TileType.POND_WATER
 			) {

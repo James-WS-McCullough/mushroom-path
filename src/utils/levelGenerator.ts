@@ -719,8 +719,9 @@ function findHamiltonianPath(
 	// grassTiles already includes low sand tiles
 	const totalVisitsNeeded = grassTiles.length + dirtTiles.size;
 
-	// Limit iterations to prevent freezing - scales with grid size
-	const maxIterations = Math.min(50000, totalVisitsNeeded * 5000);
+	// Limit iterations to prevent freezing
+	// With connectivity pruning, we need far fewer iterations
+	const maxIterations = Math.min(10000, totalVisitsNeeded * 1000);
 	let iterations = 0;
 	const maxDepth = 500; // Prevent call stack overflow
 
@@ -1065,9 +1066,70 @@ function findHamiltonianPath(
 		const shuffledIceSlides = shuffleArray(iceSlideDestinations);
 		const shuffledBouncePads = shuffleArray(bouncePadDestinations);
 
-		// Try standard neighbors
+		// Connectivity pruning: check if remaining unvisited tiles are reachable from a position
+		// This prunes branches early that would strand tiles, dramatically reducing search space
+		function isRemainingConnected(fromPos: Position): boolean {
+			// Build set of tiles that still need to be visited
+			const remaining = new Set<string>();
+			for (const k of grassSet) {
+				const isVisited = visitedOnce.has(k);
+				const isVisitedTwice = visitedTwice.has(k);
+				const isTileDirt = dirtTiles.has(k);
+
+				// Tile needs visiting if:
+				// - Never visited (grass or dirt)
+				// - Dirt visited once (needs second visit)
+				if (!isVisited || (isTileDirt && !isVisitedTwice)) {
+					remaining.add(k);
+				}
+			}
+
+			if (remaining.size === 0) return true;
+
+			// BFS from fromPos to check all remaining tiles are reachable
+			const fromKey = posKey(fromPos.x, fromPos.y);
+			const visited = new Set<string>();
+			const queue = [fromPos];
+			visited.add(fromKey);
+
+			// Current obstacles include mushrooms (visited grass or dirt visited twice)
+			const simObstacles = new Set<string>([...currentObstacles]);
+			// Current position becomes mushroom if it's grass (not dirt visited once)
+			const isDirtVisitedOnce = dirtTiles.has(key) && visitedOnce.has(key) && !visitedTwice.has(key);
+			if (!isDirtVisitedOnce && grassSet.has(key)) {
+				simObstacles.add(key);
+			}
+
+			// Walkable includes: remaining grass/dirt, stones, pond (simplified)
+			const simWalkable = new Set<string>([...remaining, ...stoneTiles, ...pondTiles]);
+
+			while (queue.length > 0) {
+				const curr = queue.shift();
+				if (!curr) continue;
+
+				const neighbors = getReachableNeighbors(curr, simWalkable, simObstacles);
+				for (const n of neighbors) {
+					const nKey = posKey(n.x, n.y);
+					if (!visited.has(nKey)) {
+						visited.add(nKey);
+						queue.push(n);
+					}
+				}
+			}
+
+			// Check all remaining tiles were reached
+			for (const r of remaining) {
+				if (!visited.has(r)) return false;
+			}
+			return true;
+		}
+
+		// Try standard neighbors (filtered by connectivity)
 		for (const neighbor of allNeighbors) {
 			const neighborKey = posKey(neighbor.x, neighbor.y);
+
+			// Skip if this move would strand remaining tiles
+			if (!isRemainingConnected(neighbor)) continue;
 
 			if (stoneTiles.has(neighborKey)) {
 				// Stepping onto stone - explore from there
@@ -1135,6 +1197,9 @@ function findHamiltonianPath(
 			});
 
 			for (const stoneNeighbor of shuffleArray(stoneNeighbors)) {
+				// Skip if this move would strand remaining tiles
+				if (!isRemainingConnected(stoneNeighbor)) continue;
+
 				const result = dfs(
 					stoneNeighbor,
 					visitedOnce,
@@ -1151,6 +1216,9 @@ function findHamiltonianPath(
 		// Try ice slides
 		for (const { destination } of shuffledIceSlides) {
 			const destKey = posKey(destination.x, destination.y);
+
+			// Skip if this move would strand remaining tiles
+			if (!isRemainingConnected(destination)) continue;
 
 			if (stoneTiles.has(destKey)) {
 				// Landed on stone - need to step off to grass/dirt
@@ -1201,6 +1269,9 @@ function findHamiltonianPath(
 		// Try bounce pads
 		for (const { destination } of shuffledBouncePads) {
 			const destKey = posKey(destination.x, destination.y);
+
+			// Skip if this move would strand remaining tiles
+			if (!isRemainingConnected(destination)) continue;
 
 			if (stoneTiles.has(destKey)) {
 				// Landed on stone - need to step off to grass/dirt

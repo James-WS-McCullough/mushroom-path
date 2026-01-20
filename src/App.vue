@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import BottomBar from "./components/BottomBar.vue";
 import ConfirmModal from "./components/ConfirmModal.vue";
 import CustomWorldModal from "./components/CustomWorldModal.vue";
@@ -744,7 +744,7 @@ function startTransition() {
 	performFadeTransition();
 }
 
-function performFadeTransition() {
+async function performFadeTransition() {
 	isFading.value = true;
 
 	// Start fade to black immediately
@@ -756,53 +756,55 @@ function performFadeTransition() {
 	}
 
 	// After fade completes (500ms), generate new level
-	setTimeout(() => {
+	setTimeout(async () => {
 		// Show loading message while generating
 		loadingMessage.value = "Generating level...";
 
-		// Small delay to let the message render before blocking work
+		// Wait for Vue to render the loading message before blocking
+		await nextTick();
+		// Additional frame to ensure paint
+		await new Promise((r) => requestAnimationFrame(r));
+
+		try {
+			currentLevel.value = getNewLevel();
+			levelKey.value++;
+		} finally {
+			// Always clear loading message
+			loadingMessage.value = "";
+		}
+
+		// Small pause while black, then fade back in
 		setTimeout(() => {
-			try {
-				currentLevel.value = getNewLevel();
-				levelKey.value++;
-			} finally {
-				// Always clear loading message
-				loadingMessage.value = "";
-			}
-
-			// Small pause while black, then fade back in
+			isBlack.value = false;
+			loadingMessage.value = ""; // Safety clear
+			// After fade in completes, re-enable controls and maybe show welcome/dialogue
 			setTimeout(() => {
-				isBlack.value = false;
-				loadingMessage.value = ""; // Safety clear
-				// After fade in completes, re-enable controls and maybe show welcome/dialogue
-				setTimeout(() => {
-					isFading.value = false;
+				isFading.value = false;
 
-					// Check for level-specific dialogue (e.g., meeting Dew) - shown regardless of new world
-					if (pendingWorldDialogue.value && !pendingNewWorld.value) {
+				// Check for level-specific dialogue (e.g., meeting Dew) - shown regardless of new world
+				if (pendingWorldDialogue.value && !pendingNewWorld.value) {
+					currentDialogue.value = pendingWorldDialogue.value;
+					pendingWorldDialogue.value = null;
+				} else if (pendingNewWorld.value) {
+					// Priority: mechanic dialogue > adventure scene > welcome sign
+					if (pendingMechanicDialogues.value.length > 0) {
+						// Show mechanic intro dialogue
+						currentDialogue.value = pendingMechanicDialogues.value.shift()!;
+						showWelcomeAfterDialogue.value = true;
+						// Clear adventure scene since we're showing mechanic instead
+						pendingWorldDialogue.value = null;
+					} else if (pendingWorldDialogue.value) {
+						// Show adventure scene
 						currentDialogue.value = pendingWorldDialogue.value;
 						pendingWorldDialogue.value = null;
-					} else if (pendingNewWorld.value) {
-						// Priority: mechanic dialogue > adventure scene > welcome sign
-						if (pendingMechanicDialogues.value.length > 0) {
-							// Show mechanic intro dialogue
-							currentDialogue.value = pendingMechanicDialogues.value.shift()!;
-							showWelcomeAfterDialogue.value = true;
-							// Clear adventure scene since we're showing mechanic instead
-							pendingWorldDialogue.value = null;
-						} else if (pendingWorldDialogue.value) {
-							// Show adventure scene
-							currentDialogue.value = pendingWorldDialogue.value;
-							pendingWorldDialogue.value = null;
-							showWelcomeAfterDialogue.value = true;
-						} else {
-							showWelcomeSign.value = true;
-						}
-						pendingNewWorld.value = false;
+						showWelcomeAfterDialogue.value = true;
+					} else {
+						showWelcomeSign.value = true;
 					}
-				}, 500);
-			}, 200);
-		}, 50);
+					pendingNewWorld.value = false;
+				}
+			}, 500);
+		}, 200);
 	}, 500);
 }
 
@@ -1093,8 +1095,9 @@ async function startGame() {
 	isLoading.value = true;
 	loadingMessage.value = "Generating level...";
 
-	// Small delay to ensure UI updates
-	await new Promise((resolve) => setTimeout(resolve, 50));
+	// Wait for Vue to render the loading message before blocking
+	await nextTick();
+	await new Promise((r) => requestAnimationFrame(r));
 
 	// First world is always neutral (no elements)
 	currentWorldElements.value = [];
@@ -1118,7 +1121,8 @@ async function handleContinue() {
 	isLoading.value = true;
 	loadingMessage.value = "Loading audio...";
 
-	await new Promise((resolve) => setTimeout(resolve, 50));
+	await nextTick();
+	await new Promise((r) => requestAnimationFrame(r));
 
 	// Initialize audio system
 	initializeAudio();
@@ -1153,7 +1157,8 @@ async function handleContinue() {
 	levelQueue.setWorldElements(saved.currentWorldElements);
 
 	loadingMessage.value = "Generating level...";
-	await new Promise((resolve) => setTimeout(resolve, 50));
+	await nextTick();
+	await new Promise((r) => requestAnimationFrame(r));
 
 	// Generate the level for the current position
 	currentLevel.value = getNewLevel();
@@ -1204,6 +1209,8 @@ function closeTutorial() {
 
 function closeWelcomeSign() {
 	showWelcomeSign.value = false;
+	// Start background level generation now that player is ready to play
+	levelQueue.startGenerating();
 }
 
 function showNextMechanicDialogue(): void {
@@ -1217,7 +1224,7 @@ function openCustomWorldModal() {
 	showCustomWorldModal.value = true;
 }
 
-function startCustomWorld(elements: WorldElement[]) {
+async function startCustomWorld(elements: WorldElement[]) {
 	showCustomWorldModal.value = false;
 
 	// Ensure game is started
@@ -1253,40 +1260,42 @@ function startCustomWorld(elements: WorldElement[]) {
 	changeWorldBGM();
 
 	// After fade completes, generate new level
-	setTimeout(() => {
+	setTimeout(async () => {
 		loadingMessage.value = "Generating level...";
 
+		// Wait for Vue to render the loading message before blocking
+		await nextTick();
+		await new Promise((r) => requestAnimationFrame(r));
+
+		try {
+			currentLevel.value = getNewLevel();
+			levelKey.value++;
+		} catch (e) {
+			console.error("Failed to generate level:", e);
+		} finally {
+			// Always clear loading message
+			loadingMessage.value = "";
+		}
+
+		// Fade back in (always runs, even if level generation failed)
 		setTimeout(() => {
-			try {
-				currentLevel.value = getNewLevel();
-				levelKey.value++;
-			} catch (e) {
-				console.error("Failed to generate level:", e);
-			} finally {
-				// Always clear loading message
-				loadingMessage.value = "";
-			}
+			isBlack.value = false;
+			loadingMessage.value = ""; // Safety clear
 
-			// Fade back in (always runs, even if level generation failed)
+			// After fade in, show dialogues or welcome sign
 			setTimeout(() => {
-				isBlack.value = false;
-				loadingMessage.value = ""; // Safety clear
+				isFading.value = false;
 
-				// After fade in, show dialogues or welcome sign
-				setTimeout(() => {
-					isFading.value = false;
-
-					// Priority: mechanic dialogue > welcome sign
-					if (pendingMechanicDialogues.value.length > 0) {
-						currentDialogue.value = pendingMechanicDialogues.value.shift()!;
-						showWelcomeAfterDialogue.value = true;
-					} else {
-						showWelcomeSign.value = true;
-					}
-					pendingNewWorld.value = false;
-				}, 500);
-			}, 200);
-		}, 50);
+				// Priority: mechanic dialogue > welcome sign
+				if (pendingMechanicDialogues.value.length > 0) {
+					currentDialogue.value = pendingMechanicDialogues.value.shift()!;
+					showWelcomeAfterDialogue.value = true;
+				} else {
+					showWelcomeSign.value = true;
+				}
+				pendingNewWorld.value = false;
+			}, 500);
+		}, 200);
 	}, 500);
 }
 
