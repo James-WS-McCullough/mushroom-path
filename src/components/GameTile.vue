@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import type { FlowDirection, Tile } from "../types/game";
 import { TileType } from "../types/game";
 
@@ -31,6 +31,23 @@ const props = defineProps<{
 
 // Check if low sand tiles are currently flooded (tidePhase === 0)
 const isLowSandFlooded = computed(() => props.tidePhase === 0);
+
+// Track when tide is receding (transitioning from flooded to normal)
+const isTideReceding = ref(false);
+
+watch(
+	() => props.tidePhase,
+	(newPhase, oldPhase) => {
+		// Detect transition from flooded (0) to normal (1)
+		if (oldPhase === 0 && newPhase === 1) {
+			isTideReceding.value = true;
+			// Clear the receding state after animation completes
+			setTimeout(() => {
+				isTideReceding.value = false;
+			}, 600);
+		}
+	},
+);
 
 const emit = defineEmits<{
 	click: [];
@@ -78,16 +95,21 @@ const tileClass = computed(() => {
 		"tile--low-sand": props.tile.type === TileType.LOW_SAND,
 		"tile--low-sand-flooded":
 			props.tile.type === TileType.LOW_SAND && isLowSandFlooded.value,
+		"tile--low-sand-receding":
+			props.tile.type === TileType.LOW_SAND && isTideReceding.value,
 		"tile--low-sand-warning":
 			props.tile.type === TileType.LOW_SAND && props.movesUntilFlood === 1,
 		"tile--sea": props.tile.type === TileType.SEA,
 		"tile--sea-high-tide": props.tile.type === TileType.SEA && isLowSandFlooded.value,
+		"tile--sea-receding": props.tile.type === TileType.SEA && isTideReceding.value,
 		// Bounce pad
 		"tile--bounce-pad": props.tile.type === TileType.BOUNCE_PAD,
 		// Sand mushroom (mushroom planted on low sand)
 		"tile--sand-mushroom": props.tile.type === TileType.SAND_MUSHROOM,
 		"tile--sand-mushroom-flooded":
 			props.tile.type === TileType.SAND_MUSHROOM && isLowSandFlooded.value,
+		"tile--sand-mushroom-receding":
+			props.tile.type === TileType.SAND_MUSHROOM && isTideReceding.value,
 		"tile--sand-mushroom-warning":
 			props.tile.type === TileType.SAND_MUSHROOM && props.movesUntilFlood === 1,
 		"tile--portal": isPortal.value,
@@ -2853,6 +2875,24 @@ function handleClick() {
   }
 }
 
+.tile--low-sand-receding {
+  animation: tidalRecede 0.6s ease-out forwards;
+}
+
+@keyframes tidalRecede {
+  0% {
+    background: linear-gradient(
+      135deg,
+      #7ab5d4 0%,
+      #5a9fc8 40%,
+      #4a8fb8 100%
+    );
+  }
+  100% {
+    background: linear-gradient(135deg, #e8dcc0 0%, #d4c4a0 40%, #c8b890 100%);
+  }
+}
+
 .low-sand-detail {
   position: absolute;
   inset: 0;
@@ -3140,15 +3180,45 @@ function handleClick() {
 }
 
 .tile--sea-high-tide {
-  background: linear-gradient(
-    135deg,
-    #3580b8 0%,
-    #2060a0 50%,
-    #1a5090 100%
-  );
-  box-shadow:
-    inset 0 -6px 0 rgba(0, 0, 0, 0.2),
-    inset 0 0 25px rgba(20, 60, 120, 0.5);
+  animation: seaHighTide 0.6s ease-out forwards;
+}
+
+@keyframes seaHighTide {
+  0% {
+    background: linear-gradient(135deg, #4a90c8 0%, #3a80b8 50%, #2a70a8 100%);
+  }
+  100% {
+    background: linear-gradient(
+      135deg,
+      #3580b8 0%,
+      #2060a0 50%,
+      #1a5090 100%
+    );
+    box-shadow:
+      inset 0 -6px 0 rgba(0, 0, 0, 0.2),
+      inset 0 0 25px rgba(20, 60, 120, 0.5);
+  }
+}
+
+.tile--sea-receding {
+  animation: seaRecede 0.6s ease-out forwards;
+}
+
+@keyframes seaRecede {
+  0% {
+    background: linear-gradient(
+      135deg,
+      #3580b8 0%,
+      #2060a0 50%,
+      #1a5090 100%
+    );
+    box-shadow:
+      inset 0 -6px 0 rgba(0, 0, 0, 0.2),
+      inset 0 0 25px rgba(20, 60, 120, 0.5);
+  }
+  100% {
+    background: linear-gradient(135deg, #4a90c8 0%, #3a80b8 50%, #2a70a8 100%);
+  }
 }
 
 .sea-detail {
@@ -3455,6 +3525,24 @@ function handleClick() {
       #4a8fb8 40%,
       #3a7fa8 100%
     );
+  }
+}
+
+.tile--sand-mushroom-receding {
+  animation: sandMushroomRecede 0.6s ease-out forwards;
+}
+
+@keyframes sandMushroomRecede {
+  0% {
+    background: linear-gradient(
+      135deg,
+      #6aa0c4 0%,
+      #4a8fb8 40%,
+      #3a7fa8 100%
+    );
+  }
+  100% {
+    background: linear-gradient(135deg, #c8b890 0%, #b8a880 40%, #a89870 100%);
   }
 }
 

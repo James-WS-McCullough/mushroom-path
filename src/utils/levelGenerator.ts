@@ -1994,61 +1994,91 @@ function placeBouncePads(
 		return true;
 	};
 
-	// Check if a tile has valid bounce potential
-	// Must have: accessible approach from one side AND room to bounce on another side
-	const hasValidBouncePotential = (pos: Position): boolean => {
+	// Get the landing position for a bounce pad when approached from a given direction
+	// Returns the landing key and bounce direction if valid, null otherwise
+	const getBounceResult = (
+		pos: Position,
+		approachDir: { dx: number; dy: number },
+	): { landKey: string; bounceDir: { dx: number; dy: number } } | null => {
 		const key = posKey(pos.x, pos.y);
+		// Bounce direction is opposite of approach
+		const bounceDir = { dx: -approachDir.dx, dy: -approachDir.dy };
 
-		// For each pair of opposite directions, check if one side is accessible
-		// and the opposite side has room to bounce
-		const oppositePairs = [
-			[
-				{ dx: -1, dy: 0 },
-				{ dx: 1, dy: 0 },
-			], // left-right
-			[
-				{ dx: 0, dy: -1 },
-				{ dx: 0, dy: 1 },
-			], // up-down
-		];
+		// Try distances 3, 2, 1 - return first valid landing
+		for (let dist = 3; dist >= 1; dist--) {
+			const landKey = posKey(
+				pos.x + bounceDir.dx * dist,
+				pos.y + bounceDir.dy * dist,
+			);
+			if (canLandOn(landKey) && landKey !== key) {
+				return { landKey, bounceDir };
+			}
+		}
+		return null;
+	};
 
-		for (const [dir1, dir2] of oppositePairs) {
-			if (!dir1 || !dir2) continue;
+	// Check if a tile has valid bounce potential and return valid approach directions
+	// Must have: accessible approach from one side AND room to bounce on opposite side
+	const getValidApproachDirections = (
+		pos: Position,
+	): { dx: number; dy: number }[] => {
+		const key = posKey(pos.x, pos.y);
+		const validApproaches: { dx: number; dy: number }[] = [];
 
-			// Check dir1 as approach, dir2 as bounce direction (and vice versa)
-			for (const [approachDir, bounceDir] of [
-				[dir1, dir2],
-				[dir2, dir1],
-			]) {
-				if (!approachDir || !bounceDir) continue;
+		for (const approachDir of directions) {
+			// Check if approach side is accessible (adjacent grass tile)
+			const approachKey = posKey(
+				pos.x + approachDir.dx,
+				pos.y + approachDir.dy,
+			);
+			const approachIsAccessible =
+				grass.has(approachKey) &&
+				!brambles.has(approachKey) &&
+				!bouncePads.has(approachKey);
 
-				// Check if approach side is accessible (adjacent grass tile)
-				const approachKey = posKey(
-					pos.x + approachDir.dx,
-					pos.y + approachDir.dy,
-				);
-				const approachIsAccessible =
-					grass.has(approachKey) &&
-					!brambles.has(approachKey) &&
-					!bouncePads.has(approachKey);
+			if (!approachIsAccessible) continue;
 
-				if (!approachIsAccessible) continue;
+			// Check if bounce side has room
+			if (getBounceResult(pos, approachDir)) {
+				validApproaches.push(approachDir);
+			}
+		}
 
-				// Check if bounce side has room (at least 1 tile, prefer 2-3)
-				// Try distances 3, 2, 1 - need at least one valid landing
-				for (let dist = 3; dist >= 1; dist--) {
-					const landKey = posKey(
-						pos.x + bounceDir.dx * dist,
-						pos.y + bounceDir.dy * dist,
-					);
-					if (canLandOn(landKey) && landKey !== key) {
-						return true;
-					}
+		return validApproaches;
+	};
+
+	const hasValidBouncePotential = (pos: Position): boolean => {
+		return getValidApproachDirections(pos).length > 0;
+	};
+
+	// Find chain candidates: positions where landing from an existing bounce pad
+	// could also be a valid bounce pad
+	const findChainCandidates = (): string[] => {
+		const chainCandidates: string[] = [];
+
+		for (const padKey of bouncePads) {
+			const padPos = parseKey(padKey);
+
+			// Check all directions this pad could be approached from
+			for (const approachDir of directions) {
+				const result = getBounceResult(padPos, approachDir);
+				if (!result) continue;
+
+				const { landKey } = result;
+				if (bouncePads.has(landKey)) continue;
+				if (landKey === startKey) continue;
+				if (brambles.has(landKey)) continue;
+				if (!grass.has(landKey)) continue;
+
+				// Check if the landing position could also be a valid bounce pad
+				const landPos = parseKey(landKey);
+				if (hasValidBouncePotential(landPos)) {
+					chainCandidates.push(landKey);
 				}
 			}
 		}
 
-		return false;
+		return chainCandidates;
 	};
 
 	// Candidates are grass tiles (excluding start)
@@ -2062,12 +2092,39 @@ function placeBouncePads(
 	const shuffled = shuffleArray(candidates);
 	const maxPads = Math.min(3, Math.ceil(shuffled.length * 0.15));
 
-	for (let i = 0; i < maxPads && i < shuffled.length; i++) {
+	// Place first bounce pad
+	for (let i = 0; i < shuffled.length && bouncePads.size < 1; i++) {
 		const key = shuffled[i];
 		if (!key) continue;
 
 		const pos = parseKey(key);
+		if (hasValidBouncePotential(pos)) {
+			bouncePads.add(key);
+		}
+	}
 
+	// Try to place chain candidates first (50% chance to attempt chain)
+	if (bouncePads.size > 0 && bouncePads.size < maxPads && Math.random() < 0.5) {
+		const chainCandidates = findChainCandidates();
+		const shuffledChains = shuffleArray(chainCandidates);
+
+		for (const chainKey of shuffledChains) {
+			if (bouncePads.size >= maxPads) break;
+			if (bouncePads.has(chainKey)) continue;
+
+			const chainPos = parseKey(chainKey);
+			if (hasValidBouncePotential(chainPos)) {
+				bouncePads.add(chainKey);
+			}
+		}
+	}
+
+	// Fill remaining slots with random candidates
+	for (let i = 0; i < shuffled.length && bouncePads.size < maxPads; i++) {
+		const key = shuffled[i];
+		if (!key || bouncePads.has(key)) continue;
+
+		const pos = parseKey(key);
 		if (hasValidBouncePotential(pos)) {
 			bouncePads.add(key);
 		}

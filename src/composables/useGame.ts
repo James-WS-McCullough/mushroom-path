@@ -9,16 +9,20 @@ import type {
 } from "../types/game";
 import { PortalTypes, TileType } from "../types/game";
 import {
+	playBouncepad,
 	playJump,
 	playLand,
 	playLilypadSink,
 	playLilypadSurface,
 	playRandomDirt,
 	playRandomPop,
+	playSandLand,
 	playShovelDirt,
 	playStone,
 	playTeleportPoof,
 	playWater,
+	playWavesFall,
+	playWavesRise,
 	startIceSlide,
 	stopIceSlide,
 } from "./useSound";
@@ -1213,7 +1217,7 @@ export function useGame(level: Level) {
 		}
 
 		slidePath.value = path;
-		playJump();
+		playBouncepad();
 		isSliding.value = true;
 		isBouncing.value = true;
 		lastBouncePadPosition.value = { ...startPos };
@@ -1479,9 +1483,33 @@ export function useGame(level: Level) {
 		advanceTide();
 	}
 
+	// Check if the level has any LOW_SAND tiles (tidal areas)
+	function hasLowSandTiles(): boolean {
+		for (const row of tiles.value) {
+			for (const tile of row) {
+				if (tile.type === TileType.LOW_SAND) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
 	// Advance the tide phase (called when leaving a tile)
 	function advanceTide() {
+		const oldPhase = tidePhase.value;
 		tidePhase.value = (tidePhase.value + 1) % TIDE_PERIOD;
+
+		// Play tide sounds only if level has LOW_SAND tiles
+		if (hasLowSandTiles()) {
+			if (oldPhase === TIDE_PERIOD - 1 && tidePhase.value === 0) {
+				// Tide is flooding (phase went from 4 to 0)
+				playWavesRise();
+			} else if (oldPhase === 0 && tidePhase.value === 1) {
+				// Tide is receding (phase went from 0 to 1)
+				playWavesFall();
+			}
+		}
 	}
 
 	function checkWinCondition(): boolean {
@@ -1791,7 +1819,7 @@ export function useGame(level: Level) {
 				} else if (landingTile?.type === TileType.POND) {
 					playWater();
 				} else if (landingTile?.type === TileType.LOW_SAND) {
-					playLand(); // Sand sounds similar to grass
+					playSandLand();
 				}
 			}, 200);
 
@@ -2108,7 +2136,7 @@ export function useGame(level: Level) {
 				} else if (landingTile?.type === TileType.POND) {
 					playWater();
 				} else if (landingTile?.type === TileType.LOW_SAND) {
-					playLand(); // Sand sounds similar to grass
+					playSandLand();
 				}
 			}, 200);
 

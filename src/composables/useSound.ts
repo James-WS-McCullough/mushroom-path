@@ -154,6 +154,11 @@ const ALL_SFX_PATHS = [
 	"/sfx/tutorial-appears.mp3",
 	"/sfx/undo.mp3",
 	"/sfx/teleport-poof.mp3",
+	// Bouncepad and tide sounds
+	"/sfx/bouncepad.mp3",
+	"/sfx/waves-rise.mp3",
+	"/sfx/waves-fall.mp3",
+	"/sfx/sand-land.mp3",
 	// Voice lines
 	"/voice/voice-stuck01.mp3",
 	"/voice/voice-stuck02.mp3",
@@ -509,6 +514,22 @@ export function stopIceSlide(): void {
 
 export function playIce(volume = 0.4): void {
 	playSound("/sfx/ice-slide.mp3", volume);
+}
+
+export function playBouncepad(volume = 0.4): void {
+	playSound("/sfx/bouncepad.mp3", volume);
+}
+
+export function playWavesRise(volume = 0.4): void {
+	playSound("/sfx/waves-rise.mp3", volume);
+}
+
+export function playWavesFall(volume = 0.4): void {
+	playSound("/sfx/waves-fall.mp3", volume);
+}
+
+export function playSandLand(volume = 0.3): void {
+	playSound("/sfx/sand-land.mp3", volume);
 }
 
 // ============================================

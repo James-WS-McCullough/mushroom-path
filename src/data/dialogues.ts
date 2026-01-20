@@ -596,7 +596,7 @@ export const bounceIntroDialogue: DialogueScene = {
 			name: "Dew",
 			text: "those are bounce pads! theyre super springy~",
 			leftSprite: "MushroomGirl-Excited",
-			rightSprite: "BlueGirl-Happy",
+			rightSprite: "BlueGirl-Laughing",
 			rightHighlight: true,
 		},
 		{
@@ -604,7 +604,7 @@ export const bounceIntroDialogue: DialogueScene = {
 			name: "Sprout",
 			text: "so if i hop on one... what happens??",
 			leftSprite: "MushroomGirl-Happy",
-			rightSprite: "BlueGirl-Happy",
+			rightSprite: "BlueGirl-Laughing",
 			leftHighlight: true,
 		},
 		{
