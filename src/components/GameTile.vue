@@ -549,10 +549,6 @@ function handleClick() {
           </div>
         </div>
       </div>
-      <!-- Tide countdown indicator -->
-      <div v-if="movesUntilFlood !== undefined && !isLowSandFlooded" :class="['tide-countdown', { 'tide-countdown--warning': movesUntilFlood === 1 }]">
-        {{ movesUntilFlood }}
-      </div>
     </div>
 
     <!-- Fairy ring portal flowers -->
