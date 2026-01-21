@@ -488,7 +488,7 @@ export function useGame(level: Level) {
 	// Check if the given state is a win (all required tiles converted, player on last required tile)
 	function isWinState(tileStates: TileType[][], playerPos: Position): boolean {
 		let totalRequired = 0;
-		let lastRequiredPos: Position | null = null;
+		let playerTileType: TileType | null = null;
 
 		for (let y = 0; y < tileStates.length; y++) {
 			const row = tileStates[y];
@@ -497,17 +497,19 @@ export function useGame(level: Level) {
 				const t = row[x];
 				if (isRequiredTile(t)) {
 					totalRequired++;
-					lastRequiredPos = { x, y };
+					if (x === playerPos.x && y === playerPos.y) {
+						playerTileType = t;
+					}
 				}
 			}
 		}
 
-		// Win when exactly 1 required tile remains and player is standing on it
+		// Win when exactly 1 required tile remains and player is standing on it,
+		// BUT NOT if it's dirt (dirt needs to be left and stepped on again as grass)
 		return (
 			totalRequired === 1 &&
-			lastRequiredPos !== null &&
-			lastRequiredPos.x === playerPos.x &&
-			lastRequiredPos.y === playerPos.y
+			playerTileType !== null &&
+			playerTileType !== TileType.DIRT
 		);
 	}
 
@@ -950,6 +952,7 @@ export function useGame(level: Level) {
 			const iceEndType = newTileStates[current.y]?.[current.x];
 			if (iceEndType === TileType.BOUNCE_PAD) {
 				// Helper to check if a tile can be landed on
+				// Note: newTidePhase is the tide phase AFTER the move
 				const canLandOnForBounce = (tileType: TileType | undefined): boolean => {
 					if (!tileType) return false;
 					if (tileType === TileType.VOID) return false;
@@ -959,6 +962,8 @@ export function useGame(level: Level) {
 					if (tileType === TileType.HONEY_MUSHROOM) return false;
 					if (tileType === TileType.POND_WATER) return false;
 					if (tileType === TileType.SEA) return false;
+					// Can't land on flooded LOW_SAND
+					if (tileType === TileType.LOW_SAND && newTidePhase === 0) return false;
 					return true;
 				};
 
@@ -1023,6 +1028,7 @@ export function useGame(level: Level) {
 			const delta = getDirectionDelta(move.direction);
 
 			// Helper to check if a tile can be landed on (excluding bounce pads for chain logic)
+			// Note: newTidePhase is the tide phase AFTER the move to the bounce pad
 			const canLandOnForPathfinding = (tileType: TileType | undefined): boolean => {
 				if (!tileType) return false;
 				if (tileType === TileType.VOID) return false;
@@ -1032,6 +1038,8 @@ export function useGame(level: Level) {
 				if (tileType === TileType.HONEY_MUSHROOM) return false;
 				if (tileType === TileType.POND_WATER) return false;
 				if (tileType === TileType.SEA) return false;
+				// Can't land on flooded LOW_SAND
+				if (tileType === TileType.LOW_SAND && newTidePhase === 0) return false;
 				return true;
 			};
 
@@ -1249,6 +1257,8 @@ export function useGame(level: Level) {
 			if (tile.type === TileType.HONEY_MUSHROOM) return false;
 			if (tile.type === TileType.POND_WATER) return false;
 			if (tile.type === TileType.SEA) return false;
+			// Can't land on flooded LOW_SAND (tide already advanced when stepping on bounce pad)
+			if (tile.type === TileType.LOW_SAND && tidePhase.value === 0) return false;
 			return true;
 		}
 
@@ -1644,25 +1654,30 @@ export function useGame(level: Level) {
 	}
 
 	function checkWinCondition(): boolean {
-		// Win when standing on the only remaining required tile
+		// Win when standing on the only remaining required tile (except dirt)
 		let totalRequired = 0;
-		let lastRequiredPos: Position | null = null;
+		let playerTileType: TileType | null = null;
 
 		for (const row of tiles.value) {
 			for (const tile of row) {
 				if (isRequiredTile(tile.type)) {
 					totalRequired++;
-					lastRequiredPos = tile.position;
+					if (
+						tile.position.x === playerPosition.value.x &&
+						tile.position.y === playerPosition.value.y
+					) {
+						playerTileType = tile.type;
+					}
 				}
 			}
 		}
 
-		// Win if there's exactly one required tile remaining and player is on it
+		// Win if there's exactly one required tile remaining and player is on it,
+		// BUT NOT if it's dirt (dirt needs to be left and stepped on again as grass)
 		return (
 			totalRequired === 1 &&
-			lastRequiredPos !== null &&
-			lastRequiredPos.x === playerPosition.value.x &&
-			lastRequiredPos.y === playerPosition.value.y
+			playerTileType !== null &&
+			playerTileType !== TileType.DIRT
 		);
 	}
 

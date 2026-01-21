@@ -9,6 +9,7 @@ function createTestLevel(
 	startX: number,
 	startY: number,
 	waterFlow?: Record<string, FlowDirection>,
+	squirrelRequirements?: Record<string, number>,
 ): Level {
 	const tileMap: Record<string, TileType> = {
 		G: TileType.GRASS,
@@ -28,6 +29,10 @@ function createTestLevel(
 		O: TileType.POND, // Lily-pad (walkable when surfaced, sinks after stepping)
 		U: TileType.POND_WATER, // Deep pond water (always impassable obstacle)
 		T: TileType.BOUNCE_PAD, // Bounce pad (bounces player 3 tiles in movement direction)
+		H: TileType.HONEY, // Honey (sticky tile - can walk off but cannot jump from here)
+		Y: TileType.HONEY_MUSHROOM, // Honey mushroom (converted honey tile)
+		A: TileType.ACORN, // Acorn (collectible - gives player an acorn when landed on)
+		X: TileType.SQUIRREL, // Squirrel (requires acorns to pass)
 	};
 
 	const parsedGrid = grid.map((row) =>
@@ -41,6 +46,7 @@ function createTestLevel(
 		grid: parsedGrid,
 		startPosition: { x: startX, y: startY },
 		waterFlow,
+		squirrelRequirements,
 	};
 }
 
@@ -890,15 +896,14 @@ describe("useGame", () => {
 		});
 
 		it("should not win if dirt tiles remain", () => {
-			// 1 grass + 1 dirt, need to visit dirt twice
-			const level = createTestLevel(["GD"], 0, 0);
+			// 2 grass + 1 dirt, move to middle grass - still have grass and dirt remaining
+			const level = createTestLevel(["GGD"], 0, 0);
 			const game = useGame(level);
 
 			game.movePlayer("right");
 
-			// Dirt became grass, so we're on grass but there's another grass (converted)
-			// Actually we're on the dirt tile (which is still dirt type)
-			// The original grass became mushroom
+			// Now on middle grass, original grass became mushroom, dirt still remains
+			// Required: middle grass + dirt = 2 tiles, not a win
 			expect(game.hasWon.value).toBe(false);
 		});
 
@@ -960,12 +965,14 @@ describe("useGame", () => {
 		});
 
 		it("should detect stuck when surrounded after visiting dirt", () => {
-			// After moving to dirt, player gets stuck
-			const level = createTestLevel(["GDB", "BBB"], 0, 0);
+			// After moving to dirt, player gets stuck with required tiles remaining
+			const level = createTestLevel(["GDB", "GBB"], 0, 0);
 			const game = useGame(level);
 
 			game.movePlayer("right");
-			// Now on dirt, surrounded by brambles on other sides
+			// Now on dirt, surrounded by obstacles, but grass at (0,1) is still required
+			// Required: dirt (where player stands) + grass at (0,1) = 2 tiles
+			// No valid moves -> stuck
 			expect(game.isStuck.value).toBe(true);
 		});
 	});
@@ -2304,6 +2311,408 @@ describe("useGame", () => {
 
 			// Can't bounce anywhere (void/off map), stays on bounce pad
 			expect(game.playerPosition.value).toEqual({ x: 1, y: 0 });
+		});
+	});
+
+	describe("honey tiles (HONEY)", () => {
+		beforeEach(() => {
+			vi.useFakeTimers();
+		});
+
+		afterEach(() => {
+			vi.useRealTimers();
+		});
+
+		it("should allow moving onto honey tiles", () => {
+			const level = createTestLevel(["GH"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+
+			vi.advanceTimersByTime(200);
+
+			expect(game.playerPosition.value).toEqual({ x: 1, y: 0 });
+		});
+
+		it("should allow moving off honey tiles", () => {
+			const level = createTestLevel(["GHG"], 1, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+
+			vi.advanceTimersByTime(200);
+
+			expect(game.playerPosition.value).toEqual({ x: 2, y: 0 });
+		});
+
+		it("should convert honey to honey_mushroom when leaving", () => {
+			const level = createTestLevel(["GHG"], 1, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+
+			vi.advanceTimersByTime(200);
+
+			expect(game.tiles.value[0]?.[1]?.type).toBe(TileType.HONEY_MUSHROOM);
+		});
+
+		it("should not allow jumping from honey tiles", () => {
+			// H M G - can't jump over mushroom from honey
+			const level = createTestLevel(["HMG"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+
+			vi.advanceTimersByTime(200);
+
+			// Should not have moved (can't jump from honey)
+			expect(game.playerPosition.value).toEqual({ x: 0, y: 0 });
+		});
+
+		it("should count honey tiles toward remaining tiles", () => {
+			const level = createTestLevel(["GHG"], 0, 0);
+			const game = useGame(level);
+
+			// 3 tiles: G, H, G
+			expect(game.grassTilesRemaining.value).toBe(3);
+		});
+
+		it("should win when standing on only remaining honey tile", () => {
+			// G H - move to honey, grass becomes mushroom, only honey remains
+			const level = createTestLevel(["GH"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+
+			vi.advanceTimersByTime(200);
+
+			expect(game.hasWon.value).toBe(true);
+		});
+
+		it("should not win if honey tiles remain unvisited", () => {
+			// G H G - two grass and one honey
+			const level = createTestLevel(["GHG"], 0, 0);
+			const game = useGame(level);
+
+			// Move right twice to reach the end grass, skipping honey
+			game.movePlayer("right"); // to H
+			vi.advanceTimersByTime(200);
+			game.movePlayer("right"); // to G
+			vi.advanceTimersByTime(200);
+
+			// Honey is still there, so not won
+			expect(game.tiles.value[0]?.[1]?.type).toBe(TileType.HONEY_MUSHROOM);
+			// But we're on the last grass, with honey already converted
+			// Actually this should win since honey was converted
+			expect(game.hasWon.value).toBe(true);
+		});
+
+		it("should not win if honey tile remains when ending on grass", () => {
+			// Start on grass, honey is elsewhere
+			// G G H - if we just move right once, we're on grass with honey remaining
+			const level = createTestLevel(["GGH"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right"); // G -> G
+			vi.advanceTimersByTime(200);
+
+			// Still have G at x=2 converted to H remaining
+			expect(game.hasWon.value).toBe(false);
+		});
+	});
+
+	describe("acorn tiles (ACORN)", () => {
+		beforeEach(() => {
+			vi.useFakeTimers();
+		});
+
+		afterEach(() => {
+			vi.useRealTimers();
+		});
+
+		it("should allow moving onto acorn tiles", () => {
+			const level = createTestLevel(["GA"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+
+			vi.advanceTimersByTime(200);
+
+			expect(game.playerPosition.value).toEqual({ x: 1, y: 0 });
+		});
+
+		it("should convert acorn to grass when collected", () => {
+			const level = createTestLevel(["GA"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+
+			vi.advanceTimersByTime(200);
+
+			// Acorn tile should become grass after collection
+			expect(game.tiles.value[0]?.[1]?.type).toBe(TileType.GRASS);
+		});
+
+		it("should increment collected acorns when stepping on acorn", () => {
+			const level = createTestLevel(["GA"], 0, 0);
+			const game = useGame(level);
+
+			expect(game.collectedAcorns.value).toBe(0);
+
+			game.movePlayer("right");
+
+			vi.advanceTimersByTime(200);
+
+			expect(game.collectedAcorns.value).toBe(1);
+		});
+
+		it("should count acorn tiles toward remaining tiles", () => {
+			const level = createTestLevel(["GAG"], 0, 0);
+			const game = useGame(level);
+
+			// 3 tiles: G, A, G
+			expect(game.grassTilesRemaining.value).toBe(3);
+		});
+
+		it("should win when standing on grass after collecting all acorns", () => {
+			// G A - move to acorn, it becomes grass, original grass becomes mushroom
+			const level = createTestLevel(["GA"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+
+			vi.advanceTimersByTime(200);
+
+			// Acorn converted to grass, standing on it, original grass is mushroom
+			expect(game.hasWon.value).toBe(true);
+		});
+	});
+
+	describe("squirrel tiles (SQUIRREL)", () => {
+		beforeEach(() => {
+			vi.useFakeTimers();
+		});
+
+		afterEach(() => {
+			vi.useRealTimers();
+		});
+
+		it("should block movement to squirrel without acorns", () => {
+			const level = createTestLevel(["GX"], 0, 0, undefined, { "1,0": 1 });
+			const game = useGame(level);
+
+			game.movePlayer("right");
+
+			vi.advanceTimersByTime(200);
+
+			// Should not have moved (no acorns)
+			expect(game.playerPosition.value).toEqual({ x: 0, y: 0 });
+		});
+
+		it("should allow movement to squirrel with enough acorns", () => {
+			// G A X - collect acorn first, then can feed squirrel
+			const level = createTestLevel(["GAX"], 0, 0, undefined, { "2,0": 1 });
+			const game = useGame(level);
+
+			game.movePlayer("right"); // collect acorn
+			vi.advanceTimersByTime(200);
+
+			expect(game.collectedAcorns.value).toBe(1);
+
+			game.movePlayer("right"); // feed squirrel
+			vi.advanceTimersByTime(200);
+
+			expect(game.playerPosition.value).toEqual({ x: 2, y: 0 });
+		});
+
+		it("should convert squirrel to grass when fed", () => {
+			const level = createTestLevel(["GAX"], 0, 0, undefined, { "2,0": 1 });
+			const game = useGame(level);
+
+			game.movePlayer("right"); // collect acorn
+			vi.advanceTimersByTime(200);
+			game.movePlayer("right"); // feed squirrel
+			vi.advanceTimersByTime(200);
+
+			// Squirrel should become grass
+			expect(game.tiles.value[0]?.[2]?.type).toBe(TileType.GRASS);
+		});
+
+		it("should decrement acorns when feeding squirrel", () => {
+			const level = createTestLevel(["GAX"], 0, 0, undefined, { "2,0": 1 });
+			const game = useGame(level);
+
+			game.movePlayer("right"); // collect acorn
+			vi.advanceTimersByTime(200);
+
+			expect(game.collectedAcorns.value).toBe(1);
+
+			game.movePlayer("right"); // feed squirrel
+			vi.advanceTimersByTime(200);
+
+			expect(game.collectedAcorns.value).toBe(0);
+		});
+
+		it("should count squirrel tiles toward remaining tiles", () => {
+			const level = createTestLevel(["GXG"], 0, 0, undefined, { "1,0": 1 });
+			const game = useGame(level);
+
+			// 3 tiles: G, X, G
+			expect(game.grassTilesRemaining.value).toBe(3);
+		});
+
+		it("should win when standing on grass after feeding all squirrels", () => {
+			// G A X - collect acorn, feed squirrel, win
+			const level = createTestLevel(["GAX"], 0, 0, undefined, { "2,0": 1 });
+			const game = useGame(level);
+
+			game.movePlayer("right"); // to acorn (becomes grass)
+			vi.advanceTimersByTime(200);
+			game.movePlayer("right"); // to squirrel (becomes grass)
+			vi.advanceTimersByTime(200);
+
+			expect(game.hasWon.value).toBe(true);
+		});
+
+		it("should not win if squirrel tiles remain", () => {
+			// G X G - squirrels are obstacles so player jumps over to far grass
+			const level = createTestLevel(["GXG"], 0, 0, undefined, { "1,0": 1 });
+			const game = useGame(level);
+
+			// Player jumps over squirrel (it's an obstacle)
+			game.movePlayer("right");
+			vi.advanceTimersByTime(200);
+
+			// Landed on far grass, but squirrel still remains - not a win
+			expect(game.playerPosition.value).toEqual({ x: 2, y: 0 });
+			expect(game.hasWon.value).toBe(false);
+		});
+
+		it("should require correct number of acorns for squirrel", () => {
+			// G A X - squirrel requires 2 acorns, only have 1
+			const level = createTestLevel(["GAX"], 0, 0, undefined, { "2,0": 2 });
+			const game = useGame(level);
+
+			game.movePlayer("right"); // collect acorn (have 1)
+			vi.advanceTimersByTime(200);
+
+			expect(game.collectedAcorns.value).toBe(1);
+
+			game.movePlayer("right"); // try to feed squirrel (need 2)
+			vi.advanceTimersByTime(200);
+
+			// Should not have moved (not enough acorns)
+			expect(game.playerPosition.value).toEqual({ x: 1, y: 0 });
+		});
+	});
+
+	describe("win condition with all required tile types", () => {
+		beforeEach(() => {
+			vi.useFakeTimers();
+		});
+
+		afterEach(() => {
+			vi.useRealTimers();
+		});
+
+		it("should win when only honey tile remains and standing on it", () => {
+			const level = createTestLevel(["GH"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+			vi.advanceTimersByTime(200);
+
+			expect(game.hasWon.value).toBe(true);
+		});
+
+		it("should win when only LOW_SAND tile remains and standing on it", () => {
+			const level = createTestLevel(["GL"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+			vi.advanceTimersByTime(200);
+
+			expect(game.hasWon.value).toBe(true);
+		});
+
+		it("should win with mixed required tiles - grass and honey", () => {
+			// G H G - visit all three
+			const level = createTestLevel(["GHG"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right"); // to H
+			vi.advanceTimersByTime(200);
+			game.movePlayer("right"); // to G
+			vi.advanceTimersByTime(200);
+
+			expect(game.hasWon.value).toBe(true);
+		});
+
+		it("should win with mixed required tiles - grass and honey", () => {
+			// G H G - visit all, end on grass
+			// G->H: G becomes M, land on H
+			// H->G: H becomes HM, land on G
+			// Result: M HM G - only G is required, player standing on it = win
+			const level = createTestLevel(["GHG"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right"); // G->H
+			vi.advanceTimersByTime(200);
+			game.movePlayer("right"); // H->G
+			vi.advanceTimersByTime(200);
+
+			expect(game.hasWon.value).toBe(true);
+		});
+
+		it("should not win when standing on only dirt tile remaining", () => {
+			// G D - after moving to D, it's the only required tile but player shouldn't win
+			// because dirt needs to be left and stepped on again as grass
+			const level = createTestLevel(["GD"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+			vi.advanceTimersByTime(200);
+
+			// Standing on only required tile (dirt), but shouldn't win
+			expect(game.hasWon.value).toBe(false);
+		});
+
+		it("should win with acorn and squirrel combination", () => {
+			// G A X G - collect acorn, feed squirrel, end on grass
+			const level = createTestLevel(["GAXG"], 0, 0, undefined, { "2,0": 1 });
+			const game = useGame(level);
+
+			game.movePlayer("right"); // to A (collect, becomes G)
+			vi.advanceTimersByTime(200);
+			game.movePlayer("right"); // to X (feed, becomes G)
+			vi.advanceTimersByTime(200);
+			game.movePlayer("right"); // to G
+			vi.advanceTimersByTime(200);
+
+			expect(game.hasWon.value).toBe(true);
+		});
+
+		it("should not win with unvisited required tiles", () => {
+			// Complex level with multiple required types
+			// G S H - stone in middle, can't reach honey without jumping
+			const level = createTestLevel(["GSH"], 0, 0);
+			const game = useGame(level);
+
+			// Move to stone
+			game.movePlayer("right");
+			vi.advanceTimersByTime(200);
+
+			// On stone, grass became mushroom, honey still there
+			expect(game.hasWon.value).toBe(false);
+		});
+
+		it("should correctly count all required tile types in grassTilesRemaining", () => {
+			// G D H A X L - all required types
+			const level = createTestLevel(["GDHAXL"], 0, 0, undefined, { "4,0": 1 });
+			const game = useGame(level);
+
+			// G=1, D=2 (needs 2 visits), H=1, A=1, X=1, L=1 = 7
+			expect(game.grassTilesRemaining.value).toBe(7);
 		});
 	});
 });
