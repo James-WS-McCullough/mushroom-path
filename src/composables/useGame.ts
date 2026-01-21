@@ -1731,38 +1731,34 @@ export function useGame(level: Level) {
 	}
 
 	function checkWinCondition(): boolean {
-		// Win when standing on the only remaining grass/low_sand/acorn tile and no dirt/squirrel tiles remain
-		let grassCount = 0; // Includes grass, low_sand, acorn
-		let dirtCount = 0;
-		let squirrelCount = 0;
-		let lastGrassPos: Position | null = null;
+		// Win when standing on the only remaining required tile
+		// Required tiles: grass, low_sand, dirt, honey, acorn, squirrel
+		let totalRequired = 0;
+		let lastRequiredPos: Position | null = null;
 
 		for (const row of tiles.value) {
 			for (const tile of row) {
 				if (
 					tile.type === TileType.GRASS ||
 					tile.type === TileType.LOW_SAND ||
-					tile.type === TileType.ACORN
+					tile.type === TileType.DIRT ||
+					tile.type === TileType.HONEY ||
+					tile.type === TileType.ACORN ||
+					tile.type === TileType.SQUIRREL
 				) {
-					grassCount++;
-					lastGrassPos = tile.position;
-				} else if (tile.type === TileType.DIRT) {
-					dirtCount++;
-				} else if (tile.type === TileType.SQUIRREL) {
-					squirrelCount++;
+					totalRequired++;
+					lastRequiredPos = tile.position;
 				}
 			}
 		}
 
-		// Win if there's exactly one grass-like tile, no dirt tiles, no squirrels, and player is on it
-		if (grassCount === 1 && dirtCount === 0 && squirrelCount === 0 && lastGrassPos) {
-			return (
-				lastGrassPos.x === playerPosition.value.x &&
-				lastGrassPos.y === playerPosition.value.y
-			);
-		}
-
-		return false;
+		// Win if there's exactly one required tile remaining and player is on it
+		return (
+			totalRequired === 1 &&
+			lastRequiredPos !== null &&
+			lastRequiredPos.x === playerPosition.value.x &&
+			lastRequiredPos.y === playerPosition.value.y
+		);
 	}
 
 	function movePlayer(direction: Direction) {
