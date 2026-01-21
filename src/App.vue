@@ -16,6 +16,7 @@ import WelcomeSign from "./components/WelcomeSign.vue";
 import { getLevelQueue } from "./composables/useLevelQueue";
 import {
 	changeWorldBGM,
+	getBiomeFromElements,
 	initializeAudio,
 	playSuccess,
 	playUndo,
@@ -784,7 +785,7 @@ async function performFadeTransition() {
 
 	// If entering a new world, start the BGM transition
 	if (pendingNewWorld.value) {
-		changeWorldBGM();
+		changeWorldBGM(getBiomeFromElements(currentWorldElements.value));
 	}
 
 	// After fade completes (500ms), generate new level
@@ -1290,7 +1291,7 @@ async function startCustomWorld(elements: WorldElement[]) {
 	isBlack.value = true;
 
 	// Change BGM during fade
-	changeWorldBGM();
+	changeWorldBGM(getBiomeFromElements(currentWorldElements.value));
 
 	// After fade completes, generate new level
 	setTimeout(async () => {
@@ -1360,8 +1361,8 @@ async function handleDialogueComplete() {
 		isFading.value = true;
 		isBlack.value = true;
 
-		// Change to a new random BGM for the first world
-		changeWorldBGM();
+		// Change to a new random BGM for the first world (default/forest biome)
+		changeWorldBGM("default");
 
 		setTimeout(async () => {
 			// Reset world state for fresh start

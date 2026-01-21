@@ -8,6 +8,8 @@ import type {
 	Tile,
 } from "../types/game";
 import { isRequiredTile, isWalkableTile, PortalTypes, TileType } from "../types/game";
+import { ANIMATION, MECHANICS, HINTS } from "../constants/game";
+import { getDirectionDelta, positionToKey } from "../utils/positionUtils";
 import {
 	playAcorn,
 	playBouncepad,
@@ -29,6 +31,73 @@ import {
 	startIceSlide,
 	stopIceSlide,
 } from "./useSound";
+
+// =============================================================================
+// LANDING SOUND HELPER
+// =============================================================================
+
+/** Map of tile types to their landing sound functions */
+const LANDING_SOUNDS: Partial<Record<TileType, () => void>> = {
+	[TileType.GRASS]: playLand,
+	[TileType.DIRT]: playRandomDirt,
+	[TileType.STONE]: playStone,
+	[TileType.POND]: playWater,
+	[TileType.LOW_SAND]: playSandLand,
+	[TileType.HONEY]: playHoneyLand,
+};
+
+/** Play the appropriate landing sound for a tile type */
+function playLandingSound(tile: Tile | undefined): void {
+	if (tile?.type) {
+		const soundFn = LANDING_SOUNDS[tile.type];
+		soundFn?.();
+	}
+}
+
+// =============================================================================
+// TILE CONVERSION MAPS
+// =============================================================================
+
+/** Tiles that convert when the player LEAVES them */
+const TILE_LEAVE_CONVERSIONS: Partial<Record<TileType, TileType>> = {
+	[TileType.GRASS]: TileType.MUSHROOM,
+	[TileType.DIRT]: TileType.GRASS,
+	[TileType.LOW_SAND]: TileType.SAND_MUSHROOM,
+	[TileType.HONEY]: TileType.HONEY_MUSHROOM,
+};
+
+/** Get what a tile converts to when leaving it (or null if no conversion) */
+function getTileLeaveConversion(tileType: TileType): TileType | null {
+	return TILE_LEAVE_CONVERSIONS[tileType] ?? null;
+}
+
+/** Tiles that are always blocked (obstacles that can be jumped over) */
+const BLOCKED_TILE_TYPES: readonly TileType[] = [
+	TileType.VOID,
+	TileType.BRAMBLE,
+	TileType.MUSHROOM,
+	TileType.SAND_MUSHROOM,
+	TileType.HONEY_MUSHROOM,
+	TileType.POND_WATER,
+	TileType.SEA,
+];
+
+/** Check if a tile type is always blocked */
+function isBlockedTileType(tileType: TileType): boolean {
+	return (BLOCKED_TILE_TYPES as readonly TileType[]).includes(tileType);
+}
+
+/** Check if a bounce pad can land on a tile type at a given tide phase */
+function canBounceLandOn(
+	tileType: TileType | undefined,
+	currentTidePhase: number
+): boolean {
+	if (!tileType) return false;
+	if (isBlockedTileType(tileType)) return false;
+	// Can't land on flooded LOW_SAND
+	if (tileType === TileType.LOW_SAND && currentTidePhase === 0) return false;
+	return true;
+}
 
 interface ChangedTile {
 	position: Position;
@@ -89,11 +158,10 @@ export function useGame(level: Level) {
 		// Hide popup after animation
 		acornPopupTimeout = setTimeout(() => {
 			acornPopupValue.value = null;
-		}, 1600);
+		}, ANIMATION.ACORN_POPUP);
 	}
 
 	// Tides state management
-	const TIDE_PERIOD = 5; // Flood every 5 moves
 	const tidePhase = ref(1); // Start at phase 1 (4 moves until first flood, 0 = flooded)
 
 	// Manual hint toggle (keyboard shortcut 'h')
@@ -106,8 +174,8 @@ export function useGame(level: Level) {
 
 	// Get moves until next flood (for display)
 	function getMovesUntilFlood(): number {
-		if (tidePhase.value === 0) return TIDE_PERIOD;
-		return TIDE_PERIOD - tidePhase.value;
+		if (tidePhase.value === 0) return MECHANICS.TIDE_PERIOD;
+		return MECHANICS.TIDE_PERIOD - tidePhase.value;
 	}
 
 	// Idle hint tracking
@@ -219,7 +287,7 @@ export function useGame(level: Level) {
 		// Low sand tiles are landable if they won't be flooded when we land
 		// (tide advances when we leave, so check next phase)
 		if (tile.type === TileType.LOW_SAND) {
-			const nextPhase = (tidePhase.value + 1) % TIDE_PERIOD;
+			const nextPhase = (tidePhase.value + 1) % MECHANICS.TIDE_PERIOD;
 			return nextPhase !== 0; // Safe to land if next phase isn't flood phase
 		}
 
@@ -273,7 +341,7 @@ export function useGame(level: Level) {
 		}
 		// Low sand that will be flooded when we land counts as obstacle (can be jumped over)
 		if (tile.type === TileType.LOW_SAND) {
-			const nextPhase = (tidePhase.value + 1) % TIDE_PERIOD;
+			const nextPhase = (tidePhase.value + 1) % MECHANICS.TIDE_PERIOD;
 			if (nextPhase === 0) return true; // Will be flooded, treat as obstacle
 		}
 		// Sea tiles are always obstacles
@@ -298,19 +366,6 @@ export function useGame(level: Level) {
 		const dx = Math.abs(from.x - to.x);
 		const dy = Math.abs(from.y - to.y);
 		return (dx === 1 && dy === 0) || (dx === 0 && dy === 1);
-	}
-
-	function getDirectionDelta(direction: Direction): Position {
-		switch (direction) {
-			case "up":
-				return { x: 0, y: -1 };
-			case "down":
-				return { x: 0, y: 1 };
-			case "left":
-				return { x: -1, y: 0 };
-			case "right":
-				return { x: 1, y: 0 };
-		}
 	}
 
 	function getWaterFlow(position: Position): FlowDirection | null {
@@ -530,8 +585,6 @@ export function useGame(level: Level) {
 
 	// DFS search for a Hamiltonian path (visiting all grass/dirt tiles)
 	// Returns: { path, timedOut } where path is null if no solution found
-	const MAX_PATHFINDING_ITERATIONS = 5000;
-
 	function findHamiltonianPath(
 		pos: Position,
 		tileStates: TileType[][],
@@ -544,7 +597,7 @@ export function useGame(level: Level) {
 	): { path: Position[] | null; timedOut: boolean } {
 		// Check iteration limit
 		iterations.count++;
-		if (iterations.count > MAX_PATHFINDING_ITERATIONS) {
+		if (iterations.count > MECHANICS.MAX_PATHFINDING_ITERATIONS) {
 			return { path: null, timedOut: true };
 		}
 
@@ -704,7 +757,7 @@ export function useGame(level: Level) {
 
 		// Check if LOW_SAND will be flooded after moving (tide advances when we leave)
 		const currentPhase = simulatedTidePhase ?? tidePhase.value;
-		const nextPhase = (currentPhase + 1) % TIDE_PERIOD;
+		const nextPhase = (currentPhase + 1) % MECHANICS.TIDE_PERIOD;
 		const lowSandWillBeFlooded = nextPhase === 0;
 
 		// Check if standing on honey (can't jump from honey)
@@ -845,28 +898,23 @@ export function useGame(level: Level) {
 
 		// Advance tide phase
 		const currentPhase = simulatedTidePhase ?? tidePhase.value;
-		const newTidePhase = (currentPhase + 1) % TIDE_PERIOD;
+		const newTidePhase = (currentPhase + 1) % MECHANICS.TIDE_PERIOD;
 
 		// Simulate leaving current tile
 		const currentTileType = newTileStates[pos.y]?.[pos.x];
-		if (currentTileType === TileType.GRASS) {
-			const row = newTileStates[pos.y];
-			if (row) row[pos.x] = TileType.MUSHROOM;
-		} else if (currentTileType === TileType.DIRT) {
-			const row = newTileStates[pos.y];
-			if (row) row[pos.x] = TileType.GRASS;
-		} else if (currentTileType === TileType.LOW_SAND) {
-			const row = newTileStates[pos.y];
-			if (row) row[pos.x] = TileType.SAND_MUSHROOM;
-		} else if (currentTileType === TileType.HONEY) {
-			const row = newTileStates[pos.y];
-			if (row) row[pos.x] = TileType.HONEY_MUSHROOM;
-		} else if (currentTileType === TileType.POND) {
-			const key = `${pos.x},${pos.y}`;
-			const state = newLilypads.get(key);
-			if (state && !state.submerged) {
-				state.submerged = true;
-				state.cooldown = 4;
+		if (currentTileType) {
+			const conversion = getTileLeaveConversion(currentTileType);
+			if (conversion) {
+				const row = newTileStates[pos.y];
+				if (row) row[pos.x] = conversion;
+			} else if (currentTileType === TileType.POND) {
+				// POND has special lilypad state handling
+				const key = positionToKey(pos);
+				const state = newLilypads.get(key);
+				if (state && !state.submerged) {
+					state.submerged = true;
+					state.cooldown = MECHANICS.LILYPAD_COOLDOWN;
+				}
 			}
 		}
 
@@ -951,22 +999,6 @@ export function useGame(level: Level) {
 			// Check if ice slide ends on bounce pad - chain into bounce
 			const iceEndType = newTileStates[current.y]?.[current.x];
 			if (iceEndType === TileType.BOUNCE_PAD) {
-				// Helper to check if a tile can be landed on
-				// Note: newTidePhase is the tide phase AFTER the move
-				const canLandOnForBounce = (tileType: TileType | undefined): boolean => {
-					if (!tileType) return false;
-					if (tileType === TileType.VOID) return false;
-					if (tileType === TileType.BRAMBLE) return false;
-					if (tileType === TileType.MUSHROOM) return false;
-					if (tileType === TileType.SAND_MUSHROOM) return false;
-					if (tileType === TileType.HONEY_MUSHROOM) return false;
-					if (tileType === TileType.POND_WATER) return false;
-					if (tileType === TileType.SEA) return false;
-					// Can't land on flooded LOW_SAND
-					if (tileType === TileType.LOW_SAND && newTidePhase === 0) return false;
-					return true;
-				};
-
 				// Recursive function to follow bounce chains
 				const calculateBounceChain = (
 					padPos: Position,
@@ -977,7 +1009,7 @@ export function useGame(level: Level) {
 					if (visitedPads.has(padKey)) return null;
 					visitedPads.add(padKey);
 
-					for (let distance = 3; distance >= 1; distance--) {
+					for (let distance = MECHANICS.MAX_BOUNCE_DISTANCE; distance >= 1; distance--) {
 						const landingPos = {
 							x: padPos.x + dir.x * distance,
 							y: padPos.y + dir.y * distance,
@@ -995,7 +1027,7 @@ export function useGame(level: Level) {
 								// If chain fails (blocked), we still land on this bounce pad
 								return chainResult ?? landingPos;
 							}
-							if (canLandOnForBounce(landingType)) {
+							if (canBounceLandOn(landingType, newTidePhase)) {
 								return landingPos;
 							}
 						}
@@ -1026,22 +1058,6 @@ export function useGame(level: Level) {
 		} else if (nextTileType === TileType.BOUNCE_PAD) {
 			// Simulate bounce with chaining support
 			const delta = getDirectionDelta(move.direction);
-
-			// Helper to check if a tile can be landed on (excluding bounce pads for chain logic)
-			// Note: newTidePhase is the tide phase AFTER the move to the bounce pad
-			const canLandOnForPathfinding = (tileType: TileType | undefined): boolean => {
-				if (!tileType) return false;
-				if (tileType === TileType.VOID) return false;
-				if (tileType === TileType.BRAMBLE) return false;
-				if (tileType === TileType.MUSHROOM) return false;
-				if (tileType === TileType.SAND_MUSHROOM) return false;
-				if (tileType === TileType.HONEY_MUSHROOM) return false;
-				if (tileType === TileType.POND_WATER) return false;
-				if (tileType === TileType.SEA) return false;
-				// Can't land on flooded LOW_SAND
-				if (tileType === TileType.LOW_SAND && newTidePhase === 0) return false;
-				return true;
-			};
 
 			// Recursive function to follow bounce chains
 			// Returns the final position after all bounces, or null if bounce is completely blocked
@@ -1080,7 +1096,7 @@ export function useGame(level: Level) {
 							return chainResult ?? landingPos;
 						}
 
-						if (canLandOnForPathfinding(landingType)) {
+						if (canBounceLandOn(landingType, newTidePhase)) {
 							return landingPos;
 						}
 					}
@@ -1243,28 +1259,11 @@ export function useGame(level: Level) {
 		startPos: Position,
 		direction: Direction,
 	): { destination: Position; path: Position[]; didMove: boolean } {
-		const MAX_BOUNCE_DISTANCE = 3;
 		const delta = getDirectionDelta(direction);
-
-		// Check if a tile can be landed on (only check landing spot, not tiles we jump over)
-		function canLandOnTile(tile: Tile | null): boolean {
-			if (!tile) return false;
-			// Can't land on these tile types
-			if (tile.type === TileType.VOID) return false;
-			if (tile.type === TileType.BRAMBLE) return false;
-			if (tile.type === TileType.MUSHROOM) return false;
-			if (tile.type === TileType.SAND_MUSHROOM) return false;
-			if (tile.type === TileType.HONEY_MUSHROOM) return false;
-			if (tile.type === TileType.POND_WATER) return false;
-			if (tile.type === TileType.SEA) return false;
-			// Can't land on flooded LOW_SAND (tide already advanced when stepping on bounce pad)
-			if (tile.type === TileType.LOW_SAND && tidePhase.value === 0) return false;
-			return true;
-		}
 
 		// Try bouncing at progressively shorter distances (3, 2, 1) if landing spot is blocked
 		for (
-			let bounceDistance = MAX_BOUNCE_DISTANCE;
+			let bounceDistance = MECHANICS.MAX_BOUNCE_DISTANCE;
 			bounceDistance >= 1;
 			bounceDistance--
 		) {
@@ -1276,7 +1275,7 @@ export function useGame(level: Level) {
 			const landingTile = getTile(landingPos);
 
 			// Check if we can land there (we can jump OVER obstacles, only landing matters)
-			if (canLandOnTile(landingTile)) {
+			if (canBounceLandOn(landingTile?.type, tidePhase.value)) {
 				// Build the path for animation (includes all positions we pass through)
 				const path: Position[] = [startPos];
 				for (let i = 1; i <= bounceDistance; i++) {
@@ -1291,6 +1290,59 @@ export function useGame(level: Level) {
 
 		// No valid bounce - stay in place
 		return { destination: startPos, path: [startPos], didMove: false };
+	}
+
+	/** Animate player along a path with consistent slide animation handling */
+	function animateSlide(
+		path: Position[],
+		onComplete: () => void,
+		intervalMs: number = ANIMATION.SLIDE_STEP
+	): void {
+		slidePath.value = path;
+		isSliding.value = true;
+
+		let pathIndex = 1;
+		const interval = setInterval(() => {
+			const nextPos = path[pathIndex];
+			if (pathIndex < path.length && nextPos) {
+				playerPosition.value = nextPos;
+				pathIndex++;
+			} else {
+				clearInterval(interval);
+				isSliding.value = false;
+				slidePath.value = [];
+				onComplete();
+			}
+		}, intervalMs);
+	}
+
+	/** Perform portal teleportation animation sequence: shrink -> poof -> move -> poof -> grow */
+	function performPortalTeleport(
+		fromPos: Position,
+		toPos: Position,
+		onComplete: () => void
+	): void {
+		isTeleporting.value = true;
+		teleportPhase.value = "shrinking";
+
+		setTimeout(() => {
+			poofPositions.value = [{ ...fromPos }];
+			playTeleportPoof();
+			playerPosition.value = { ...toPos };
+
+			setTimeout(() => {
+				poofPositions.value = [{ ...toPos }];
+				playTeleportPoof();
+				teleportPhase.value = "growing";
+
+				setTimeout(() => {
+					isTeleporting.value = false;
+					teleportPhase.value = null;
+					poofPositions.value = [];
+					onComplete();
+				}, ANIMATION.PORTAL_GROW);
+			}, ANIMATION.PORTAL_POOF_PAUSE);
+		}, ANIMATION.PORTAL_SHRINK);
 	}
 
 	// Helper function for recursive bounce chaining
@@ -1354,23 +1406,8 @@ export function useGame(level: Level) {
 					// Chain into water slide
 					isBouncing.value = false;
 					const { path: waterPath } = computeSlideDestination(destination);
-					slidePath.value = waterPath;
 					playWater();
-					isSliding.value = true;
-
-					let waterPathIndex = 1;
-					const waterSlideInterval = setInterval(() => {
-						const waterNextPos = waterPath[waterPathIndex];
-						if (waterPathIndex < waterPath.length && waterNextPos) {
-							playerPosition.value = waterNextPos;
-							waterPathIndex++;
-						} else {
-							clearInterval(waterSlideInterval);
-							isSliding.value = false;
-							slidePath.value = [];
-							onComplete();
-						}
-					}, 150);
+					animateSlide(waterPath, onComplete);
 				} else if (finalTile?.type === TileType.ICE) {
 					// Chain into ice slide
 					isBouncing.value = false;
@@ -1378,119 +1415,47 @@ export function useGame(level: Level) {
 						destination,
 						direction,
 					);
-					slidePath.value = icePath;
 					startIceSlide();
-					isSliding.value = true;
+					animateSlide(icePath, () => {
+						stopIceSlide();
 
-					let icePathIndex = 1;
-					const iceSlideInterval = setInterval(() => {
-						const iceNextPos = icePath[icePathIndex];
-						if (icePathIndex < icePath.length && iceNextPos) {
-							playerPosition.value = iceNextPos;
-							icePathIndex++;
-						} else {
-							clearInterval(iceSlideInterval);
-							stopIceSlide();
-							isSliding.value = false;
-							slidePath.value = [];
-
-							// Check for chaining after ice slide
-							const iceEndTile = getTile(iceDestination);
-							if (iceEndTile?.type === TileType.BOUNCE_PAD) {
-								// Chain into bounce pad
-								animateBounceChain(iceDestination, direction, onComplete);
-							} else if (iceEndTile?.type === TileType.WATER) {
-								// Chain into water slide
-								const { path: waterPath } = computeSlideDestination(iceDestination);
-								slidePath.value = waterPath;
-								playWater();
-								isSliding.value = true;
-
-								let waterPathIndex = 1;
-								const waterSlideInterval = setInterval(() => {
-									const waterNextPos = waterPath[waterPathIndex];
-									if (waterPathIndex < waterPath.length && waterNextPos) {
-										playerPosition.value = waterNextPos;
-										waterPathIndex++;
-									} else {
-										clearInterval(waterSlideInterval);
-										isSliding.value = false;
-										slidePath.value = [];
-										onComplete();
-									}
-								}, 150);
-							} else if (iceEndTile && isPortalTile(iceEndTile.type)) {
-								// Chain into portal
-								const portalType = iceEndTile.type as PortalType;
-								const matchingPortal = findMatchingPortal(portalType, iceDestination);
-								if (matchingPortal) {
-									isTeleporting.value = true;
-									teleportPhase.value = "shrinking";
-									setTimeout(() => {
-										poofPositions.value = [{ ...iceDestination }];
-										playTeleportPoof();
-										playerPosition.value = { ...matchingPortal };
-										setTimeout(() => {
-											poofPositions.value = [{ ...matchingPortal }];
-											playTeleportPoof();
-											teleportPhase.value = "growing";
-											setTimeout(() => {
-												isTeleporting.value = false;
-												teleportPhase.value = null;
-												poofPositions.value = [];
-												onComplete();
-											}, 200);
-										}, 350);
-									}, 200);
-								} else {
-									onComplete();
-								}
+						// Check for chaining after ice slide
+						const iceEndTile = getTile(iceDestination);
+						if (iceEndTile?.type === TileType.BOUNCE_PAD) {
+							// Chain into bounce pad
+							animateBounceChain(iceDestination, direction, onComplete);
+						} else if (iceEndTile?.type === TileType.WATER) {
+							// Chain into water slide
+							const { path: waterPath } = computeSlideDestination(iceDestination);
+							playWater();
+							animateSlide(waterPath, onComplete);
+						} else if (iceEndTile && isPortalTile(iceEndTile.type)) {
+							// Chain into portal
+							const portalType = iceEndTile.type as PortalType;
+							const matchingPortal = findMatchingPortal(portalType, iceDestination);
+							if (matchingPortal) {
+								performPortalTeleport(iceDestination, matchingPortal, onComplete);
 							} else {
 								onComplete();
 							}
+						} else {
+							onComplete();
 						}
-					}, 150);
+					});
 				} else if (finalTile && isPortalTile(finalTile.type)) {
 					// Chain into portal
 					isBouncing.value = false;
 					const portalType = finalTile.type as PortalType;
 					const matchingPortal = findMatchingPortal(portalType, destination);
 					if (matchingPortal) {
-						isTeleporting.value = true;
-						teleportPhase.value = "shrinking";
-						setTimeout(() => {
-							poofPositions.value = [{ ...destination }];
-							playTeleportPoof();
-							playerPosition.value = { ...matchingPortal };
-							setTimeout(() => {
-								poofPositions.value = [{ ...matchingPortal }];
-								playTeleportPoof();
-								teleportPhase.value = "growing";
-								setTimeout(() => {
-									isTeleporting.value = false;
-									teleportPhase.value = null;
-									poofPositions.value = [];
-									onComplete();
-								}, 200);
-							}, 350);
-						}, 200);
+						performPortalTeleport(destination, matchingPortal, onComplete);
 					} else {
 						onComplete();
 					}
 				} else {
 					// Normal landing - play sound based on tile
 					isBouncing.value = false;
-					if (finalTile?.type === TileType.GRASS) {
-						playLand();
-					} else if (finalTile?.type === TileType.DIRT) {
-						playRandomDirt();
-					} else if (finalTile?.type === TileType.STONE) {
-						playStone();
-					} else if (finalTile?.type === TileType.POND) {
-						playWater();
-					} else if (finalTile?.type === TileType.HONEY) {
-						playHoneyLand();
-					}
+					playLandingSound(finalTile);
 					onComplete();
 				}
 			}
@@ -1639,11 +1604,11 @@ export function useGame(level: Level) {
 	// Advance the tide phase (called when leaving a tile)
 	function advanceTide() {
 		const oldPhase = tidePhase.value;
-		tidePhase.value = (tidePhase.value + 1) % TIDE_PERIOD;
+		tidePhase.value = (tidePhase.value + 1) % MECHANICS.TIDE_PERIOD;
 
 		// Play tide sounds only if level has LOW_SAND tiles
 		if (hasLowSandTiles()) {
-			if (oldPhase === TIDE_PERIOD - 1 && tidePhase.value === 0) {
+			if (oldPhase === MECHANICS.TIDE_PERIOD - 1 && tidePhase.value === 0) {
 				// Tide is flooding (phase went from 4 to 0)
 				playWavesRise();
 			} else if (oldPhase === 0 && tidePhase.value === 1) {
@@ -1745,26 +1710,12 @@ export function useGame(level: Level) {
 			setTimeout(() => {
 				isHopping.value = false;
 				playWater();
-				isSliding.value = true;
-
-				// Animate through slide path
-				let pathIndex = 1; // Start from second position (first is already where player is)
-				const slideInterval = setInterval(() => {
-					const nextPos = path[pathIndex];
-					if (pathIndex < path.length && nextPos) {
-						playerPosition.value = nextPos;
-						pathIndex++;
-					} else {
-						clearInterval(slideInterval);
-						isSliding.value = false;
-						slidePath.value = [];
-
-						if (checkWinCondition()) {
-							hasWon.value = true;
-						}
+				animateSlide(path, () => {
+					if (checkWinCondition()) {
+						hasWon.value = true;
 					}
-				}, 150);
-			}, 200);
+				});
+			}, ANIMATION.HOP_DURATION);
 		} else if (landingTile?.type === TileType.ICE) {
 			// Ice sliding - slide in the direction of movement
 			const { path, destination } = computeIceSlideDestination(
@@ -1778,119 +1729,51 @@ export function useGame(level: Level) {
 			setTimeout(() => {
 				isHopping.value = false;
 				startIceSlide();
-				isSliding.value = true;
+				animateSlide(path, () => {
+					stopIceSlide();
 
-				// Animate through slide path
-				let pathIndex = 1;
-				const slideInterval = setInterval(() => {
-					const nextPos = path[pathIndex];
-					if (pathIndex < path.length && nextPos) {
-						playerPosition.value = nextPos;
-						pathIndex++;
-					} else {
-						clearInterval(slideInterval);
-						stopIceSlide();
-						isSliding.value = false;
-						slidePath.value = [];
-
-						// Check if we landed on water - chain into water slide
-						const finalTile = getTile(destination);
-						if (finalTile?.type === TileType.WATER) {
-							const { path: waterPath } = computeSlideDestination(destination);
-							slidePath.value = waterPath;
-							playWater();
-							isSliding.value = true;
-
-							let waterPathIndex = 1;
-							const waterSlideInterval = setInterval(() => {
-								const waterNextPos = waterPath[waterPathIndex];
-								if (waterPathIndex < waterPath.length && waterNextPos) {
-									playerPosition.value = waterNextPos;
-									waterPathIndex++;
-								} else {
-									clearInterval(waterSlideInterval);
-									isSliding.value = false;
-									slidePath.value = [];
-
-									if (checkWinCondition()) {
-										hasWon.value = true;
-									}
-								}
-							}, 150);
-						} else if (finalTile && isPortalTile(finalTile.type)) {
-							// Chain into portal teleportation
-							const portalType = finalTile.type as PortalType;
-							const matchingPortal = findMatchingPortal(
-								portalType,
-								destination,
-							);
-							if (matchingPortal) {
-								// Start shrinking
-								isTeleporting.value = true;
-								teleportPhase.value = "shrinking";
-
-								// After shrink completes, show poof and teleport
-								setTimeout(() => {
-									// Show poof at source
-									const vanishPos = { ...destination };
-									poofPositions.value = [vanishPos];
-									playTeleportPoof();
-
-									// Move player to destination (while invisible)
-									playerPosition.value = { ...matchingPortal };
-
-									// After longer pause, show poof at destination and start growing
-									setTimeout(() => {
-										const appearPos = { ...matchingPortal };
-										poofPositions.value = [appearPos];
-										playTeleportPoof();
-										teleportPhase.value = "growing";
-
-										// After grow completes, end teleport
-										setTimeout(() => {
-											isTeleporting.value = false;
-											teleportPhase.value = null;
-											poofPositions.value = [];
-
-											if (checkWinCondition()) {
-												hasWon.value = true;
-											}
-										}, 200);
-									}, 350);
-								}, 200);
-							} else {
-								if (checkWinCondition()) {
-									hasWon.value = true;
-								}
+					// Check what we landed on - may need to chain
+					const finalTile = getTile(destination);
+					if (finalTile?.type === TileType.WATER) {
+						// Chain into water slide
+						const { path: waterPath } = computeSlideDestination(destination);
+						playWater();
+						animateSlide(waterPath, () => {
+							if (checkWinCondition()) {
+								hasWon.value = true;
 							}
-						} else if (finalTile?.type === TileType.BOUNCE_PAD) {
-							// Chain into bounce pad
-							animateBounceChain(destination, direction, () => {
+						});
+					} else if (finalTile && isPortalTile(finalTile.type)) {
+						// Chain into portal teleportation
+						const portalType = finalTile.type as PortalType;
+						const matchingPortal = findMatchingPortal(portalType, destination);
+						if (matchingPortal) {
+							performPortalTeleport(destination, matchingPortal, () => {
 								if (checkWinCondition()) {
 									hasWon.value = true;
 								}
 							});
 						} else {
-							// Play landing sound based on final tile type
-							if (finalTile?.type === TileType.GRASS) {
-								playLand();
-							} else if (finalTile?.type === TileType.DIRT) {
-								playRandomDirt();
-							} else if (finalTile?.type === TileType.STONE) {
-								playStone();
-							} else if (finalTile?.type === TileType.POND) {
-								playWater();
-							} else if (finalTile?.type === TileType.HONEY) {
-								playHoneyLand();
-							}
-
 							if (checkWinCondition()) {
 								hasWon.value = true;
 							}
 						}
+					} else if (finalTile?.type === TileType.BOUNCE_PAD) {
+						// Chain into bounce pad
+						animateBounceChain(destination, direction, () => {
+							if (checkWinCondition()) {
+								hasWon.value = true;
+							}
+						});
+					} else {
+						// Play landing sound based on final tile type
+						playLandingSound(finalTile);
+						if (checkWinCondition()) {
+							hasWon.value = true;
+						}
 					}
-				}, 150); // Ice slide speed
-			}, 200);
+				});
+			}, ANIMATION.HOP_DURATION);
 		} else if (landingTile?.type === TileType.BOUNCE_PAD) {
 			// Bounce pad - bounce player 3 tiles in movement direction
 			playerPosition.value = newPosition;
@@ -1904,7 +1787,7 @@ export function useGame(level: Level) {
 						hasWon.value = true;
 					}
 				});
-			}, 200);
+			}, ANIMATION.HOP_DURATION);
 		} else if (landingTile && isPortalTile(landingTile.type)) {
 			// Portal teleportation - portals stay active for bidirectional travel
 			const portalType = landingTile.type as PortalType;
@@ -1916,66 +1799,26 @@ export function useGame(level: Level) {
 				// Find matching portal
 				const matchingPortal = findMatchingPortal(portalType, newPosition);
 				if (matchingPortal) {
-					// Start shrinking
-					isTeleporting.value = true;
-					teleportPhase.value = "shrinking";
-
-					// After shrink completes, show poof and teleport
-					setTimeout(() => {
-						// Show poof at source
-						const vanishPos = { ...newPosition };
-						poofPositions.value = [vanishPos];
-						playTeleportPoof();
-
-						// Move player to destination (while invisible)
-						playerPosition.value = { ...matchingPortal };
-
-						// After longer pause, show poof at destination and start growing
-						setTimeout(() => {
-							const appearPos = { ...matchingPortal };
-							poofPositions.value = [appearPos];
-							playTeleportPoof();
-							teleportPhase.value = "growing";
-
-							// After grow completes, end teleport
-							setTimeout(() => {
-								isTeleporting.value = false;
-								teleportPhase.value = null;
-								poofPositions.value = [];
-
-								if (checkWinCondition()) {
-									hasWon.value = true;
-								}
-							}, 200);
-						}, 350);
-					}, 200);
+					performPortalTeleport(newPosition, matchingPortal, () => {
+						if (checkWinCondition()) {
+							hasWon.value = true;
+						}
+					});
 				} else {
 					// No matching portal, just stay here
 					if (checkWinCondition()) {
 						hasWon.value = true;
 					}
 				}
-			}, 200);
+			}, ANIMATION.HOP_DURATION);
 		} else {
 			playerPosition.value = newPosition;
 
 			// Reset hop animation and play landing sound based on tile type
 			setTimeout(() => {
 				isHopping.value = false;
-				if (landingTile?.type === TileType.GRASS) {
-					playLand();
-				} else if (landingTile?.type === TileType.DIRT) {
-					playRandomDirt();
-				} else if (landingTile?.type === TileType.STONE) {
-					playStone();
-				} else if (landingTile?.type === TileType.POND) {
-					playWater();
-				} else if (landingTile?.type === TileType.LOW_SAND) {
-					playSandLand();
-				} else if (landingTile?.type === TileType.HONEY) {
-					playHoneyLand();
-				}
-			}, 200);
+				playLandingSound(landingTile);
+			}, ANIMATION.HOP_DURATION);
 
 			if (checkWinCondition()) {
 				hasWon.value = true;
@@ -2075,26 +1918,12 @@ export function useGame(level: Level) {
 			setTimeout(() => {
 				isHopping.value = false;
 				playWater();
-				isSliding.value = true;
-
-				// Animate through slide path
-				let pathIndex = 1;
-				const slideInterval = setInterval(() => {
-					const nextPos = path[pathIndex];
-					if (pathIndex < path.length && nextPos) {
-						playerPosition.value = nextPos;
-						pathIndex++;
-					} else {
-						clearInterval(slideInterval);
-						isSliding.value = false;
-						slidePath.value = [];
-
-						if (checkWinCondition()) {
-							hasWon.value = true;
-						}
+				animateSlide(path, () => {
+					if (checkWinCondition()) {
+						hasWon.value = true;
 					}
-				}, 150);
-			}, 200);
+				});
+			}, ANIMATION.HOP_DURATION);
 		} else if (landingTile?.type === TileType.ICE) {
 			// Ice sliding - slide in the direction of movement
 			const { path, destination } = computeIceSlideDestination(
@@ -2108,119 +1937,51 @@ export function useGame(level: Level) {
 			setTimeout(() => {
 				isHopping.value = false;
 				startIceSlide();
-				isSliding.value = true;
+				animateSlide(path, () => {
+					stopIceSlide();
 
-				// Animate through slide path
-				let pathIndex = 1;
-				const slideInterval = setInterval(() => {
-					const nextPos = path[pathIndex];
-					if (pathIndex < path.length && nextPos) {
-						playerPosition.value = nextPos;
-						pathIndex++;
-					} else {
-						clearInterval(slideInterval);
-						stopIceSlide();
-						isSliding.value = false;
-						slidePath.value = [];
-
-						// Check if we landed on water - chain into water slide
-						const finalTile = getTile(destination);
-						if (finalTile?.type === TileType.WATER) {
-							const { path: waterPath } = computeSlideDestination(destination);
-							slidePath.value = waterPath;
-							playWater();
-							isSliding.value = true;
-
-							let waterPathIndex = 1;
-							const waterSlideInterval = setInterval(() => {
-								const waterNextPos = waterPath[waterPathIndex];
-								if (waterPathIndex < waterPath.length && waterNextPos) {
-									playerPosition.value = waterNextPos;
-									waterPathIndex++;
-								} else {
-									clearInterval(waterSlideInterval);
-									isSliding.value = false;
-									slidePath.value = [];
-
-									if (checkWinCondition()) {
-										hasWon.value = true;
-									}
-								}
-							}, 150);
-						} else if (finalTile && isPortalTile(finalTile.type)) {
-							// Chain into portal teleportation
-							const portalType = finalTile.type as PortalType;
-							const matchingPortal = findMatchingPortal(
-								portalType,
-								destination,
-							);
-							if (matchingPortal) {
-								// Start shrinking
-								isTeleporting.value = true;
-								teleportPhase.value = "shrinking";
-
-								// After shrink completes, show poof and teleport
-								setTimeout(() => {
-									// Show poof at source
-									const vanishPos = { ...destination };
-									poofPositions.value = [vanishPos];
-									playTeleportPoof();
-
-									// Move player to destination (while invisible)
-									playerPosition.value = { ...matchingPortal };
-
-									// After longer pause, show poof at destination and start growing
-									setTimeout(() => {
-										const appearPos = { ...matchingPortal };
-										poofPositions.value = [appearPos];
-										playTeleportPoof();
-										teleportPhase.value = "growing";
-
-										// After grow completes, end teleport
-										setTimeout(() => {
-											isTeleporting.value = false;
-											teleportPhase.value = null;
-											poofPositions.value = [];
-
-											if (checkWinCondition()) {
-												hasWon.value = true;
-											}
-										}, 200);
-									}, 350);
-								}, 200);
-							} else {
-								if (checkWinCondition()) {
-									hasWon.value = true;
-								}
+					// Check what we landed on - may need to chain
+					const finalTile = getTile(destination);
+					if (finalTile?.type === TileType.WATER) {
+						// Chain into water slide
+						const { path: waterPath } = computeSlideDestination(destination);
+						playWater();
+						animateSlide(waterPath, () => {
+							if (checkWinCondition()) {
+								hasWon.value = true;
 							}
-						} else if (finalTile?.type === TileType.BOUNCE_PAD) {
-							// Chain into bounce pad
-							animateBounceChain(destination, direction, () => {
+						});
+					} else if (finalTile && isPortalTile(finalTile.type)) {
+						// Chain into portal teleportation
+						const portalType = finalTile.type as PortalType;
+						const matchingPortal = findMatchingPortal(portalType, destination);
+						if (matchingPortal) {
+							performPortalTeleport(destination, matchingPortal, () => {
 								if (checkWinCondition()) {
 									hasWon.value = true;
 								}
 							});
 						} else {
-							// Play landing sound based on final tile type
-							if (finalTile?.type === TileType.GRASS) {
-								playLand();
-							} else if (finalTile?.type === TileType.DIRT) {
-								playRandomDirt();
-							} else if (finalTile?.type === TileType.STONE) {
-								playStone();
-							} else if (finalTile?.type === TileType.POND) {
-								playWater();
-							} else if (finalTile?.type === TileType.HONEY) {
-								playHoneyLand();
-							}
-
 							if (checkWinCondition()) {
 								hasWon.value = true;
 							}
 						}
+					} else if (finalTile?.type === TileType.BOUNCE_PAD) {
+						// Chain into bounce pad
+						animateBounceChain(destination, direction, () => {
+							if (checkWinCondition()) {
+								hasWon.value = true;
+							}
+						});
+					} else {
+						// Play landing sound based on final tile type
+						playLandingSound(finalTile);
+						if (checkWinCondition()) {
+							hasWon.value = true;
+						}
 					}
-				}, 150); // Ice slide speed
-			}, 200);
+				});
+			}, ANIMATION.HOP_DURATION);
 		} else if (landingTile?.type === TileType.BOUNCE_PAD) {
 			// Bounce pad - use recursive helper for chaining
 			playerPosition.value = target;
@@ -2232,7 +1993,7 @@ export function useGame(level: Level) {
 						hasWon.value = true;
 					}
 				});
-			}, 200);
+			}, ANIMATION.HOP_DURATION);
 		} else if (landingTile && isPortalTile(landingTile.type)) {
 			// Portal teleportation - portals stay active for bidirectional travel
 			const portalType = landingTile.type as PortalType;
@@ -2244,66 +2005,26 @@ export function useGame(level: Level) {
 				// Find matching portal
 				const matchingPortal = findMatchingPortal(portalType, target);
 				if (matchingPortal) {
-					// Start shrinking
-					isTeleporting.value = true;
-					teleportPhase.value = "shrinking";
-
-					// After shrink completes, show poof and teleport
-					setTimeout(() => {
-						// Show poof at source
-						const vanishPos = { ...target };
-						poofPositions.value = [vanishPos];
-						playTeleportPoof();
-
-						// Move player to destination (while invisible)
-						playerPosition.value = { ...matchingPortal };
-
-						// After longer pause, show poof at destination and start growing
-						setTimeout(() => {
-							const appearPos = { ...matchingPortal };
-							poofPositions.value = [appearPos];
-							playTeleportPoof();
-							teleportPhase.value = "growing";
-
-							// After grow completes, end teleport
-							setTimeout(() => {
-								isTeleporting.value = false;
-								teleportPhase.value = null;
-								poofPositions.value = [];
-
-								if (checkWinCondition()) {
-									hasWon.value = true;
-								}
-							}, 200);
-						}, 350);
-					}, 200);
+					performPortalTeleport(target, matchingPortal, () => {
+						if (checkWinCondition()) {
+							hasWon.value = true;
+						}
+					});
 				} else {
 					// No matching portal, just stay here
 					if (checkWinCondition()) {
 						hasWon.value = true;
 					}
 				}
-			}, 200);
+			}, ANIMATION.HOP_DURATION);
 		} else {
 			playerPosition.value = target;
 
 			// Reset hop animation and play landing sound based on tile type
 			setTimeout(() => {
 				isHopping.value = false;
-				if (landingTile?.type === TileType.GRASS) {
-					playLand();
-				} else if (landingTile?.type === TileType.DIRT) {
-					playRandomDirt();
-				} else if (landingTile?.type === TileType.STONE) {
-					playStone();
-				} else if (landingTile?.type === TileType.POND) {
-					playWater();
-				} else if (landingTile?.type === TileType.LOW_SAND) {
-					playSandLand();
-				} else if (landingTile?.type === TileType.HONEY) {
-					playHoneyLand();
-				}
-			}, 200);
+				playLandingSound(landingTile);
+			}, ANIMATION.HOP_DURATION);
 
 			if (checkWinCondition()) {
 				hasWon.value = true;
@@ -2346,16 +2067,13 @@ export function useGame(level: Level) {
 	});
 
 	// Show hints when player is idle for 4+ seconds and remaining tiles < 8
-	const IDLE_HINT_THRESHOLD = 4000; // 4 seconds
-	const TILES_HINT_THRESHOLD = 8;
-
 	const showHints = computed(() => {
 		if (hasWon.value) return false;
 		// Manual hint toggle overrides other conditions
 		if (forceShowHints.value) return true;
-		if (grassTilesRemaining.value >= TILES_HINT_THRESHOLD) return false;
+		if (grassTilesRemaining.value >= HINTS.TILES_THRESHOLD) return false;
 		const idleTime = currentTime.value - lastMoveTime.value;
-		return idleTime >= IDLE_HINT_THRESHOLD;
+		return idleTime >= HINTS.IDLE_THRESHOLD_MS;
 	});
 
 	// Toggle manual hint display
@@ -2577,7 +2295,7 @@ export function useGame(level: Level) {
 		tidePhase,
 		isLowSandFlooded,
 		getMovesUntilFlood,
-		TIDE_PERIOD,
+		TIDE_PERIOD: MECHANICS.TIDE_PERIOD,
 		// Acorn/squirrel state
 		collectedAcorns,
 		getSquirrelRequirement,

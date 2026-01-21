@@ -9,6 +9,8 @@ import {
 	WorldElement as WE,
 	type WorldElement,
 } from "../types/game";
+import { MECHANICS } from "../constants/game";
+import { getDirectionDelta, posKey, parseKey } from "./positionUtils";
 
 export interface GeneratorConfig {
 	minWidth: number;
@@ -60,9 +62,6 @@ const DEFAULT_CONFIG: GeneratorConfig = {
 	acornChance: 0.1, // 1-3 squirrels when ACORN element is active
 };
 
-// Tide period constant - must match useGame.ts
-const TIDE_PERIOD = 5;
-
 interface Rectangle {
 	x: number;
 	y: number;
@@ -78,15 +77,6 @@ interface ShapeResult {
 }
 
 // Utility functions
-function posKey(x: number, y: number): string {
-	return `${x},${y}`;
-}
-
-function parseKey(key: string): Position {
-	const parts = key.split(",").map(Number);
-	return { x: parts[0] ?? 0, y: parts[1] ?? 0 };
-}
-
 function randomInt(min: number, max: number): number {
 	return Math.floor(Math.random() * (max - min + 1)) + min;
 }
@@ -435,20 +425,6 @@ function addStones(
 	return { grass: remainingGrass, stones };
 }
 
-// Get delta for a direction
-function getDirectionDelta(dir: FlowDirection): Position {
-	switch (dir) {
-		case "up":
-			return { x: 0, y: -1 };
-		case "down":
-			return { x: 0, y: 1 };
-		case "left":
-			return { x: -1, y: 0 };
-		case "right":
-			return { x: 1, y: 0 };
-	}
-}
-
 // Generate rivers that flow into stone tiles
 // Rivers convert grass tiles to water tiles and create stone endpoints
 interface RiverResult {
@@ -700,7 +676,7 @@ function computeSlideDestination(
 // Water tiles force sliding to their endpoint (stone)
 // Dirt tiles need to be visited TWICE (first visit: dirt->grass, second visit: grass->mushroom)
 // Ice tiles are slippery - entering from a direction causes sliding until leaving ice
-// Low sand tiles are walkable and need to be visited, but must avoid being on them during flood (pathLength % TIDE_PERIOD === 0)
+// Low sand tiles are walkable and need to be visited, but must avoid being on them during flood (pathLength % MECHANICS.TIDE_PERIOD === 0)
 function findHamiltonianPath(
 	grassTiles: Position[],
 	obstacleTiles: Set<string>,
@@ -838,10 +814,10 @@ function findHamiltonianPath(
 		// Calculate what the path length would be at the next position
 		const nextDepth = depth + 1;
 		// Check if landing on low sand at nextDepth would be during a flood
-		// Flood happens when (pathLength % TIDE_PERIOD) === (TIDE_PERIOD - 1)
+		// Flood happens when (pathLength % MECHANICS.TIDE_PERIOD) === (MECHANICS.TIDE_PERIOD - 1)
 		// because tidePhase starts at 1 and advances after each move
 		const wouldBeFloodedAtNextDepth =
-			nextDepth % TIDE_PERIOD === TIDE_PERIOD - 1;
+			nextDepth % MECHANICS.TIDE_PERIOD === MECHANICS.TIDE_PERIOD - 1;
 
 		// Check if current tile is honey (no jumping allowed from honey)
 		const isOnHoney = honeyTiles.has(key);

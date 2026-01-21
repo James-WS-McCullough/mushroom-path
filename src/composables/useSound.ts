@@ -246,7 +246,8 @@ let currentBgm: HTMLAudioElement | null = null;
 const BGM_VOLUME = 0.2;
 const FADE_DURATION = 1000;
 
-const BGM_TRACKS = [
+// Default forest tracks
+const BGM_TRACKS_DEFAULT = [
 	"/music/BGM 01.mp3",
 	"/music/BGM 02.mp3",
 	"/music/BGM 03.mp3",
@@ -258,11 +259,67 @@ const BGM_TRACKS = [
 	"/music/BGM 09.mp3",
 ];
 
+// Ice biome tracks
+const BGM_TRACKS_ICE = [
+	"/music/BGM-Ice1.mp3",
+	"/music/BGM-Ice2.mp3",
+	"/music/BGM-Ice3.mp3",
+	"/music/BGM-Ice4.mp3",
+];
+
+// Beach biome tracks
+const BGM_TRACKS_BEACH = [
+	"/music/BGM-Beach1.mp3",
+	"/music/BGM-Beach2.mp3",
+	"/music/BGM-Beach3.mp3",
+	"/music/BGM-Beach4.mp3",
+];
+
+// Dark biome tracks (swamp/night)
+const BGM_TRACKS_DARK = [
+	"/music/BGM-Dark1.mp3",
+	"/music/BGM-Dark2.mp3",
+	"/music/BGM-Dark3.mp3",
+	"/music/BGM-Dark4.mp3",
+	"/music/BGM-Dark5.mp3",
+	"/music/BGM-Dark6.mp3",
+	"/music/BGM-Dark7.mp3",
+	"/music/BGM-Dark8.mp3",
+];
+
+export type BiomeType = "default" | "ice" | "beach" | "dark";
+
+/** Determine the music biome based on world elements */
+export function getBiomeFromElements(elements: string[]): BiomeType {
+	// Ice takes priority
+	if (elements.includes("ice")) return "ice";
+	// Beach/tides
+	if (elements.includes("tides")) return "beach";
+	// Dark for pond (night) or dirt (swamp)
+	if (elements.includes("pond") || elements.includes("dirt")) return "dark";
+	// Default for everything else
+	return "default";
+}
+
+function getTracksForBiome(biome: BiomeType): string[] {
+	switch (biome) {
+		case "ice":
+			return BGM_TRACKS_ICE;
+		case "beach":
+			return BGM_TRACKS_BEACH;
+		case "dark":
+			return BGM_TRACKS_DARK;
+		default:
+			return BGM_TRACKS_DEFAULT;
+	}
+}
+
 let bgmPlaylist: string[] = [];
 let currentPlaylistIndex = 0;
+let currentBiome: BiomeType = "default";
 
-function shufflePlaylist(): void {
-	bgmPlaylist = [...BGM_TRACKS];
+function shufflePlaylist(tracks: string[] = BGM_TRACKS_DEFAULT): void {
+	bgmPlaylist = [...tracks];
 	for (let i = bgmPlaylist.length - 1; i > 0; i--) {
 		const j = Math.floor(Math.random() * (i + 1));
 		const temp = bgmPlaylist[i]!;
@@ -274,7 +331,7 @@ function shufflePlaylist(): void {
 
 function getNextBgmTrack(): string {
 	if (bgmPlaylist.length === 0 || currentPlaylistIndex >= bgmPlaylist.length) {
-		shufflePlaylist();
+		shufflePlaylist(getTracksForBiome(currentBiome));
 	}
 	const track = bgmPlaylist[currentPlaylistIndex]!;
 	currentPlaylistIndex++;
@@ -382,8 +439,14 @@ export function startTutorialMusic(): void {
 	shufflePlaylist();
 }
 
-export async function changeWorldBGM(): Promise<void> {
+export async function changeWorldBGM(biome: BiomeType = "default"): Promise<void> {
 	if (!musicStarted) return;
+
+	// If biome changed, reshuffle with new biome's tracks
+	if (biome !== currentBiome) {
+		currentBiome = biome;
+		shufflePlaylist(getTracksForBiome(biome));
+	}
 
 	const nextTrack = getNextBgmTrack();
 
