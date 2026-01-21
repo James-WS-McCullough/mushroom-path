@@ -7,7 +7,7 @@ import type {
 	Position,
 	Tile,
 } from "../types/game";
-import { PortalTypes, TileType } from "../types/game";
+import { isRequiredTile, isWalkableTile, PortalTypes, TileType } from "../types/game";
 import {
 	playAcorn,
 	playBouncepad,
@@ -233,18 +233,8 @@ export function useGame(level: Level) {
 			return canFeedSquirrel(position);
 		}
 
-		// Can land on grass, stone, water, dirt, ice, bounce pad, honey, acorn, or portal tiles
-		return (
-			tile.type === TileType.GRASS ||
-			tile.type === TileType.STONE ||
-			tile.type === TileType.WATER ||
-			tile.type === TileType.DIRT ||
-			tile.type === TileType.ICE ||
-			tile.type === TileType.BOUNCE_PAD ||
-			tile.type === TileType.HONEY ||
-			tile.type === TileType.ACORN ||
-			isPortalTile(tile.type)
-		);
+		// Can land on walkable tiles or portal tiles
+		return isWalkableTile(tile.type) || isPortalTile(tile.type);
 	}
 
 	function isPortalTile(tileType: TileType): tileType is PortalType {
@@ -410,18 +400,10 @@ export function useGame(level: Level) {
 
 				// Check if adjacent tile is walkable
 				// LOW_SAND is always considered walkable for connectivity (tides cycle)
-				// ACORN is always walkable
 				// SQUIRREL is considered walkable for connectivity (we might collect acorns before reaching it)
 				const isWalkable =
-					adjType === TileType.GRASS ||
-					adjType === TileType.DIRT ||
-					adjType === TileType.STONE ||
-					adjType === TileType.ICE ||
-					adjType === TileType.WATER ||
+					isWalkableTile(adjType) ||
 					adjType === TileType.LOW_SAND ||
-					adjType === TileType.BOUNCE_PAD ||
-					adjType === TileType.HONEY ||
-					adjType === TileType.ACORN ||
 					adjType === TileType.SQUIRREL ||
 					isPortalTile(adjType) ||
 					(adjType === TileType.POND && !lilypads.get(adjKey)?.submerged);
@@ -461,18 +443,10 @@ export function useGame(level: Level) {
 					const jumpType = tileStates[jumpTarget.y]?.[jumpTarget.x];
 					if (!jumpType) continue;
 
-					// LOW_SAND is always landable for connectivity
-					// ACORN and SQUIRREL are also landable for connectivity
+					// LOW_SAND and SQUIRREL are also landable for connectivity
 					const isJumpLandable =
-						jumpType === TileType.GRASS ||
-						jumpType === TileType.DIRT ||
-						jumpType === TileType.STONE ||
-						jumpType === TileType.ICE ||
-						jumpType === TileType.WATER ||
+						isWalkableTile(jumpType) ||
 						jumpType === TileType.LOW_SAND ||
-						jumpType === TileType.BOUNCE_PAD ||
-						jumpType === TileType.HONEY ||
-						jumpType === TileType.ACORN ||
 						jumpType === TileType.SQUIRREL ||
 						isPortalTile(jumpType) ||
 						(jumpType === TileType.POND && !lilypads.get(jumpKey)?.submerged);
@@ -497,22 +471,14 @@ export function useGame(level: Level) {
 	): boolean {
 		const reachable = getReachableTiles(playerPos, tileStates, lilypads, simulatedTidePhase);
 
-		// Check every grass/dirt/low_sand/acorn/squirrel tile is reachable
+		// Check every required tile is reachable
 		for (let y = 0; y < tileStates.length; y++) {
 			const row = tileStates[y];
 			if (!row) continue;
 			for (let x = 0; x < row.length; x++) {
 				const t = row[x];
-				if (
-					t === TileType.GRASS ||
-					t === TileType.DIRT ||
-					t === TileType.LOW_SAND ||
-					t === TileType.ACORN ||
-					t === TileType.SQUIRREL
-				) {
-					if (!reachable.has(`${x},${y}`)) {
-						return false; // Found unreachable tile - graph is disconnected
-					}
+				if (isRequiredTile(t) && !reachable.has(`${x},${y}`)) {
+					return false; // Found unreachable tile - graph is disconnected
 				}
 			}
 		}
@@ -520,9 +486,6 @@ export function useGame(level: Level) {
 	}
 
 	// Check if the given state is a win (all required tiles converted, player on last required tile)
-	// Required tiles: grass, low_sand, dirt, honey, acorn, squirrel
-	// - GRASS/LOW_SAND/HONEY: stay while standing, convert to mushroom when leaving
-	// - DIRT/ACORN/SQUIRREL: convert to GRASS immediately when stepped on
 	function isWinState(tileStates: TileType[][], playerPos: Position): boolean {
 		let totalRequired = 0;
 		let lastRequiredPos: Position | null = null;
@@ -532,14 +495,7 @@ export function useGame(level: Level) {
 			if (!row) continue;
 			for (let x = 0; x < row.length; x++) {
 				const t = row[x];
-				if (
-					t === TileType.GRASS ||
-					t === TileType.LOW_SAND ||
-					t === TileType.DIRT ||
-					t === TileType.HONEY ||
-					t === TileType.SQUIRREL ||
-					t === TileType.ACORN
-				) {
+				if (isRequiredTile(t)) {
 					totalRequired++;
 					lastRequiredPos = { x, y };
 				}
@@ -555,22 +511,14 @@ export function useGame(level: Level) {
 		);
 	}
 
-	// Count remaining grass, dirt, low_sand, honey, squirrel, and acorn tiles
+	// Count remaining required tiles
 	function countRemainingTiles(tileStates: TileType[][]): number {
 		let count = 0;
 		for (let y = 0; y < tileStates.length; y++) {
 			const row = tileStates[y];
 			if (!row) continue;
 			for (let x = 0; x < row.length; x++) {
-				const t = row[x];
-				if (
-					t === TileType.GRASS ||
-					t === TileType.DIRT ||
-					t === TileType.LOW_SAND ||
-					t === TileType.HONEY ||
-					t === TileType.SQUIRREL ||
-					t === TileType.ACORN
-				) {
+				if (isRequiredTile(row[x])) {
 					count++;
 				}
 			}
@@ -648,22 +596,12 @@ export function useGame(level: Level) {
 			}
 		}
 
-		// Prioritize moves that go to required tiles (grass/dirt/low_sand/acorn/squirrel) and moves to tiles with fewer neighbors (forced moves)
+		// Prioritize moves that go to required tiles and moves to tiles with fewer neighbors (forced moves)
 		validMoves.sort((a, b) => {
 			const aType = tileStates[a.move.target.y]?.[a.move.target.x];
 			const bType = tileStates[b.move.target.y]?.[b.move.target.x];
-			const aRequired =
-				aType === TileType.GRASS ||
-				aType === TileType.DIRT ||
-				aType === TileType.LOW_SAND ||
-				aType === TileType.ACORN ||
-				aType === TileType.SQUIRREL;
-			const bRequired =
-				bType === TileType.GRASS ||
-				bType === TileType.DIRT ||
-				bType === TileType.LOW_SAND ||
-				bType === TileType.ACORN ||
-				bType === TileType.SQUIRREL;
+			const aRequired = aType && isRequiredTile(aType);
+			const bRequired = bType && isRequiredTile(bType);
 
 			// Prioritize required tiles
 			if (aRequired && !bRequired) return -1;
@@ -812,16 +750,11 @@ export function useGame(level: Level) {
 					}
 					// If we can't step on squirrel, fall through to obstacle check
 				} else if (
-					adjTileType === TileType.GRASS ||
-					adjTileType === TileType.STONE ||
-					adjTileType === TileType.WATER ||
-					adjTileType === TileType.DIRT ||
-					adjTileType === TileType.ICE ||
-					adjTileType === TileType.BOUNCE_PAD ||
-					adjTileType === TileType.HONEY ||
+					(adjTileType && isWalkableTile(adjTileType)) ||
 					(adjTileType && isPortalTile(adjTileType)) ||
 					(adjTileType === TileType.LOW_SAND && !lowSandWillBeFlooded)
 				) {
+					// Note: ACORN is in WalkableTileTypes but already handled above
 					moves.push({ target: adjacentPos, direction });
 					continue;
 				}
@@ -859,20 +792,12 @@ export function useGame(level: Level) {
 							if (state && !state.submerged) {
 								moves.push({ target: jumpPos, direction });
 							}
-						} else if (jumpTileType === TileType.ACORN) {
-							// Can jump to acorn tiles
-							moves.push({ target: jumpPos, direction });
 						} else if (
-							jumpTileType === TileType.GRASS ||
-							jumpTileType === TileType.STONE ||
-							jumpTileType === TileType.WATER ||
-							jumpTileType === TileType.DIRT ||
-							jumpTileType === TileType.ICE ||
-							jumpTileType === TileType.BOUNCE_PAD ||
-							jumpTileType === TileType.HONEY ||
+							(jumpTileType && isWalkableTile(jumpTileType)) ||
 							(jumpTileType && isPortalTile(jumpTileType)) ||
 							(jumpTileType === TileType.LOW_SAND && !lowSandWillBeFlooded)
 						) {
+							// Note: ACORN is in WalkableTileTypes
 							moves.push({ target: jumpPos, direction });
 						}
 					}
@@ -880,24 +805,12 @@ export function useGame(level: Level) {
 			}
 		}
 
-		// Prioritize moves to grass/dirt/low_sand/acorn/squirrel tiles (required tiles)
+		// Prioritize moves to required tiles
 		moves.sort((a, b) => {
 			const aType = tileStates[a.target.y]?.[a.target.x];
 			const bType = tileStates[b.target.y]?.[b.target.x];
-			const aRequired =
-				aType === TileType.GRASS ||
-				aType === TileType.DIRT ||
-				aType === TileType.LOW_SAND ||
-				aType === TileType.ACORN ||
-				aType === TileType.SQUIRREL;
-			const bRequired =
-				bType === TileType.GRASS ||
-				bType === TileType.DIRT ||
-				bType === TileType.LOW_SAND ||
-				bType === TileType.ACORN ||
-				bType === TileType.SQUIRREL;
-			const aPriority = aRequired ? 0 : 1;
-			const bPriority = bRequired ? 0 : 1;
+			const aPriority = aType && isRequiredTile(aType) ? 0 : 1;
+			const bPriority = bType && isRequiredTile(bType) ? 0 : 1;
 			return aPriority - bPriority;
 		});
 
@@ -1732,20 +1645,12 @@ export function useGame(level: Level) {
 
 	function checkWinCondition(): boolean {
 		// Win when standing on the only remaining required tile
-		// Required tiles: grass, low_sand, dirt, honey, acorn, squirrel
 		let totalRequired = 0;
 		let lastRequiredPos: Position | null = null;
 
 		for (const row of tiles.value) {
 			for (const tile of row) {
-				if (
-					tile.type === TileType.GRASS ||
-					tile.type === TileType.LOW_SAND ||
-					tile.type === TileType.DIRT ||
-					tile.type === TileType.HONEY ||
-					tile.type === TileType.ACORN ||
-					tile.type === TileType.SQUIRREL
-				) {
+				if (isRequiredTile(tile.type)) {
 					totalRequired++;
 					lastRequiredPos = tile.position;
 				}
@@ -2395,19 +2300,13 @@ export function useGame(level: Level) {
 		let count = 0;
 		for (const row of tiles.value) {
 			for (const tile of row) {
-				// Count grass, low_sand, honey, acorn, squirrel, and dirt tiles
-				// Dirt counts as 2 since it needs two visits
-				// Portal tiles don't count - they stay as portals and can be reused
-				if (
-					tile.type === TileType.GRASS ||
-					tile.type === TileType.LOW_SAND ||
-					tile.type === TileType.HONEY ||
-					tile.type === TileType.ACORN ||
-					tile.type === TileType.SQUIRREL
-				) {
+				// Count required tiles (portal tiles don't count - they stay as portals and can be reused)
+				if (isRequiredTile(tile.type)) {
 					count++;
-				} else if (tile.type === TileType.DIRT) {
-					count += 2; // Dirt needs two steps: dirt->grass->mushroom
+					// Dirt counts as +1 extra since it needs two visits (dirt->grass->mushroom)
+					if (tile.type === TileType.DIRT) {
+						count++;
+					}
 				}
 			}
 		}

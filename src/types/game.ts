@@ -91,3 +91,42 @@ export const PortalTypes = [
 ] as const;
 
 export type PortalType = (typeof PortalTypes)[number];
+
+// Required tile types - tiles that must be visited to complete a level
+// These tiles convert to mushrooms (or grass first) when stepped on/left
+export const RequiredTileTypes = [
+	TileType.GRASS,
+	TileType.LOW_SAND,
+	TileType.DIRT,
+	TileType.HONEY,
+	TileType.ACORN,
+	TileType.SQUIRREL,
+] as const;
+
+export type RequiredTileType = (typeof RequiredTileTypes)[number];
+
+// Helper to check if a tile type is required
+export function isRequiredTile(tileType: TileType): tileType is RequiredTileType {
+	return (RequiredTileTypes as readonly TileType[]).includes(tileType);
+}
+
+// Core walkable tile types - tiles the player can always walk/land on
+// Note: Some tiles have conditional walkability (LOW_SAND+tide, POND+lilypad, SQUIRREL+acorns)
+// and portals are also walkable but checked separately via isPortalTile()
+export const WalkableTileTypes = [
+	TileType.GRASS,
+	TileType.STONE,
+	TileType.WATER,
+	TileType.DIRT,
+	TileType.ICE,
+	TileType.BOUNCE_PAD,
+	TileType.HONEY,
+	TileType.ACORN,
+] as const;
+
+export type WalkableTileType = (typeof WalkableTileTypes)[number];
+
+// Helper to check if a tile type is walkable (core set, excludes conditional tiles)
+export function isWalkableTile(tileType: TileType): tileType is WalkableTileType {
+	return (WalkableTileTypes as readonly TileType[]).includes(tileType);
+}
