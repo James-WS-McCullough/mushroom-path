@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue";
+import { computed, onUnmounted, ref } from "vue";
 
 const emit = defineEmits<{
 	close: [];
@@ -8,27 +8,184 @@ const emit = defineEmits<{
 interface Track {
 	name: string;
 	path: string;
+	category: "forest" | "ice" | "beach" | "dark";
 }
 
 const tracks: Track[] = [
-	{ name: "Dewdrop Dawn", path: "/music/BGM 01.mp3" },
-	{ name: "Spore Sprinkles", path: "/music/BGM 02.mp3" },
-	{ name: "Moonlit Mycelium", path: "/music/BGM 03.mp3" },
-	{ name: "Fungi Frolic", path: "/music/BGM 04.mp3" },
-	{ name: "Whispering Caps", path: "/music/BGM 05.mp3" },
-	{ name: "Toadstool Twilight", path: "/music/BGM 06.mp3" },
-	{ name: "Mossy Meadow Dreams", path: "/music/BGM 07.mp3" },
-	{ name: "Enchanted Undergrowth", path: "/music/BGM 08.mp3" },
-	{ name: "Starlit Spores", path: "/music/BGM 09.mp3" },
+	// Forest tracks
+	{ name: "Dewdrop Dawn", path: "/music/BGM 01.mp3", category: "forest" },
+	{ name: "Spore Sprinkles", path: "/music/BGM 02.mp3", category: "forest" },
+	{ name: "Moonlit Mycelium", path: "/music/BGM 03.mp3", category: "forest" },
+	{ name: "Fungi Frolic", path: "/music/BGM 04.mp3", category: "forest" },
+	{ name: "Whispering Caps", path: "/music/BGM 05.mp3", category: "forest" },
+	{ name: "Toadstool Twilight", path: "/music/BGM 06.mp3", category: "forest" },
+	{ name: "Mossy Meadow Dreams", path: "/music/BGM 07.mp3", category: "forest" },
+	{ name: "Enchanted Undergrowth", path: "/music/BGM 08.mp3", category: "forest" },
+	{ name: "Starlit Spores", path: "/music/BGM 09.mp3", category: "forest" },
+	// Ice tracks
+	{ name: "Frozen Glade", path: "/music/BGM-Ice1.mp3", category: "ice" },
+	{ name: "Crystal Cavern", path: "/music/BGM-Ice2.mp3", category: "ice" },
+	{ name: "Snowdrift Whispers", path: "/music/BGM-Ice3.mp3", category: "ice" },
+	{ name: "Glacial Dreams", path: "/music/BGM-Ice4.mp3", category: "ice" },
+	// Beach tracks
+	{ name: "Tidal Pools", path: "/music/BGM-Beach1.mp3", category: "beach" },
+	{ name: "Sandy Shores", path: "/music/BGM-Beach2.mp3", category: "beach" },
+	{ name: "Seaside Breeze", path: "/music/BGM-Beach3.mp3", category: "beach" },
+	{ name: "Coastal Calm", path: "/music/BGM-Beach4.mp3", category: "beach" },
+	// Dark/swamp tracks
+	{ name: "Murky Depths", path: "/music/BGM-Dark1.mp3", category: "dark" },
+	{ name: "Twilight Marsh", path: "/music/BGM-Dark2.mp3", category: "dark" },
+	{ name: "Foggy Hollow", path: "/music/BGM-Dark3.mp3", category: "dark" },
+	{ name: "Moonlit Bog", path: "/music/BGM-Dark4.mp3", category: "dark" },
+	{ name: "Shadow Ferns", path: "/music/BGM-Dark5.mp3", category: "dark" },
+	{ name: "Misty Thicket", path: "/music/BGM-Dark6.mp3", category: "dark" },
+	{ name: "Dusk Spores", path: "/music/BGM-Dark7.mp3", category: "dark" },
+	{ name: "Night Canopy", path: "/music/BGM-Dark8.mp3", category: "dark" },
 ];
+
+const FADE_DURATION = 1000; // 1 second fade
+const EXTRA_LOOP_TIME = 10000; // 10 seconds extra before transitioning
 
 const currentTrackIndex = ref<number | null>(null);
 const isPlaying = ref(false);
+const isShuffleMode = ref(false);
 const audio = ref<HTMLAudioElement | null>(null);
 const progress = ref(0);
 const duration = ref(0);
+const targetVolume = 0.3;
+
+let shuffleTimeout: ReturnType<typeof setTimeout> | null = null;
+let fadeInterval: ReturnType<typeof setInterval> | null = null;
+
+function clearShuffleTimeout() {
+	if (shuffleTimeout) {
+		clearTimeout(shuffleTimeout);
+		shuffleTimeout = null;
+	}
+}
+
+function clearFadeInterval() {
+	if (fadeInterval) {
+		clearInterval(fadeInterval);
+		fadeInterval = null;
+	}
+}
+
+function fadeOut(audioEl: HTMLAudioElement): Promise<void> {
+	return new Promise((resolve) => {
+		clearFadeInterval();
+		const startVolume = audioEl.volume;
+		const steps = 20;
+		const stepDuration = FADE_DURATION / steps;
+		const volumeStep = startVolume / steps;
+		let currentStep = 0;
+
+		fadeInterval = setInterval(() => {
+			currentStep++;
+			audioEl.volume = Math.max(0, startVolume - volumeStep * currentStep);
+
+			if (currentStep >= steps) {
+				clearFadeInterval();
+				audioEl.pause();
+				resolve();
+			}
+		}, stepDuration);
+	});
+}
+
+function fadeIn(audioEl: HTMLAudioElement, volume: number): void {
+	clearFadeInterval();
+	audioEl.volume = 0;
+	audioEl.play().catch(() => {});
+
+	const steps = 20;
+	const stepDuration = FADE_DURATION / steps;
+	const volumeStep = volume / steps;
+	let currentStep = 0;
+
+	fadeInterval = setInterval(() => {
+		currentStep++;
+		audioEl.volume = Math.min(volume, volumeStep * currentStep);
+
+		if (currentStep >= steps) {
+			clearFadeInterval();
+		}
+	}, stepDuration);
+}
+
+function getRandomTrackIndex(excludeIndex?: number): number {
+	let newIndex: number;
+	do {
+		newIndex = Math.floor(Math.random() * tracks.length);
+	} while (newIndex === excludeIndex && tracks.length > 1);
+	return newIndex;
+}
+
+function scheduleNextShuffleTrack() {
+	clearShuffleTimeout();
+	if (!audio.value || !isShuffleMode.value) return;
+
+	// Wait for duration to be loaded
+	const waitForDuration = () => {
+		if (!audio.value) return;
+
+		if (audio.value.duration && isFinite(audio.value.duration)) {
+			const totalWait = (audio.value.duration * 1000) + EXTRA_LOOP_TIME;
+			shuffleTimeout = setTimeout(async () => {
+				if (!isShuffleMode.value || !audio.value) return;
+				await transitionToNextTrack();
+			}, totalWait);
+		} else {
+			// Duration not ready yet, wait a bit and try again
+			setTimeout(waitForDuration, 100);
+		}
+	};
+	waitForDuration();
+}
+
+async function transitionToNextTrack() {
+	if (!audio.value) return;
+
+	const oldAudio = audio.value;
+	const nextIndex = getRandomTrackIndex(currentTrackIndex.value ?? undefined);
+
+	// Fade out current track
+	await fadeOut(oldAudio);
+
+	// Start next track
+	const track = tracks[nextIndex];
+	if (!track) return;
+
+	audio.value = new Audio(track.path);
+	audio.value.loop = true;
+	currentTrackIndex.value = nextIndex;
+
+	audio.value.addEventListener("timeupdate", updateProgress);
+	audio.value.addEventListener("loadedmetadata", () => {
+		if (audio.value) {
+			duration.value = audio.value.duration || 0;
+		}
+	});
+
+	fadeIn(audio.value, targetVolume);
+	isPlaying.value = true;
+
+	// Schedule next transition
+	scheduleNextShuffleTrack();
+}
+
+function updateProgress() {
+	if (audio.value) {
+		progress.value = audio.value.currentTime;
+		duration.value = audio.value.duration || 0;
+	}
+}
 
 function playTrack(index: number) {
+	// Exit shuffle mode when directly selecting a track
+	isShuffleMode.value = false;
+	clearShuffleTimeout();
+
 	// If clicking the same track, toggle play/pause
 	if (currentTrackIndex.value === index && audio.value) {
 		if (isPlaying.value) {
@@ -43,42 +200,76 @@ function playTrack(index: number) {
 
 	// Stop current track if playing
 	if (audio.value) {
+		clearFadeInterval();
 		audio.value.pause();
 		audio.value = null;
 	}
 
-	// Play new track
+	// Play new track (loops forever when directly selected)
 	const track = tracks[index];
 	if (!track) return;
 
 	audio.value = new Audio(track.path);
-	audio.value.volume = 0.3;
+	audio.value.volume = targetVolume;
+	audio.value.loop = true; // Loop forever when directly selected
 	currentTrackIndex.value = index;
 
-	audio.value.addEventListener("timeupdate", () => {
+	audio.value.addEventListener("timeupdate", updateProgress);
+	audio.value.addEventListener("loadedmetadata", () => {
 		if (audio.value) {
-			progress.value = audio.value.currentTime;
 			duration.value = audio.value.duration || 0;
 		}
-	});
-
-	audio.value.addEventListener("ended", () => {
-		// Play next track
-		const nextIndex = (index + 1) % tracks.length;
-		playTrack(nextIndex);
 	});
 
 	audio.value.play();
 	isPlaying.value = true;
 }
 
+function startShuffle() {
+	// Stop current playback
+	if (audio.value) {
+		clearFadeInterval();
+		audio.value.pause();
+		audio.value = null;
+	}
+	clearShuffleTimeout();
+
+	isShuffleMode.value = true;
+
+	// Pick a random track
+	const randomIndex = getRandomTrackIndex();
+	const track = tracks[randomIndex];
+	if (!track) return;
+
+	audio.value = new Audio(track.path);
+	audio.value.volume = targetVolume;
+	audio.value.loop = true;
+	currentTrackIndex.value = randomIndex;
+
+	audio.value.addEventListener("timeupdate", updateProgress);
+	audio.value.addEventListener("loadedmetadata", () => {
+		if (audio.value) {
+			duration.value = audio.value.duration || 0;
+		}
+	});
+
+	audio.value.play();
+	isPlaying.value = true;
+
+	// Schedule transition to next track
+	scheduleNextShuffleTrack();
+}
+
 function stopPlayback() {
+	clearShuffleTimeout();
+	clearFadeInterval();
 	if (audio.value) {
 		audio.value.pause();
 		audio.value = null;
 	}
 	currentTrackIndex.value = null;
 	isPlaying.value = false;
+	isShuffleMode.value = false;
 	progress.value = 0;
 	duration.value = 0;
 }
@@ -103,8 +294,21 @@ function seekTo(event: MouseEvent) {
 	audio.value.currentTime = percent * duration.value;
 }
 
-onMounted(() => {
-	// Optional: auto-play first track
+// Group tracks by category for display
+const tracksByCategory = computed(() => {
+	const categories = [
+		{ key: "forest" as const, label: "Forest" },
+		{ key: "ice" as const, label: "Ice" },
+		{ key: "beach" as const, label: "Beach" },
+		{ key: "dark" as const, label: "Night" },
+	];
+
+	return categories.map((cat) => ({
+		...cat,
+		tracks: tracks
+			.map((track, index) => ({ ...track, originalIndex: index }))
+			.filter((track) => track.category === cat.key),
+	}));
 });
 
 onUnmounted(() => {
@@ -129,7 +333,10 @@ onUnmounted(() => {
 
       <!-- Now Playing -->
       <div v-if="currentTrackIndex !== null" class="now-playing">
-        <p class="now-playing-label">Now Playing</p>
+        <p class="now-playing-label">
+          Now Playing
+          <span v-if="isShuffleMode" class="shuffle-indicator">🔀 Shuffle</span>
+        </p>
         <p class="now-playing-title">{{ tracks[currentTrackIndex]?.name }}</p>
         <div class="progress-bar" @click="seekTo">
           <div
@@ -143,31 +350,44 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Track List -->
-      <div class="track-list">
-        <button
-          v-for="(track, index) in tracks"
-          :key="track.path"
-          :class="[
-            'track-item',
-            {
-              'track-item--active': currentTrackIndex === index,
-              'track-item--playing': currentTrackIndex === index && isPlaying,
-            },
-          ]"
-          @click="playTrack(index)"
-        >
-          <span class="track-number">{{ index + 1 }}</span>
-          <span class="track-name">{{ track.name }}</span>
-          <span class="track-icon">
-            <template v-if="currentTrackIndex === index && isPlaying">
-              <span class="pause-icon">| |</span>
-            </template>
-            <template v-else>
-              <span class="play-icon">&#9654;</span>
-            </template>
-          </span>
-        </button>
+      <!-- Shuffle Button -->
+      <button
+        :class="['shuffle-btn', { 'shuffle-btn--active': isShuffleMode }]"
+        @click="startShuffle"
+      >
+        <span class="shuffle-icon">🔀</span>
+        <span>Shuffle All</span>
+      </button>
+
+      <!-- Track List by Category -->
+      <div class="track-categories">
+        <div v-for="category in tracksByCategory" :key="category.key" class="track-category">
+          <h3 class="category-title">{{ category.label }}</h3>
+          <div class="track-list">
+            <button
+              v-for="track in category.tracks"
+              :key="track.path"
+              :class="[
+                'track-item',
+                {
+                  'track-item--active': currentTrackIndex === track.originalIndex,
+                  'track-item--playing': currentTrackIndex === track.originalIndex && isPlaying,
+                },
+              ]"
+              @click="playTrack(track.originalIndex)"
+            >
+              <span class="track-name">{{ track.name }}</span>
+              <span class="track-icon">
+                <template v-if="currentTrackIndex === track.originalIndex && isPlaying">
+                  <span class="pause-icon">| |</span>
+                </template>
+                <template v-else>
+                  <span class="play-icon">&#9654;</span>
+                </template>
+              </span>
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- Stop Button -->
@@ -322,11 +542,22 @@ onUnmounted(() => {
 }
 
 .now-playing-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 12px;
   color: #8a9a7a;
   margin: 0 0 4px 0;
   text-transform: uppercase;
   letter-spacing: 1px;
+}
+
+.shuffle-indicator {
+  background: rgba(124, 182, 104, 0.2);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  color: #a8d898;
 }
 
 .now-playing-title {
@@ -360,12 +591,68 @@ onUnmounted(() => {
   color: #8a9a7a;
 }
 
-.track-list {
+.shuffle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  background: rgba(124, 182, 104, 0.15);
+  border: 1px solid rgba(124, 182, 104, 0.3);
+  padding: 14px 20px;
+  border-radius: 10px;
+  color: #c8e8b8;
+  font-family: 'Georgia', serif;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: 24px;
+}
+
+.shuffle-btn:hover {
+  background: rgba(124, 182, 104, 0.25);
+  border-color: rgba(124, 182, 104, 0.5);
+}
+
+.shuffle-btn--active {
+  background: rgba(124, 182, 104, 0.3);
+  border-color: rgba(124, 182, 104, 0.6);
+  box-shadow: 0 0 12px rgba(124, 182, 104, 0.3);
+}
+
+.shuffle-icon {
+  font-size: 18px;
+}
+
+.track-categories {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  margin-bottom: 24px;
+}
+
+.track-category {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.category-title {
+  font-family: 'Georgia', serif;
+  font-size: 14px;
+  color: #8a9a7a;
+  margin: 0;
+  padding-left: 4px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.track-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   width: 100%;
-  margin-bottom: 24px;
 }
 
 .track-item {
@@ -374,8 +661,8 @@ onUnmounted(() => {
   gap: 12px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  padding: 12px 16px;
+  border-radius: 8px;
+  padding: 10px 14px;
   cursor: pointer;
   transition: all 0.2s ease;
   text-align: left;
@@ -402,24 +689,6 @@ onUnmounted(() => {
   50% {
     box-shadow: 0 0 0 4px rgba(124, 182, 104, 0.2);
   }
-}
-
-.track-number {
-  width: 24px;
-  height: 24px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  color: #8a9a7a;
-  flex-shrink: 0;
-}
-
-.track-item--active .track-number {
-  background: rgba(124, 182, 104, 0.3);
-  color: #c8e8b8;
 }
 
 .track-name {
