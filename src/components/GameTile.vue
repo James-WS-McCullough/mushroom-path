@@ -3917,6 +3917,42 @@ function handleClick() {
   }
 }
 
+/* Hint glow on bounce pad - combines bounce pad pulse with golden hint glow */
+.tile--bounce-pad.tile--hinted {
+  animation:
+    bouncePadPulseHinted 2s ease-in-out infinite,
+    hintGlowOverlay 1.2s ease-in-out infinite;
+  z-index: 5;
+}
+
+/* Bounce pad pulse that works with hint glow overlay */
+@keyframes bouncePadPulseHinted {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+}
+
+/* Hint glow as a separate overlay effect using filter */
+@keyframes hintGlowOverlay {
+  0%, 100% {
+    box-shadow:
+      0 0 0 4px rgba(255, 220, 100, 0.7),
+      0 0 12px 4px rgba(255, 200, 50, 0.4),
+      inset 0 3px 0 rgba(255, 255, 255, 0.25),
+      inset 0 -4px 0 rgba(0, 0, 0, 0.25);
+  }
+  50% {
+    box-shadow:
+      0 0 0 5px rgba(255, 230, 120, 0.9),
+      0 0 20px 8px rgba(255, 210, 80, 0.6),
+      inset 0 3px 0 rgba(255, 255, 255, 0.35),
+      inset 0 -4px 0 rgba(0, 0, 0, 0.2);
+  }
+}
+
 /* Bounce pad activation - squish and spring effect */
 .bounce-pad--activated {
   animation: bouncePadSquish 0.4s ease-out forwards;

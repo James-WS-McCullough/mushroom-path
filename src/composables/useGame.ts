@@ -519,41 +519,39 @@ export function useGame(level: Level) {
 		return true;
 	}
 
-	// Check if the given state is a win (all grass/dirt/low_sand converted, player on last required tile)
+	// Check if the given state is a win (all required tiles converted, player on last required tile)
+	// Required tiles: grass, low_sand, dirt, honey, acorn, squirrel
+	// - GRASS/LOW_SAND/HONEY: stay while standing, convert to mushroom when leaving
+	// - DIRT/ACORN/SQUIRREL: convert to GRASS immediately when stepped on
 	function isWinState(tileStates: TileType[][], playerPos: Position): boolean {
-		let grassCount = 0; // Includes grass and low_sand
-		let dirtCount = 0;
-		let squirrelCount = 0;
-		let acornCount = 0;
-		let lastGrassPos: Position | null = null;
+		let totalRequired = 0;
+		let lastRequiredPos: Position | null = null;
 
 		for (let y = 0; y < tileStates.length; y++) {
 			const row = tileStates[y];
 			if (!row) continue;
 			for (let x = 0; x < row.length; x++) {
 				const t = row[x];
-				if (t === TileType.GRASS || t === TileType.LOW_SAND) {
-					grassCount++;
-					lastGrassPos = { x, y };
-				} else if (t === TileType.DIRT) {
-					dirtCount++;
-				} else if (t === TileType.SQUIRREL) {
-					squirrelCount++;
-				} else if (t === TileType.ACORN) {
-					acornCount++;
+				if (
+					t === TileType.GRASS ||
+					t === TileType.LOW_SAND ||
+					t === TileType.DIRT ||
+					t === TileType.HONEY ||
+					t === TileType.SQUIRREL ||
+					t === TileType.ACORN
+				) {
+					totalRequired++;
+					lastRequiredPos = { x, y };
 				}
 			}
 		}
 
-		// Win when exactly 1 grass/low_sand remains (player standing on it) and no dirt/squirrels/acorns
+		// Win when exactly 1 required tile remains and player is standing on it
 		return (
-			grassCount === 1 &&
-			dirtCount === 0 &&
-			squirrelCount === 0 &&
-			acornCount === 0 &&
-			lastGrassPos !== null &&
-			lastGrassPos.x === playerPos.x &&
-			lastGrassPos.y === playerPos.y
+			totalRequired === 1 &&
+			lastRequiredPos !== null &&
+			lastRequiredPos.x === playerPos.x &&
+			lastRequiredPos.y === playerPos.y
 		);
 	}
 
@@ -1075,8 +1073,9 @@ export function useGame(level: Level) {
 							const landingType = newTileStates[landingPos.y]?.[landingPos.x];
 							if (landingType === TileType.BOUNCE_PAD) {
 								const chainResult = calculateBounceChain(landingPos, dir, visitedPads);
-								if (chainResult) return chainResult;
-								continue;
+								// If chain succeeds, return final destination
+								// If chain fails (blocked), we still land on this bounce pad
+								return chainResult ?? landingPos;
 							}
 							if (canLandOnForBounce(landingType)) {
 								return landingPos;
@@ -1124,6 +1123,7 @@ export function useGame(level: Level) {
 			};
 
 			// Recursive function to follow bounce chains
+			// Returns the final position after all bounces, or null if bounce is completely blocked
 			const calculateBounceChainDestination = (
 				padPos: Position,
 				dir: { x: number; y: number },
@@ -1154,8 +1154,9 @@ export function useGame(level: Level) {
 								dir,
 								visitedPads,
 							);
-							if (chainResult) return chainResult;
-							continue; // Chain failed, try shorter distance
+							// If chain succeeds, return final destination
+							// If chain fails (blocked), we still land on this bounce pad
+							return chainResult ?? landingPos;
 						}
 
 						if (canLandOnForPathfinding(landingType)) {
