@@ -7,6 +7,21 @@ import { ref } from "vue";
 export const isMusicMuted = ref(false);
 export const isSfxMuted = ref(false);
 
+// Music volume (0-1 scale, reactive for UI binding)
+export const musicVolume = ref(1);
+
+// Set music volume (0-1)
+export function setMusicVolume(volume: number): void {
+	musicVolume.value = Math.max(0, Math.min(1, volume));
+	updateMusicVolume();
+}
+
+function updateMusicVolume(): void {
+	if (currentBgm) {
+		currentBgm.volume = BGM_VOLUME * musicVolume.value;
+	}
+}
+
 // ============================================
 // Web Audio API Core
 // ============================================

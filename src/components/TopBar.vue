@@ -1,7 +1,10 @@
 <script setup lang="ts">
+import { ref, onMounted, onUnmounted } from "vue";
 import {
 	isMusicMuted,
 	isSfxMuted,
+	musicVolume,
+	setMusicVolume,
 	toggleMusicMute,
 	toggleSfxMute,
 } from "../composables/useSound";
@@ -18,6 +21,39 @@ const emit = defineEmits<{
 	showTutorial: [];
 	showHelpSettings: [];
 }>();
+
+const showVolumePopup = ref(false);
+const volumePopupRef = ref<HTMLElement | null>(null);
+const musicBtnRef = ref<HTMLElement | null>(null);
+
+function toggleVolumePopup() {
+	showVolumePopup.value = !showVolumePopup.value;
+}
+
+function handleVolumeChange(event: Event) {
+	const target = event.target as HTMLInputElement;
+	setMusicVolume(parseFloat(target.value));
+}
+
+function handleClickOutside(event: MouseEvent) {
+	if (
+		showVolumePopup.value &&
+		volumePopupRef.value &&
+		musicBtnRef.value &&
+		!volumePopupRef.value.contains(event.target as Node) &&
+		!musicBtnRef.value.contains(event.target as Node)
+	) {
+		showVolumePopup.value = false;
+	}
+}
+
+onMounted(() => {
+	document.addEventListener("click", handleClickOutside);
+});
+
+onUnmounted(() => {
+	document.removeEventListener("click", handleClickOutside);
+});
 </script>
 
 <template>
@@ -130,17 +166,47 @@ const emit = defineEmits<{
 
       <!-- Sound controls -->
       <div class="sound-controls">
-        <button
-          class="sound-btn"
-          :class="{ 'sound-btn--muted': isMusicMuted }"
-          title="Toggle Music"
-          @click="toggleMusicMute"
-        >
-          <svg viewBox="0 0 24 24" class="sound-svg">
-            <path v-if="!isMusicMuted" d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" fill="currentColor"/>
-            <path v-else d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6zM4.27 3L3 4.27l9 9v.28c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4v-1.73l5.73 5.73L21 19.73 4.27 3z" fill="currentColor"/>
-          </svg>
-        </button>
+        <div class="music-control-wrapper">
+          <button
+            ref="musicBtnRef"
+            class="sound-btn"
+            :class="{ 'sound-btn--muted': isMusicMuted, 'sound-btn--active': showVolumePopup }"
+            title="Music Volume"
+            @click="toggleVolumePopup"
+          >
+            <svg viewBox="0 0 24 24" class="sound-svg">
+              <path v-if="!isMusicMuted" d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" fill="currentColor"/>
+              <path v-else d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6zM4.27 3L3 4.27l9 9v.28c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4v-1.73l5.73 5.73L21 19.73 4.27 3z" fill="currentColor"/>
+            </svg>
+          </button>
+
+          <!-- Volume popup -->
+          <div v-if="showVolumePopup" ref="volumePopupRef" class="volume-popup">
+            <div class="volume-popup-content">
+              <label class="volume-label">Music Volume</label>
+              <div class="volume-slider-row">
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  :value="musicVolume"
+                  class="volume-slider"
+                  @input="handleVolumeChange"
+                />
+                <span class="volume-percent">{{ Math.round(musicVolume * 100) }}%</span>
+              </div>
+              <button
+                class="mute-toggle"
+                :class="{ 'mute-toggle--muted': isMusicMuted }"
+                @click="toggleMusicMute"
+              >
+                {{ isMusicMuted ? 'Unmute' : 'Mute' }}
+              </button>
+            </div>
+          </div>
+        </div>
+
         <button
           class="sound-btn"
           :class="{ 'sound-btn--muted': isSfxMuted }"
@@ -482,5 +548,131 @@ const emit = defineEmits<{
   width: 20px;
   height: 20px;
   color: #5a4a3a;
+}
+
+.music-control-wrapper {
+  position: relative;
+}
+
+.sound-btn--active {
+  background: linear-gradient(180deg, rgba(180, 220, 170, 0.95) 0%, rgba(140, 190, 130, 0.95) 100%);
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 0 8px rgba(100, 180, 100, 0.4);
+}
+
+.volume-popup {
+  position: fixed;
+  top: 72px;
+  right: 16px;
+  z-index: 1000;
+  min-width: 180px;
+  background: linear-gradient(180deg, rgba(255, 248, 230, 0.98) 0%, rgba(240, 230, 210, 0.98) 100%);
+  border-radius: 12px;
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.3),
+    0 2px 4px rgba(0, 0, 0, 0.2);
+  animation: popupFadeIn 0.15s ease;
+}
+
+@keyframes popupFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.volume-popup-content {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.volume-label {
+  font-family: 'Georgia', serif;
+  font-size: 14px;
+  color: #5a4a3a;
+  font-weight: 600;
+}
+
+.volume-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.volume-slider {
+  flex: 1;
+  height: 6px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: linear-gradient(90deg, rgba(122, 92, 61, 0.3) 0%, rgba(122, 92, 61, 0.3) 100%);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  background: linear-gradient(180deg, #7cb668 0%, #5a9a4a 100%);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  transition: transform 0.1s ease;
+}
+
+.volume-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+}
+
+.volume-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  background: linear-gradient(180deg, #7cb668 0%, #5a9a4a 100%);
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.volume-percent {
+  font-family: 'Georgia', serif;
+  font-size: 12px;
+  color: #5a4a3a;
+  min-width: 36px;
+  text-align: right;
+}
+
+.mute-toggle {
+  padding: 8px 12px;
+  background: linear-gradient(180deg, rgba(139, 107, 74, 0.15) 0%, rgba(139, 107, 74, 0.25) 100%);
+  border: 1px solid rgba(139, 107, 74, 0.3);
+  border-radius: 6px;
+  font-family: 'Georgia', serif;
+  font-size: 13px;
+  color: #5a4a3a;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mute-toggle:hover {
+  background: linear-gradient(180deg, rgba(139, 107, 74, 0.25) 0%, rgba(139, 107, 74, 0.35) 100%);
+}
+
+.mute-toggle--muted {
+  background: linear-gradient(180deg, rgba(124, 182, 104, 0.2) 0%, rgba(124, 182, 104, 0.3) 100%);
+  border-color: rgba(124, 182, 104, 0.5);
+  color: #4a8a3a;
+}
+
+.mute-toggle--muted:hover {
+  background: linear-gradient(180deg, rgba(124, 182, 104, 0.3) 0%, rgba(124, 182, 104, 0.4) 100%);
 }
 </style>

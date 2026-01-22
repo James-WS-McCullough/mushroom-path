@@ -1646,28 +1646,15 @@ export function useGame(level: Level) {
 		);
 	}
 
-	function movePlayer(direction: Direction) {
-		if (hasWon.value || isSliding.value) return;
-		// Block movement while hopping onto water (prevents overriding slide animation)
+	/**
+	 * Unified move execution - handles all landing logic for both keyboard and click input
+	 */
+	function executeMove(targetPosition: Position, direction: Direction) {
 		const currentTile = getTile(playerPosition.value);
-		if (isHopping.value && currentTile?.type === TileType.WATER) return;
-
-		const newPosition = tryMove(direction);
-		if (!newPosition) return;
-
-		// Reset idle timer on successful move
-		resetIdleTimer();
-
-		// Update facing direction for left/right movement
-		if (direction === "left") {
-			facingDirection.value = "left";
-		} else if (direction === "right") {
-			facingDirection.value = "right";
-		}
 
 		// Check if this is a jump (moving 2 tiles)
-		const dx = Math.abs(newPosition.x - playerPosition.value.x);
-		const dy = Math.abs(newPosition.y - playerPosition.value.y);
+		const dx = Math.abs(targetPosition.x - playerPosition.value.x);
+		const dy = Math.abs(targetPosition.y - playerPosition.value.y);
 		const isJump = dx === 2 || dy === 2;
 
 		// Save history before moving (including acorn count for undo)
@@ -1684,7 +1671,7 @@ export function useGame(level: Level) {
 		plantMushroom(playerPosition.value);
 
 		// Handle landing on acorn/squirrel tiles (changes tile type and updates acorn count)
-		const landingChanges = handleLandingTile(newPosition);
+		const landingChanges = handleLandingTile(targetPosition);
 		if (landingChanges.length > 0) {
 			historyEntry.additionalChanges = [
 				...(historyEntry.additionalChanges ?? []),
@@ -1700,11 +1687,11 @@ export function useGame(level: Level) {
 		}
 
 		// Check if landing on water - need to slide
-		const landingTile = getTile(newPosition);
+		const landingTile = getTile(targetPosition);
 		if (landingTile?.type === TileType.WATER) {
-			const { path } = computeSlideDestination(newPosition);
+			const { path } = computeSlideDestination(targetPosition);
 			slidePath.value = path;
-			playerPosition.value = newPosition;
+			playerPosition.value = targetPosition;
 
 			// Start sliding animation after hop completes
 			setTimeout(() => {
@@ -1719,11 +1706,11 @@ export function useGame(level: Level) {
 		} else if (landingTile?.type === TileType.ICE) {
 			// Ice sliding - slide in the direction of movement
 			const { path, destination } = computeIceSlideDestination(
-				newPosition,
+				targetPosition,
 				direction,
 			);
 			slidePath.value = path;
-			playerPosition.value = newPosition;
+			playerPosition.value = targetPosition;
 
 			// Start sliding animation after hop completes
 			setTimeout(() => {
@@ -1776,13 +1763,13 @@ export function useGame(level: Level) {
 			}, ANIMATION.HOP_DURATION);
 		} else if (landingTile?.type === TileType.BOUNCE_PAD) {
 			// Bounce pad - bounce player 3 tiles in movement direction
-			playerPosition.value = newPosition;
+			playerPosition.value = targetPosition;
 
 			// Start bouncing animation after hop completes
 			setTimeout(() => {
 				isHopping.value = false;
 				// Use recursive helper for chain bouncing
-				animateBounceChain(newPosition, direction, () => {
+				animateBounceChain(targetPosition, direction, () => {
 					if (checkWinCondition()) {
 						hasWon.value = true;
 					}
@@ -1791,15 +1778,15 @@ export function useGame(level: Level) {
 		} else if (landingTile && isPortalTile(landingTile.type)) {
 			// Portal teleportation - portals stay active for bidirectional travel
 			const portalType = landingTile.type as PortalType;
-			playerPosition.value = newPosition;
+			playerPosition.value = targetPosition;
 
 			setTimeout(() => {
 				isHopping.value = false;
 
 				// Find matching portal
-				const matchingPortal = findMatchingPortal(portalType, newPosition);
+				const matchingPortal = findMatchingPortal(portalType, targetPosition);
 				if (matchingPortal) {
-					performPortalTeleport(newPosition, matchingPortal, () => {
+					performPortalTeleport(targetPosition, matchingPortal, () => {
 						if (checkWinCondition()) {
 							hasWon.value = true;
 						}
@@ -1812,7 +1799,7 @@ export function useGame(level: Level) {
 				}
 			}, ANIMATION.HOP_DURATION);
 		} else {
-			playerPosition.value = newPosition;
+			playerPosition.value = targetPosition;
 
 			// Reset hop animation and play landing sound based on tile type
 			setTimeout(() => {
@@ -1824,6 +1811,28 @@ export function useGame(level: Level) {
 				hasWon.value = true;
 			}
 		}
+	}
+
+	function movePlayer(direction: Direction) {
+		if (hasWon.value || isSliding.value) return;
+		// Block movement while hopping onto water (prevents overriding slide animation)
+		const currentTile = getTile(playerPosition.value);
+		if (isHopping.value && currentTile?.type === TileType.WATER) return;
+
+		const newPosition = tryMove(direction);
+		if (!newPosition) return;
+
+		// Reset idle timer on successful move
+		resetIdleTimer();
+
+		// Update facing direction for left/right movement
+		if (direction === "left") {
+			facingDirection.value = "left";
+		} else if (direction === "right") {
+			facingDirection.value = "right";
+		}
+
+		executeMove(newPosition, direction);
 	}
 
 	function canReachByClick(target: Position): boolean {
@@ -1869,28 +1878,6 @@ export function useGame(level: Level) {
 		// Reset idle timer on successful move
 		resetIdleTimer();
 
-		// Check if this is a jump (moving 2 tiles)
-		const dx = Math.abs(target.x - playerPosition.value.x);
-		const dy = Math.abs(target.y - playerPosition.value.y);
-		const isJump = dx === 2 || dy === 2;
-
-		// Save history before moving
-		const currentPos = { ...playerPosition.value };
-		moveHistory.value.push({
-			playerPosition: currentPos,
-			tileState: currentTile?.type ?? TileType.GRASS,
-			lilypadSnapshot: cloneLilypadState(),
-			tidePhase: tidePhase.value,
-		});
-
-		isHopping.value = true;
-		plantMushroom(playerPosition.value);
-
-		// Play jump sound if jumping
-		if (isJump) {
-			playJump();
-		}
-
 		// Determine movement direction from click
 		const moveDx = target.x - playerPosition.value.x;
 		const moveDy = target.y - playerPosition.value.y;
@@ -1907,129 +1894,7 @@ export function useGame(level: Level) {
 			facingDirection.value = "left";
 		}
 
-		// Check if landing on water - need to slide
-		const landingTile = getTile(target);
-		if (landingTile?.type === TileType.WATER) {
-			const { path } = computeSlideDestination(target);
-			slidePath.value = path;
-			playerPosition.value = target;
-
-			// Start sliding animation after hop completes
-			setTimeout(() => {
-				isHopping.value = false;
-				playWater();
-				animateSlide(path, () => {
-					if (checkWinCondition()) {
-						hasWon.value = true;
-					}
-				});
-			}, ANIMATION.HOP_DURATION);
-		} else if (landingTile?.type === TileType.ICE) {
-			// Ice sliding - slide in the direction of movement
-			const { path, destination } = computeIceSlideDestination(
-				target,
-				direction,
-			);
-			slidePath.value = path;
-			playerPosition.value = target;
-
-			// Start sliding animation after hop completes
-			setTimeout(() => {
-				isHopping.value = false;
-				startIceSlide();
-				animateSlide(path, () => {
-					stopIceSlide();
-
-					// Check what we landed on - may need to chain
-					const finalTile = getTile(destination);
-					if (finalTile?.type === TileType.WATER) {
-						// Chain into water slide
-						const { path: waterPath } = computeSlideDestination(destination);
-						playWater();
-						animateSlide(waterPath, () => {
-							if (checkWinCondition()) {
-								hasWon.value = true;
-							}
-						});
-					} else if (finalTile && isPortalTile(finalTile.type)) {
-						// Chain into portal teleportation
-						const portalType = finalTile.type as PortalType;
-						const matchingPortal = findMatchingPortal(portalType, destination);
-						if (matchingPortal) {
-							performPortalTeleport(destination, matchingPortal, () => {
-								if (checkWinCondition()) {
-									hasWon.value = true;
-								}
-							});
-						} else {
-							if (checkWinCondition()) {
-								hasWon.value = true;
-							}
-						}
-					} else if (finalTile?.type === TileType.BOUNCE_PAD) {
-						// Chain into bounce pad
-						animateBounceChain(destination, direction, () => {
-							if (checkWinCondition()) {
-								hasWon.value = true;
-							}
-						});
-					} else {
-						// Play landing sound based on final tile type
-						playLandingSound(finalTile);
-						if (checkWinCondition()) {
-							hasWon.value = true;
-						}
-					}
-				});
-			}, ANIMATION.HOP_DURATION);
-		} else if (landingTile?.type === TileType.BOUNCE_PAD) {
-			// Bounce pad - use recursive helper for chaining
-			playerPosition.value = target;
-
-			setTimeout(() => {
-				isHopping.value = false;
-				animateBounceChain(target, direction, () => {
-					if (checkWinCondition()) {
-						hasWon.value = true;
-					}
-				});
-			}, ANIMATION.HOP_DURATION);
-		} else if (landingTile && isPortalTile(landingTile.type)) {
-			// Portal teleportation - portals stay active for bidirectional travel
-			const portalType = landingTile.type as PortalType;
-			playerPosition.value = target;
-
-			setTimeout(() => {
-				isHopping.value = false;
-
-				// Find matching portal
-				const matchingPortal = findMatchingPortal(portalType, target);
-				if (matchingPortal) {
-					performPortalTeleport(target, matchingPortal, () => {
-						if (checkWinCondition()) {
-							hasWon.value = true;
-						}
-					});
-				} else {
-					// No matching portal, just stay here
-					if (checkWinCondition()) {
-						hasWon.value = true;
-					}
-				}
-			}, ANIMATION.HOP_DURATION);
-		} else {
-			playerPosition.value = target;
-
-			// Reset hop animation and play landing sound based on tile type
-			setTimeout(() => {
-				isHopping.value = false;
-				playLandingSound(landingTile);
-			}, ANIMATION.HOP_DURATION);
-
-			if (checkWinCondition()) {
-				hasWon.value = true;
-			}
-		}
+		executeMove(target, direction);
 	}
 
 	const grassTilesRemaining = computed(() => {
