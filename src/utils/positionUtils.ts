@@ -2,7 +2,7 @@
  * Position and direction utilities - shared across game logic and level generation
  */
 
-import type { Position, Direction, FlowDirection } from "@/types/game";
+import type { Position, Direction, FlowDirection } from "../types/game";
 
 // =============================================================================
 // DIRECTION UTILITIES

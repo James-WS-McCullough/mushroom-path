@@ -2,7 +2,7 @@
  * Grid utilities - common operations for 2D grids
  */
 
-import type { Position, Tile, TileType } from "@/types/game";
+import type { Position, Tile, TileType } from "../types/game";
 
 // =============================================================================
 // GRID ITERATION

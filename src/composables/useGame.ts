@@ -532,7 +532,7 @@ export function useGame(level: Level) {
 			if (!row) continue;
 			for (let x = 0; x < row.length; x++) {
 				const t = row[x];
-				if (isRequiredTile(t) && !reachable.has(`${x},${y}`)) {
+				if (t !== undefined && isRequiredTile(t) && !reachable.has(`${x},${y}`)) {
 					return false; // Found unreachable tile - graph is disconnected
 				}
 			}
@@ -550,7 +550,7 @@ export function useGame(level: Level) {
 			if (!row) continue;
 			for (let x = 0; x < row.length; x++) {
 				const t = row[x];
-				if (isRequiredTile(t)) {
+				if (t !== undefined && isRequiredTile(t)) {
 					totalRequired++;
 					if (x === playerPos.x && y === playerPos.y) {
 						playerTileType = t;
@@ -575,7 +575,8 @@ export function useGame(level: Level) {
 			const row = tileStates[y];
 			if (!row) continue;
 			for (let x = 0; x < row.length; x++) {
-				if (isRequiredTile(row[x])) {
+				const t = row[x];
+				if (t !== undefined && isRequiredTile(t)) {
 					count++;
 				}
 			}
@@ -1455,7 +1456,7 @@ export function useGame(level: Level) {
 				} else {
 					// Normal landing - play sound based on tile
 					isBouncing.value = false;
-					playLandingSound(finalTile);
+					playLandingSound(finalTile ?? undefined);
 					onComplete();
 				}
 			}
@@ -1754,7 +1755,7 @@ export function useGame(level: Level) {
 						});
 					} else {
 						// Play landing sound based on final tile type
-						playLandingSound(finalTile);
+						playLandingSound(finalTile ?? undefined);
 						if (checkWinCondition()) {
 							hasWon.value = true;
 						}
@@ -1804,7 +1805,7 @@ export function useGame(level: Level) {
 			// Reset hop animation and play landing sound based on tile type
 			setTimeout(() => {
 				isHopping.value = false;
-				playLandingSound(landingTile);
+				playLandingSound(landingTile ?? undefined);
 			}, ANIMATION.HOP_DURATION);
 
 			if (checkWinCondition()) {
