@@ -4063,9 +4063,9 @@ function handleClick() {
 .tile--honey-autumn {
   /* Matches .tile--autumn exactly */
   background:
-    radial-gradient(circle at 20% 80%, rgba(201, 160, 84, 0.4) 0%, transparent 30%),
-    radial-gradient(circle at 80% 20%, rgba(212, 168, 79, 0.3) 0%, transparent 25%),
-    linear-gradient(145deg, #c9a054 0%, #b8863a 100%);
+    radial-gradient(circle at 20% 80%, rgba(198, 140, 82, 0.4) 0%, transparent 30%),
+    radial-gradient(circle at 80% 20%, rgba(212, 149, 80, 0.3) 0%, transparent 25%),
+    linear-gradient(145deg, #c68c52 0%, #b57342 100%);
 }
 
 /* Biome variants for honey-mushroom tiles - match exact biome MUSHROOM colors */
@@ -4100,8 +4100,8 @@ function handleClick() {
 .tile--honey-mushroom-autumn {
   /* Matches .tile--autumn-mushroom exactly */
   background:
-    radial-gradient(circle at 20% 80%, rgba(191, 128, 48, 0.4) 0%, transparent 30%),
-    linear-gradient(145deg, #bf8030 0%, #a06620 100%);
+    radial-gradient(circle at 20% 80%, rgba(180, 106, 56, 0.4) 0%, transparent 30%),
+    linear-gradient(145deg, #b46a38 0%, #955328 100%);
 }
 
 .honey-detail,
@@ -4794,59 +4794,59 @@ function handleClick() {
    ====================================== */
 
 .tile--autumn {
-  background: linear-gradient(145deg, #c9a054, #b8863a);
+  background: linear-gradient(145deg, #c68c52, #b57342);
 }
 
 .tile--autumn .grass-blade {
-  background: linear-gradient(to top, #c9a054 0%, #d4a84f 50%, #e6c47a 100%);
+  background: linear-gradient(to top, #c68c52 0%, #d49550 50%, #e5b572 100%);
 }
 
 .tile--autumn-mushroom {
-  background: linear-gradient(145deg, #bf8030, #a06620);
+  background: linear-gradient(145deg, #b46a38, #955328);
 }
 
-/* Autumn mushroom cap colors - warmer oranges and reds */
+/* Autumn mushroom cap colors - warm amber-reds */
 .tile--autumn-mushroom .mushroom--tan .mushroom__cap {
-  background: linear-gradient(145deg, #d4691e, #b85518);
+  background: linear-gradient(145deg, #cc5f28, #a94d1e);
 }
 
 .tile--autumn-mushroom .mushroom--red .mushroom__cap {
-  background: linear-gradient(145deg, #c41e3a, #8b0000);
+  background: linear-gradient(145deg, #be2535, #901018);
 }
 
 .tile--autumn-mushroom .mushroom--purple .mushroom__cap {
-  background: linear-gradient(145deg, #8b4513, #654321);
+  background: linear-gradient(145deg, #823c2a, #5f2c1a);
 }
 
 .tile--autumn-dirt {
   /* Autumn grass showing through dirt - matches autumn grass */
-  background: linear-gradient(145deg, #c9a054, #b8863a);
+  background: linear-gradient(145deg, #c68c52, #b57342);
 }
 
 .tile--autumn-dirt .dirt-clump {
-  background: linear-gradient(145deg, #8b6040, #6a4830);
+  background: linear-gradient(145deg, #82523a, #62402e);
 }
 
 .tile--autumn-dirt .dirt-rock {
-  background: linear-gradient(135deg, #9a7050, #785838);
+  background: linear-gradient(135deg, #92624a, #724a38);
 }
 
-/* Autumn acorn tile - slightly warmer */
+/* Autumn acorn tile - warm amber tones */
 .tile--autumn.tile--acorn {
-  background: linear-gradient(145deg, #c9a054, #b8863a);
+  background: linear-gradient(145deg, #c68c52, #b57342);
 }
 
 .tile--autumn .acorn-tile .grass-blade {
-  background: linear-gradient(to top, #c9a054 0%, #d4a84f 50%, #e6c47a 100%);
+  background: linear-gradient(to top, #c68c52 0%, #d49550 50%, #e5b572 100%);
 }
 
 /* Autumn squirrel tile */
 .tile--autumn.tile--squirrel,
 .tile--autumn.tile--squirrel-ready {
-  background: linear-gradient(145deg, #c9a054, #b8863a);
+  background: linear-gradient(145deg, #c68c52, #b57342);
 }
 
 .tile--autumn .squirrel-tile .grass-blade {
-  background: linear-gradient(to top, #c9a054 0%, #d4a84f 50%, #e6c47a 100%);
+  background: linear-gradient(to top, #c68c52 0%, #d49550 50%, #e5b572 100%);
 }
 </style>

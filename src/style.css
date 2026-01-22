@@ -606,30 +606,30 @@ body.biome-beach::after {
 		radial-gradient(circle at 45% 88%, rgba(255, 245, 230, 0.3) 0%, transparent 3px);
 }
 
-/* Autumn biome - warm orange and golden tones with falling leaves */
+/* Autumn biome - warm reds and burnt orange tones with falling leaves */
 body.biome-autumn {
 	background:
-		/* Warm light glow at top */
+		/* Warm red-orange glow at top */
 		radial-gradient(
 			ellipse 80% 50% at 30% 20%,
-			rgba(200, 140, 60, 0.3) 0%,
+			rgba(180, 80, 50, 0.35) 0%,
 			transparent 50%
 		),
 		radial-gradient(
 			ellipse 60% 40% at 70% 30%,
-			rgba(180, 120, 50, 0.25) 0%,
+			rgba(160, 70, 45, 0.3) 0%,
 			transparent 45%
 		),
-		/* Main autumn gradient - warm earth tones */
+		/* Main autumn gradient - warm red-earth tones */
 		linear-gradient(
 			180deg,
-			#8b6040 0%,
-			#7a5535 15%,
-			#6a4a2a 30%,
-			#5a4020 50%,
-			#4a3518 70%,
-			#3a2a10 85%,
-			#2a2008 100%
+			#8b4535 0%,
+			#7a3d30 15%,
+			#6a3528 30%,
+			#5a2d20 50%,
+			#4a2518 70%,
+			#3a1d12 85%,
+			#2a150a 100%
 		);
 }
 
@@ -637,88 +637,88 @@ body.biome-autumn {
 body.biome-autumn::before {
 	background-image:
 		/* Leaf shapes - elongated ellipses to simulate leaves */
-		/* Large orange leaf */
+		/* Large crimson leaf */
 		radial-gradient(
 			ellipse 8px 5px at 12% 10%,
-			rgba(220, 100, 50, 0.85) 0%,
-			rgba(200, 80, 40, 0.5) 60%,
-			transparent 100%
-		),
-		/* Red-orange leaf */
-		radial-gradient(
-			ellipse 6px 4px at 78% 5%,
-			rgba(200, 70, 35, 0.8) 0%,
-			rgba(180, 55, 25, 0.4) 60%,
-			transparent 100%
-		),
-		/* Golden leaf */
-		radial-gradient(
-			ellipse 7px 4px at 45% 15%,
-			rgba(230, 150, 60, 0.75) 0%,
-			rgba(210, 130, 45, 0.4) 60%,
+			rgba(180, 50, 40, 0.85) 0%,
+			rgba(160, 35, 30, 0.5) 60%,
 			transparent 100%
 		),
 		/* Deep red leaf */
 		radial-gradient(
-			ellipse 5px 3px at 25% 25%,
-			rgba(180, 50, 30, 0.8) 0%,
-			rgba(160, 40, 20, 0.4) 60%,
-			transparent 100%
-		),
-		/* Bright orange leaf */
-		radial-gradient(
-			ellipse 9px 5px at 88% 20%,
-			rgba(235, 120, 55, 0.7) 0%,
-			rgba(215, 100, 40, 0.35) 60%,
-			transparent 100%
-		),
-		/* Small golden leaf */
-		radial-gradient(
-			ellipse 5px 3px at 60% 30%,
-			rgba(225, 140, 50, 0.8) 0%,
-			rgba(205, 120, 35, 0.4) 60%,
-			transparent 100%
-		),
-		/* Rust colored leaf */
-		radial-gradient(
-			ellipse 7px 4px at 8% 40%,
-			rgba(165, 60, 25, 0.75) 0%,
-			rgba(145, 45, 15, 0.4) 60%,
-			transparent 100%
-		),
-		/* Orange leaf mid-screen */
-		radial-gradient(
-			ellipse 6px 4px at 35% 45%,
-			rgba(215, 95, 45, 0.7) 0%,
-			rgba(195, 75, 30, 0.35) 60%,
-			transparent 100%
-		),
-		/* Small red leaf */
-		radial-gradient(
-			ellipse 4px 3px at 72% 35%,
-			rgba(190, 55, 30, 0.8) 0%,
-			rgba(170, 40, 20, 0.4) 60%,
-			transparent 100%
-		),
-		/* Golden-yellow leaf */
-		radial-gradient(
-			ellipse 8px 5px at 92% 50%,
-			rgba(235, 160, 65, 0.7) 0%,
-			rgba(215, 140, 50, 0.35) 60%,
-			transparent 100%
-		),
-		/* Deep orange leaf */
-		radial-gradient(
-			ellipse 6px 4px at 18% 55%,
-			rgba(210, 85, 40, 0.75) 0%,
-			rgba(190, 65, 25, 0.4) 60%,
+			ellipse 6px 4px at 78% 5%,
+			rgba(170, 45, 35, 0.8) 0%,
+			rgba(150, 35, 25, 0.4) 60%,
 			transparent 100%
 		),
 		/* Burnt orange leaf */
 		radial-gradient(
+			ellipse 7px 4px at 45% 15%,
+			rgba(200, 90, 45, 0.75) 0%,
+			rgba(180, 70, 35, 0.4) 60%,
+			transparent 100%
+		),
+		/* Wine red leaf */
+		radial-gradient(
+			ellipse 5px 3px at 25% 25%,
+			rgba(145, 40, 35, 0.8) 0%,
+			rgba(125, 30, 25, 0.4) 60%,
+			transparent 100%
+		),
+		/* Warm red-orange leaf */
+		radial-gradient(
+			ellipse 9px 5px at 88% 20%,
+			rgba(195, 65, 40, 0.7) 0%,
+			rgba(175, 50, 30, 0.35) 60%,
+			transparent 100%
+		),
+		/* Rust leaf */
+		radial-gradient(
+			ellipse 5px 3px at 60% 30%,
+			rgba(175, 60, 40, 0.8) 0%,
+			rgba(155, 45, 30, 0.4) 60%,
+			transparent 100%
+		),
+		/* Deep burgundy leaf */
+		radial-gradient(
+			ellipse 7px 4px at 8% 40%,
+			rgba(130, 40, 35, 0.75) 0%,
+			rgba(110, 30, 25, 0.4) 60%,
+			transparent 100%
+		),
+		/* Brick red leaf mid-screen */
+		radial-gradient(
+			ellipse 6px 4px at 35% 45%,
+			rgba(165, 55, 40, 0.7) 0%,
+			rgba(145, 40, 30, 0.35) 60%,
+			transparent 100%
+		),
+		/* Small scarlet leaf */
+		radial-gradient(
+			ellipse 4px 3px at 72% 35%,
+			rgba(185, 50, 35, 0.8) 0%,
+			rgba(165, 35, 25, 0.4) 60%,
+			transparent 100%
+		),
+		/* Amber-red leaf */
+		radial-gradient(
+			ellipse 8px 5px at 92% 50%,
+			rgba(190, 80, 50, 0.7) 0%,
+			rgba(170, 60, 40, 0.35) 60%,
+			transparent 100%
+		),
+		/* Copper leaf */
+		radial-gradient(
+			ellipse 6px 4px at 18% 55%,
+			rgba(175, 65, 45, 0.75) 0%,
+			rgba(155, 50, 35, 0.4) 60%,
+			transparent 100%
+		),
+		/* Maroon leaf */
+		radial-gradient(
 			ellipse 5px 3px at 55% 60%,
-			rgba(195, 70, 35, 0.8) 0%,
-			rgba(175, 55, 25, 0.4) 60%,
+			rgba(140, 45, 35, 0.8) 0%,
+			rgba(120, 35, 25, 0.4) 60%,
 			transparent 100%
 		);
 	animation: fallingLeaves 15s linear infinite;
@@ -750,16 +750,16 @@ body.biome-autumn::before {
 /* Autumn floor - fallen leaves and earth */
 body.biome-autumn::after {
 	background:
-		/* Piles of fallen leaves - muted to match darker theme */
-		radial-gradient(ellipse 40px 18px at 10% 100%, #8b4020 0%, transparent 70%),
-		radial-gradient(ellipse 30px 12px at 18% 95%, #9b5030 0%, transparent 70%),
-		radial-gradient(ellipse 45px 20px at 85% 100%, #7b3018 0%, transparent 70%),
-		radial-gradient(ellipse 35px 15px at 78% 92%, #a86040 0%, transparent 70%),
-		radial-gradient(ellipse 50px 18px at 50% 100%, #8b4020 0%, transparent 70%),
-		radial-gradient(ellipse 25px 10px at 35% 98%, #9b5030 0%, transparent 70%),
-		radial-gradient(ellipse 28px 12px at 65% 96%, #7b3018 0%, transparent 70%),
+		/* Piles of fallen leaves - warm reds and rusty tones */
+		radial-gradient(ellipse 40px 18px at 10% 100%, #8b3028 0%, transparent 70%),
+		radial-gradient(ellipse 30px 12px at 18% 95%, #9b4035 0%, transparent 70%),
+		radial-gradient(ellipse 45px 20px at 85% 100%, #7b2820 0%, transparent 70%),
+		radial-gradient(ellipse 35px 15px at 78% 92%, #a85045 0%, transparent 70%),
+		radial-gradient(ellipse 50px 18px at 50% 100%, #8b3530 0%, transparent 70%),
+		radial-gradient(ellipse 25px 10px at 35% 98%, #9b4538 0%, transparent 70%),
+		radial-gradient(ellipse 28px 12px at 65% 96%, #7b3025 0%, transparent 70%),
 		/* Small acorn hints */
-		radial-gradient(circle at 25% 90%, rgba(100, 65, 30, 0.5) 0%, transparent 4px),
-		radial-gradient(circle at 72% 88%, rgba(100, 65, 30, 0.4) 0%, transparent 3px),
-		radial-gradient(circle at 48% 92%, rgba(100, 65, 30, 0.3) 0%, transparent 3px);
+		radial-gradient(circle at 25% 90%, rgba(100, 50, 35, 0.5) 0%, transparent 4px),
+		radial-gradient(circle at 72% 88%, rgba(100, 50, 35, 0.4) 0%, transparent 3px),
+		radial-gradient(circle at 48% 92%, rgba(100, 50, 35, 0.3) 0%, transparent 3px);
 }
