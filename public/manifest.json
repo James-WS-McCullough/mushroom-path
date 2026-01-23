@@ -1,0 +1,18 @@
+{
+  "name": "Mushroom Garden",
+  "short_name": "Mushroom Garden",
+  "description": "A cozy puzzle game about planting mushrooms",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#3d5048",
+  "theme_color": "#3d5048",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/appIcon180x.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

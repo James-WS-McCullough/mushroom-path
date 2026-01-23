@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 
 const props = defineProps<{
 	hasSavedGame?: boolean;
@@ -14,6 +14,85 @@ const emit = defineEmits<{
 }>();
 
 const isLeaving = ref(false);
+
+// PWA Install prompt state
+const deferredPrompt = ref<BeforeInstallPromptEvent | null>(null);
+const showInstallButton = ref(false);
+const isIOS = ref(false);
+const showIOSInstructions = ref(false);
+
+// Type for the beforeinstallprompt event
+interface BeforeInstallPromptEvent extends Event {
+	prompt(): Promise<void>;
+	userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+}
+
+function checkInstallability() {
+	// Check if already installed as PWA
+	const isStandalone = window.matchMedia("(display-mode: standalone)").matches
+		|| (navigator as { standalone?: boolean }).standalone === true;
+
+	if (isStandalone) {
+		showInstallButton.value = false;
+		return;
+	}
+
+	// Check for iOS Safari
+	const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as { MSStream?: unknown }).MSStream;
+	const isSafari = /Safari/.test(navigator.userAgent) && !/Chrome|CriOS|FxiOS/.test(navigator.userAgent);
+
+	if (isIOSDevice && isSafari) {
+		isIOS.value = true;
+		showInstallButton.value = true;
+	}
+}
+
+function handleBeforeInstallPrompt(e: Event) {
+	// Prevent the mini-infobar from appearing on mobile
+	e.preventDefault();
+	// Save the event for later use
+	deferredPrompt.value = e as BeforeInstallPromptEvent;
+	showInstallButton.value = true;
+}
+
+async function handleInstallClick() {
+	if (isIOS.value) {
+		// Show iOS instructions
+		showIOSInstructions.value = true;
+		return;
+	}
+
+	if (!deferredPrompt.value) return;
+
+	// Show the install prompt
+	await deferredPrompt.value.prompt();
+
+	// Wait for the user's response
+	const { outcome } = await deferredPrompt.value.userChoice;
+
+	if (outcome === "accepted") {
+		showInstallButton.value = false;
+	}
+
+	// Clear the deferred prompt
+	deferredPrompt.value = null;
+}
+
+function closeIOSInstructions() {
+	showIOSInstructions.value = false;
+}
+
+onMounted(() => {
+	checkInstallability();
+	window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+	window.addEventListener("appinstalled", () => {
+		showInstallButton.value = false;
+	});
+});
+
+onUnmounted(() => {
+	window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+});
 
 function handleBegin() {
 	if (isLeaving.value) return;
@@ -85,6 +164,39 @@ function handleTutorial() {
           <span class="music-icon">♪</span>
           <span class="secondary-text">Music</span>
         </button>
+      </div>
+
+      <!-- Install App button (only on compatible devices) -->
+      <button v-if="showInstallButton" class="install-button" @click="handleInstallClick">
+        <svg class="install-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 5v10M7 12l5 5 5-5M5 19h14" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="install-text">Install App</span>
+      </button>
+    </div>
+
+    <!-- iOS Install Instructions Modal -->
+    <div v-if="showIOSInstructions" class="ios-modal-overlay" @click="closeIOSInstructions">
+      <div class="ios-modal" @click.stop>
+        <h3 class="ios-modal-title">Add to Home Screen</h3>
+        <div class="ios-instructions">
+          <div class="ios-step">
+            <span class="ios-step-number">1</span>
+            <span class="ios-step-text">Tap the <strong>Share</strong> button</span>
+            <svg class="ios-share-icon" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2l4 4h-3v8h-2V6H8l4-4zm8 14v4H4v-4H2v6h20v-6h-2z"/>
+            </svg>
+          </div>
+          <div class="ios-step">
+            <span class="ios-step-number">2</span>
+            <span class="ios-step-text">Scroll down and tap <strong>"Add to Home Screen"</strong></span>
+          </div>
+          <div class="ios-step">
+            <span class="ios-step-number">3</span>
+            <span class="ios-step-text">Tap <strong>"Add"</strong> to confirm</span>
+          </div>
+        </div>
+        <button class="ios-modal-close" @click="closeIOSInstructions">Got it!</button>
       </div>
     </div>
 
@@ -424,5 +536,162 @@ function handleTutorial() {
 .grass-blade:nth-child(3) {
   transform: rotate(12deg);
   height: 18px;
+}
+
+/* Install App Button */
+.install-button {
+  margin-top: 24px;
+  padding: 10px 20px;
+  background: rgba(124, 182, 104, 0.2);
+  border: 1px solid rgba(124, 182, 104, 0.4);
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.1s ease;
+}
+
+.install-button:hover {
+  background: rgba(124, 182, 104, 0.3);
+  border-color: rgba(124, 182, 104, 0.6);
+  transform: translateY(-1px);
+}
+
+.install-button:active {
+  transform: translateY(1px);
+}
+
+.install-icon {
+  width: 18px;
+  height: 18px;
+  color: #a8d898;
+}
+
+.install-text {
+  font-family: 'Georgia', serif;
+  font-size: 14px;
+  color: #a8d898;
+  letter-spacing: 1px;
+}
+
+/* iOS Instructions Modal */
+.ios-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 300;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.ios-modal {
+  background: linear-gradient(180deg, #4a6741 0%, #3d5636 100%);
+  border-radius: 16px;
+  padding: 24px;
+  max-width: 320px;
+  width: 90%;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  animation: modalSlideIn 0.3s ease;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ios-modal-title {
+  font-family: 'Georgia', serif;
+  font-size: 22px;
+  color: #f5edd6;
+  margin: 0 0 20px 0;
+  text-align: center;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.ios-instructions {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ios-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 12px;
+  border-radius: 8px;
+}
+
+.ios-step-number {
+  width: 28px;
+  height: 28px;
+  background: rgba(124, 182, 104, 0.3);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Georgia', serif;
+  font-size: 14px;
+  color: #a8d898;
+  flex-shrink: 0;
+}
+
+.ios-step-text {
+  font-family: 'Georgia', serif;
+  font-size: 14px;
+  color: #c8d4b8;
+  line-height: 1.4;
+}
+
+.ios-step-text strong {
+  color: #f5edd6;
+}
+
+.ios-share-icon {
+  width: 20px;
+  height: 20px;
+  color: #6eb5ff;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.ios-modal-close {
+  margin-top: 20px;
+  width: 100%;
+  padding: 12px;
+  background: linear-gradient(135deg, #7cb668 0%, #5a9a4a 100%);
+  border: none;
+  border-radius: 8px;
+  font-family: 'Georgia', serif;
+  font-size: 16px;
+  color: #fff8e7;
+  cursor: pointer;
+  box-shadow: 0 3px 0 #3d6a30;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.ios-modal-close:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 0 #3d6a30;
+}
+
+.ios-modal-close:active {
+  transform: translateY(1px);
+  box-shadow: 0 2px 0 #3d6a30;
 }
 </style>
