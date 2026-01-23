@@ -52,7 +52,7 @@ const isShuffleMode = ref(false);
 const audio = ref<HTMLAudioElement | null>(null);
 const progress = ref(0);
 const duration = ref(0);
-const targetVolume = 0.3;
+const volume = ref(0.3);
 
 let shuffleTimeout: ReturnType<typeof setTimeout> | null = null;
 let fadeInterval: ReturnType<typeof setInterval> | null = null;
@@ -167,7 +167,7 @@ async function transitionToNextTrack() {
 		}
 	});
 
-	fadeIn(audio.value, targetVolume);
+	fadeIn(audio.value, volume.value);
 	isPlaying.value = true;
 
 	// Schedule next transition
@@ -210,7 +210,7 @@ function playTrack(index: number) {
 	if (!track) return;
 
 	audio.value = new Audio(track.path);
-	audio.value.volume = targetVolume;
+	audio.value.volume = volume.value;
 	audio.value.loop = true; // Loop forever when directly selected
 	currentTrackIndex.value = index;
 
@@ -242,7 +242,7 @@ function startShuffle() {
 	if (!track) return;
 
 	audio.value = new Audio(track.path);
-	audio.value.volume = targetVolume;
+	audio.value.volume = volume.value;
 	audio.value.loop = true;
 	currentTrackIndex.value = randomIndex;
 
@@ -292,6 +292,14 @@ function seekTo(event: MouseEvent) {
 	const rect = target.getBoundingClientRect();
 	const percent = (event.clientX - rect.left) / rect.width;
 	audio.value.currentTime = percent * duration.value;
+}
+
+function updateVolume(event: Event) {
+	const target = event.target as HTMLInputElement;
+	volume.value = parseFloat(target.value);
+	if (audio.value) {
+		audio.value.volume = volume.value;
+	}
 }
 
 // Group tracks by category for display
@@ -347,6 +355,18 @@ onUnmounted(() => {
         <div class="time-display">
           <span>{{ formatTime(progress) }}</span>
           <span>{{ formatTime(duration) }}</span>
+        </div>
+        <div class="volume-control">
+          <span class="volume-icon">{{ volume > 0 ? '🔊' : '🔇' }}</span>
+          <input
+            type="range"
+            min="0"
+            max="0.3"
+            step="0.01"
+            :value="volume"
+            class="volume-slider"
+            @input="updateVolume"
+          />
         </div>
       </div>
 
@@ -589,6 +609,58 @@ onUnmounted(() => {
   margin-top: 8px;
   font-size: 12px;
   color: #8a9a7a;
+}
+
+.volume-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.volume-icon {
+  font-size: 16px;
+  width: 20px;
+}
+
+.volume-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: linear-gradient(135deg, #9acd8a 0%, #7cb668 100%);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.volume-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+.volume-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: linear-gradient(135deg, #9acd8a 0%, #7cb668 100%);
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.volume-slider::-moz-range-thumb:hover {
+  transform: scale(1.15);
 }
 
 .shuffle-btn {
