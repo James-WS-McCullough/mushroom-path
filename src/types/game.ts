@@ -25,6 +25,10 @@ export const TileType = {
 	// Acorn/Autumn tiles
 	ACORN: "acorn", // Collectible - gives player an acorn when landed on
 	SQUIRREL: "squirrel", // Obstacle that requires acorns to pass, becomes grass when fed
+	// Competitive mode tiles
+	MUSHROOM_BAG: "mushroom_bag", // Pickup that gives +2 mushrooms per turn
+	MUSHROOM_RED: "mushroom_red", // Player 1's mushroom
+	MUSHROOM_BLUE: "mushroom_blue", // Player 2's (Dew's) mushroom
 } as const;
 
 export type TileType = (typeof TileType)[keyof typeof TileType];
@@ -129,4 +133,22 @@ export type WalkableTileType = (typeof WalkableTileTypes)[number];
 // Helper to check if a tile type is walkable (core set, excludes conditional tiles)
 export function isWalkableTile(tileType: TileType): tileType is WalkableTileType {
 	return (WalkableTileTypes as readonly TileType[]).includes(tileType);
+}
+
+// Competitive mode types
+export type Player = "player1" | "player2";
+
+export interface CompetitiveGameState {
+	tiles: Tile[][];
+	player1Position: Position;
+	player2Position: Position;
+	currentTurn: Player;
+	player1Score: number;
+	player2Score: number;
+	player1ExtraTurns: number; // Extra turns from mushroom bags
+	player2ExtraTurns: number;
+	player1Stuck: boolean;
+	player2Stuck: boolean;
+	gameOver: boolean;
+	winner: Player | "tie" | null;
 }

@@ -40,6 +40,8 @@ import {
 	tutorialStuckDialogues,
 } from "./data/tutorialDialogues";
 import { tutorialLevels } from "./data/tutorialLevels";
+import { competitiveLevel1 } from "./data/competitiveLevels";
+import CompetitiveGameBoard from "./components/CompetitiveGameBoard.vue";
 import type { Level, WorldElement } from "./types/game";
 import { WorldElement as WE } from "./types/game";
 
@@ -52,6 +54,10 @@ const SPRITE_URLS = [
 	"/art/MushroomGirl-Jump.webp",
 	"/art/MushroomGirl-Wave.webp",
 	"/art/MushroomGirl-Stuck.webp",
+	"/art/Dew.webp",
+	"/art/Dew-blink.webp",
+	"/art/Dew-jump.webp",
+	"/art/Dew-stuck.webp",
 ];
 
 function preloadSprites() {
@@ -176,6 +182,7 @@ const autumnWorldNames = [
 ];
 
 const gameStarted = ref(false);
+const isInVersusMode = ref(false);
 const currentLevel = ref<Level>(level1);
 const levelKey = ref(0);
 const showWinModal = ref(false);
@@ -1454,6 +1461,29 @@ async function handleStartTutorial() {
 	await startTutorialMode();
 }
 
+// Handler for starting versus mode
+async function handleStartVersus() {
+	// Initialize audio system
+	isLoading.value = true;
+	loadingMessage.value = "Loading audio...";
+	await new Promise((resolve) => setTimeout(resolve, 50));
+
+	initializeAudio();
+	startBackgroundMusic();
+
+	isLoading.value = false;
+	loadingMessage.value = "";
+
+	// Enter versus mode
+	isInVersusMode.value = true;
+	gameStarted.value = true;
+}
+
+function handleVersusBackToMenu() {
+	isInVersusMode.value = false;
+	gameStarted.value = false;
+}
+
 function handleTutorialWin() {
 	playSuccess();
 	skipModalText.value = "Garden Complete!";
@@ -1568,6 +1598,7 @@ watch(isPlayerStuck, (isStuck) => {
     @new-game="handleNewGame"
     @open-music-player="showMusicPlayer = true"
     @start-tutorial="handleStartTutorial"
+    @start-versus="handleStartVersus"
   />
 
   <!-- Music Player -->
@@ -1610,8 +1641,15 @@ watch(isPlayerStuck, (isStuck) => {
     </ConfirmModal>
   </Transition>
 
+  <!-- Versus Mode -->
+  <CompetitiveGameBoard
+    v-if="isInVersusMode"
+    :level="competitiveLevel1"
+    @back-to-menu="handleVersusBackToMenu"
+  />
+
   <!-- Game (stays visible for overlay dialogues) -->
-  <div v-if="gameStarted && (!currentDialogue || currentDialogue.overlay)" class="layout">
+  <div v-if="gameStarted && !isInVersusMode && (!currentDialogue || currentDialogue.overlay)" class="layout">
     <TopBar
       :level-name="displayName"
       :elements="currentWorldElements"

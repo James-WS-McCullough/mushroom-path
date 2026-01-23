@@ -11,6 +11,7 @@ const emit = defineEmits<{
 	newGame: [];
 	openMusicPlayer: [];
 	startTutorial: [];
+	startVersus: [];
 }>();
 
 const isLeaving = ref(false);
@@ -117,6 +118,12 @@ function handleTutorial() {
 	isLeaving.value = true;
 	setTimeout(() => emit("startTutorial"), 600);
 }
+
+function handleVersus() {
+	if (isLeaving.value) return;
+	isLeaving.value = true;
+	setTimeout(() => emit("startVersus"), 600);
+}
 </script>
 
 <template>
@@ -165,6 +172,11 @@ function handleTutorial() {
           <span class="secondary-text">Music</span>
         </button>
       </div>
+
+      <!-- Versus Mode Button -->
+      <button class="versus-button" @click="handleVersus">
+        <span class="versus-text">Versus Mode</span>
+      </button>
 
       <!-- Install App button (only on compatible devices) -->
       <button v-if="showInstallButton" class="install-button" @click="handleInstallClick">
@@ -501,6 +513,45 @@ function handleTutorial() {
   font-family: 'Georgia', serif;
   font-size: 14px;
   color: #c8d4b8;
+  letter-spacing: 1px;
+}
+
+/* Versus Mode Button */
+.versus-button {
+  margin-top: 16px;
+  padding: 12px 28px;
+  background: linear-gradient(135deg, #7c8ce8 0%, #5a6ad4 50%, #4a5ac4 100%);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  box-shadow:
+    0 4px 0 #3a4a8a,
+    0 6px 12px rgba(0, 0, 0, 0.3),
+    inset 0 2px 0 rgba(255, 255, 255, 0.3);
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.versus-button:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 6px 0 #3a4a8a,
+    0 8px 16px rgba(0, 0, 0, 0.3),
+    inset 0 2px 0 rgba(255, 255, 255, 0.3);
+}
+
+.versus-button:active {
+  transform: translateY(2px);
+  box-shadow:
+    0 2px 0 #3a4a8a,
+    0 4px 8px rgba(0, 0, 0, 0.3),
+    inset 0 2px 0 rgba(255, 255, 255, 0.3);
+}
+
+.versus-text {
+  font-family: 'Georgia', serif;
+  font-size: 16px;
+  color: #fff8e7;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
   letter-spacing: 1px;
 }
 
