@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useGame } from "../composables/useGame";
 import { playUndo } from "../composables/useSound";
 import type { Direction, Level, Position } from "../types/game";
+import DewCharacter from "./DewCharacter.vue";
 import GameCharacter from "./GameCharacter.vue";
 import GameTile from "./GameTile.vue";
 
@@ -18,6 +19,7 @@ const props = defineProps<{
 	hasPondElement?: boolean;
 	hasTidesElement?: boolean;
 	hasAcornElement?: boolean;
+	useDewCharacter?: boolean;
 	disabled?: boolean;
 	hintTiles?: Position[];
 	stuckTiles?: Position[];
@@ -571,7 +573,21 @@ defineExpose({
           />
         </svg>
 
+        <DewCharacter
+          v-if="props.useDewCharacter"
+          :position="game.playerPosition.value"
+          :is-hopping="game.isHopping.value"
+          :is-sliding="game.isSliding.value"
+          :is-bouncing="game.isBouncing.value"
+          :is-stuck="game.isStuck.value"
+          :is-teleporting="game.isTeleporting.value"
+          :teleport-phase="game.teleportPhase.value"
+          :facing-direction="game.facingDirection.value"
+          :board-padding="hasRooms ? 0 : 3"
+          :disabled="props.disabled"
+        />
         <GameCharacter
+          v-else
           :position="game.playerPosition.value"
           :is-hopping="game.isHopping.value"
           :is-sliding="game.isSliding.value"

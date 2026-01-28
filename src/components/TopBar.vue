@@ -15,11 +15,14 @@ defineProps<{
 	levelName: string;
 	elements: WorldElement[];
 	helpModeEnabled?: boolean;
+	isDewUnlocked?: boolean;
+	useDewCharacter?: boolean;
 }>();
 
 const emit = defineEmits<{
 	showTutorial: [];
 	showHelpSettings: [];
+	toggleCharacter: [];
 }>();
 
 const showVolumePopup = ref(false);
@@ -78,6 +81,22 @@ onUnmounted(() => {
           <line x1="12" y1="16" x2="12" y2="21" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
           <line x1="3" y1="12" x2="8" y2="12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
           <line x1="16" y1="12" x2="21" y2="12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <!-- Character swap button (only visible when unlocked) -->
+      <button
+        v-if="isDewUnlocked"
+        class="swap-btn"
+        :class="{ 'swap-btn--active': useDewCharacter }"
+        title="Switch Character"
+        @click="emit('toggleCharacter')"
+      >
+        <svg viewBox="0 0 24 24" class="swap-icon-svg">
+          <!-- Two-arrow swap icon -->
+          <path d="M7 16l-4-4 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          <path d="M3 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <path d="M17 8l4 4-4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          <path d="M21 12H7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
         </svg>
       </button>
       <h2 class="level-name">{{ levelName }}</h2>
@@ -368,6 +387,47 @@ onUnmounted(() => {
   color: #5a4a3a;
 }
 
+.swap-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(180deg, rgba(255, 248, 230, 0.95) 0%, rgba(240, 230, 210, 0.95) 100%);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  transition: all 0.15s ease;
+}
+
+.swap-btn:hover {
+  transform: scale(1.05);
+  box-shadow:
+    0 3px 6px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.swap-btn:active {
+  transform: scale(0.95);
+}
+
+.swap-btn--active {
+  background: linear-gradient(180deg, rgba(180, 210, 230, 0.95) 0%, rgba(140, 180, 210, 0.95) 100%);
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 0 8px rgba(100, 160, 200, 0.4);
+}
+
+.swap-icon-svg {
+  width: 22px;
+  height: 22px;
+  color: #5a4a3a;
+}
+
 .level-name {
   flex: 1;
   font-family: 'Georgia', serif;
@@ -396,7 +456,8 @@ onUnmounted(() => {
   }
 
   .info-btn,
-  .help-btn {
+  .help-btn,
+  .swap-btn {
     width: 32px;
     height: 32px;
   }
@@ -405,7 +466,8 @@ onUnmounted(() => {
     font-size: 18px;
   }
 
-  .help-icon-svg {
+  .help-icon-svg,
+  .swap-icon-svg {
     width: 18px;
     height: 18px;
   }

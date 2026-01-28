@@ -40,7 +40,7 @@ import {
 	tutorialStuckDialogues,
 } from "./data/tutorialDialogues";
 import { tutorialLevels } from "./data/tutorialLevels";
-import { competitiveLevel1 } from "./data/competitiveLevels";
+import { getRandomCompetitiveLevel } from "./data/competitiveLevels";
 import CompetitiveGameBoard from "./components/CompetitiveGameBoard.vue";
 import type { Level, WorldElement } from "./types/game";
 import { WorldElement as WE } from "./types/game";
@@ -183,6 +183,7 @@ const autumnWorldNames = [
 
 const gameStarted = ref(false);
 const isInVersusMode = ref(false);
+const currentCompetitiveLevel = ref<Level>(getRandomCompetitiveLevel());
 const currentLevel = ref<Level>(level1);
 const levelKey = ref(0);
 const showWinModal = ref(false);
@@ -212,6 +213,18 @@ const hasMetDew = ref(localStorage.getItem("mushroom-path-met-dew") === "true");
 // Help mode state (persisted to localStorage)
 const HELP_MODE_KEY = "mushroom-path-help-mode";
 const isHelpModeEnabled = ref(localStorage.getItem(HELP_MODE_KEY) === "true");
+
+// Character swap unlock (requires 500 mushrooms)
+const DEW_CHARACTER_KEY = "mushroom-path-use-dew";
+const useDewCharacter = ref(localStorage.getItem(DEW_CHARACTER_KEY) === "true");
+const DEW_UNLOCK_THRESHOLD = 500;
+const isDewUnlocked = computed(() => totalMushroomsPlanted.value >= DEW_UNLOCK_THRESHOLD);
+
+function toggleCharacter() {
+	if (!isDewUnlocked.value) return;
+	useDewCharacter.value = !useDewCharacter.value;
+	localStorage.setItem(DEW_CHARACTER_KEY, useDewCharacter.value ? "true" : "false");
+}
 const showHelpModeModal = ref(false);
 const isHelpModeBlocked = ref(false); // Blocks controls when help mode detects impossible state
 
@@ -1474,7 +1487,8 @@ async function handleStartVersus() {
 	isLoading.value = false;
 	loadingMessage.value = "";
 
-	// Enter versus mode
+	// Enter versus mode with a random map
+	currentCompetitiveLevel.value = getRandomCompetitiveLevel();
 	isInVersusMode.value = true;
 	gameStarted.value = true;
 }
@@ -1482,6 +1496,11 @@ async function handleStartVersus() {
 function handleVersusBackToMenu() {
 	isInVersusMode.value = false;
 	gameStarted.value = false;
+}
+
+function handleVersusRestart() {
+	// Select a new random map and restart
+	currentCompetitiveLevel.value = getRandomCompetitiveLevel();
 }
 
 function handleTutorialWin() {
@@ -1644,8 +1663,10 @@ watch(isPlayerStuck, (isStuck) => {
   <!-- Versus Mode -->
   <CompetitiveGameBoard
     v-if="isInVersusMode"
-    :level="competitiveLevel1"
+    :key="currentCompetitiveLevel.name"
+    :level="currentCompetitiveLevel"
     @back-to-menu="handleVersusBackToMenu"
+    @restart="handleVersusRestart"
   />
 
   <!-- Game (stays visible for overlay dialogues) -->
@@ -1654,8 +1675,11 @@ watch(isPlayerStuck, (isStuck) => {
       :level-name="displayName"
       :elements="currentWorldElements"
       :help-mode-enabled="isHelpModeEnabled"
+      :is-dew-unlocked="isDewUnlocked"
+      :use-dew-character="useDewCharacter"
       @show-tutorial="showTutorial = true"
       @show-help-settings="showHelpModeModal = true"
+      @toggle-character="toggleCharacter"
     />
 
     <!-- Mushroom Counter -->
@@ -1677,6 +1701,7 @@ watch(isPlayerStuck, (isStuck) => {
         :has-pond-element="currentWorldElements.includes(WE.POND)"
         :has-tides-element="currentWorldElements.includes(WE.TIDES)"
         :has-acorn-element="currentWorldElements.includes(WE.ACORN)"
+        :use-dew-character="useDewCharacter"
         :hint-tiles="hintTiles"
         :stuck-tiles="stuckTiles"
         :disabled="!!currentDialogue || isHelpModeBlocked"

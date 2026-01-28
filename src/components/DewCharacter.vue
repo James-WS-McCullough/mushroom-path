@@ -178,7 +178,7 @@ const spriteUrl = computed(() => {
     <!-- Ground shadow -->
     <div :class="['character__shadow', { 'character__shadow--hopping': isHopping && !isBouncing, 'character__shadow--bouncing': isBouncing, 'character__shadow--waving': isWaving }]"></div>
 
-    <div :class="['character__sprite', { 'character__sprite--hopping': isHopping && !isBouncing, 'character__sprite--bouncing': isBouncing, 'character__sprite--stuck': isStuck, 'character__sprite--waving': isWaving, 'character__sprite--facing-right': facingDirection === 'right' }]">
+    <div :class="['character__sprite', { 'character__sprite--hopping': isHopping && !isBouncing, 'character__sprite--bouncing': isBouncing, 'character__sprite--stuck': isStuck, 'character__sprite--waving': isWaving, 'character__sprite--facing-left': facingDirection === 'left' }]">
       <img :src="spriteUrl" alt="Dew" class="sprite-img" />
     </div>
   </div>
@@ -320,7 +320,7 @@ const spriteUrl = computed(() => {
   transition: transform 0.1s ease-out;
 }
 
-.character__sprite--facing-right .sprite-img {
+.character__sprite--facing-left .sprite-img {
   transform: scaleX(-1);
 }
 

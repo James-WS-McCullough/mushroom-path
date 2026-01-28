@@ -1,9 +1,19 @@
 import { computed, ref, watch } from "vue";
-import type { Direction, Level, Player, Position, Tile } from "../types/game";
+import type { Direction, FlowDirection, Level, Player, Position, Tile } from "../types/game";
 import { TileType } from "../types/game";
-import { ANIMATION } from "../constants/game";
+import { ANIMATION, MECHANICS } from "../constants/game";
 import { getDirectionDelta } from "../utils/positionUtils";
-import { playAcorn, playJump, playLand, playRandomPop } from "./useSound";
+import {
+	playAcorn,
+	playBouncepad,
+	playJump,
+	playLand,
+	playRandomPop,
+	playStone,
+	playWater,
+	startIceSlide,
+	stopIceSlide,
+} from "./useSound";
 
 export type FacingDirection = "left" | "right";
 
@@ -34,6 +44,7 @@ function canWalkOn(tileType: TileType | undefined): boolean {
 
 export function useCompetitiveGame(level: Level, aiEnabled = true) {
 	const tiles = ref<Tile[][]>([]);
+	const waterFlow = level.waterFlow ?? {};
 
 	// Player positions
 	const player1Position = ref<Position>({ ...level.startPosition });
@@ -72,13 +83,170 @@ export function useCompetitiveGame(level: Level, aiEnabled = true) {
 	// Animation states for player 1
 	const player1Hopping = ref(false);
 	const player1Facing = ref<FacingDirection>("left");
+	const player1Sliding = ref(false);
 
 	// Animation states for player 2
 	const player2Hopping = ref(false);
 	const player2Facing = ref<FacingDirection>("right");
+	const player2Sliding = ref(false);
 
 	// Track last planted mushroom for animation
 	const lastPlantedPosition = ref<Position | null>(null);
+
+	// Track last bounce pad activation for animation
+	const lastBouncePadPosition = ref<Position | null>(null);
+
+	// Helper to get water flow direction at a position
+	function getWaterFlow(pos: Position): FlowDirection | null {
+		const key = `${pos.x},${pos.y}`;
+		return waterFlow[key] ?? null;
+	}
+
+	// Compute water slide destination
+	function computeWaterSlideDestination(startPos: Position, otherPlayerPos: Position): Position {
+		let current = startPos;
+
+		while (true) {
+			const flow = getWaterFlow(current);
+			if (!flow) break;
+
+			const delta = getDirectionDelta(flow);
+			const next = { x: current.x + delta.x, y: current.y + delta.y };
+			const nextTile = getTile(next);
+
+			if (!nextTile) break;
+
+			// Can't slide onto other player
+			if (next.x === otherPlayerPos.x && next.y === otherPlayerPos.y) break;
+
+			if (nextTile.type === TileType.WATER) {
+				current = next;
+			} else if (nextTile.type === TileType.STONE) {
+				current = next;
+				break;
+			} else {
+				break;
+			}
+		}
+
+		return current;
+	}
+
+	// Compute ice slide destination
+	function computeIceSlideDestination(startPos: Position, direction: Direction, otherPlayerPos: Position): Position {
+		const delta = getDirectionDelta(direction);
+		let current = startPos;
+
+		while (true) {
+			const next = { x: current.x + delta.x, y: current.y + delta.y };
+			const nextTile = getTile(next);
+
+			if (!nextTile) break;
+
+			// Can't slide onto other player
+			if (next.x === otherPlayerPos.x && next.y === otherPlayerPos.y) break;
+
+			// Stop if we hit an obstacle
+			if (isBlockedTileType(nextTile.type)) break;
+
+			if (nextTile.type === TileType.ICE) {
+				current = next;
+			} else {
+				// Land on non-ice tile
+				current = next;
+				break;
+			}
+		}
+
+		return current;
+	}
+
+	// Compute bounce pad destination
+	function computeBounceDestination(startPos: Position, direction: Direction, otherPlayerPos: Position): Position {
+		const delta = getDirectionDelta(direction);
+
+		// Try bouncing at progressively shorter distances (3, 2, 1)
+		for (let distance = MECHANICS.MAX_BOUNCE_DISTANCE; distance >= 1; distance--) {
+			const landingPos = {
+				x: startPos.x + delta.x * distance,
+				y: startPos.y + delta.y * distance,
+			};
+
+			const landingTile = getTile(landingPos);
+			if (!landingTile) continue;
+
+			// Can't land on other player
+			if (landingPos.x === otherPlayerPos.x && landingPos.y === otherPlayerPos.y) continue;
+
+			// Check if we can land there
+			if (canWalkOn(landingTile.type)) {
+				return landingPos;
+			}
+		}
+
+		// Can't bounce - stay in place
+		return startPos;
+	}
+
+	// Compute final destination after all tile effects (ice, water, bounce)
+	function computeFinalDestination(startPos: Position, targetPos: Position, otherPlayerPos: Position): Position {
+		const targetTile = getTile(targetPos);
+		if (!targetTile) return targetPos;
+
+		// Determine movement direction
+		let direction: Direction = "down";
+		if (targetPos.x > startPos.x) direction = "right";
+		else if (targetPos.x < startPos.x) direction = "left";
+		else if (targetPos.y < startPos.y) direction = "up";
+
+		// Check for ice slide
+		if (targetTile.type === TileType.ICE) {
+			return computeIceSlideDestination(targetPos, direction, otherPlayerPos);
+		}
+
+		// Check for water slide
+		if (targetTile.type === TileType.WATER) {
+			return computeWaterSlideDestination(targetPos, otherPlayerPos);
+		}
+
+		// Check for bounce pad
+		if (targetTile.type === TileType.BOUNCE_PAD) {
+			return computeBounceDestination(targetPos, direction, otherPlayerPos);
+		}
+
+		return targetPos;
+	}
+
+	// Check if a player can reach any grass tiles from their position
+	function canReachGrass(playerPos: Position, otherPlayerPos: Position): boolean {
+		const validMoves = getValidMoves(playerPos, otherPlayerPos);
+
+		for (const move of validMoves) {
+			// Check the immediate target tile
+			const targetTile = getTile(move);
+			if (targetTile?.type === TileType.GRASS || targetTile?.type === TileType.MUSHROOM_BAG) {
+				return true;
+			}
+
+			// Check the final destination after sliding/bouncing
+			const finalPos = computeFinalDestination(playerPos, move, otherPlayerPos);
+			const finalTile = getTile(finalPos);
+			if (finalTile?.type === TileType.GRASS || finalTile?.type === TileType.MUSHROOM_BAG) {
+				return true;
+			}
+
+			// Check if final position has access to grass
+			const futureMoves = getValidMoves(finalPos, otherPlayerPos);
+			for (const futureMove of futureMoves) {
+				const futureTile = getTile(futureMove);
+				if (futureTile?.type === TileType.GRASS || futureTile?.type === TileType.MUSHROOM_BAG) {
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
 
 	// Level dimensions
 	const levelWidth = level.width;
@@ -190,8 +358,12 @@ export function useCompetitiveGame(level: Level, aiEnabled = true) {
 		const p1Moves = getValidMoves(player1Position.value, player2Position.value);
 		const p2Moves = getValidMoves(player2Position.value, player1Position.value);
 
-		player1Stuck.value = p1Moves.length === 0;
-		player2Stuck.value = p2Moves.length === 0;
+		// A player is stuck if they have no valid moves OR if they can't reach any grass tiles
+		const p1CanReachGrass = p1Moves.length > 0 && canReachGrass(player1Position.value, player2Position.value);
+		const p2CanReachGrass = p2Moves.length > 0 && canReachGrass(player2Position.value, player1Position.value);
+
+		player1Stuck.value = p1Moves.length === 0 || !p1CanReachGrass;
+		player2Stuck.value = p2Moves.length === 0 || !p2CanReachGrass;
 
 		// Check for game over
 		if (player1Stuck.value && player2Stuck.value) {
@@ -259,12 +431,20 @@ export function useCompetitiveGame(level: Level, aiEnabled = true) {
 
 	function executeMove(targetPos: Position, isPlayer1: boolean): void {
 		const currentPos = isPlayer1 ? player1Position.value : player2Position.value;
+		const otherPos = isPlayer1 ? player2Position.value : player1Position.value;
 		const player: Player = isPlayer1 ? "player1" : "player2";
 
 		// Check if this is a jump (2 tiles) or walk (1 tile)
 		const dx = Math.abs(targetPos.x - currentPos.x);
 		const dy = Math.abs(targetPos.y - currentPos.y);
 		const isJump = dx === 2 || dy === 2;
+
+		// Determine movement direction
+		let direction: Direction = "down";
+		if (targetPos.x > currentPos.x) direction = "right";
+		else if (targetPos.x < currentPos.x) direction = "left";
+		else if (targetPos.y < currentPos.y) direction = "up";
+		else direction = "down";
 
 		// Update facing direction
 		if (targetPos.x > currentPos.x) {
@@ -296,7 +476,7 @@ export function useCompetitiveGame(level: Level, aiEnabled = true) {
 		// Plant mushroom on the tile we're leaving
 		plantMushroom(currentPos, player);
 
-		// Move player
+		// Move player to initial target
 		if (isPlayer1) {
 			player1Position.value = { ...targetPos };
 		} else {
@@ -317,15 +497,8 @@ export function useCompetitiveGame(level: Level, aiEnabled = true) {
 			playAcorn(); // Use acorn sound for pickup
 		}
 
-		// End hop animation after delay
-		setTimeout(() => {
-			if (isPlayer1) {
-				player1Hopping.value = false;
-			} else {
-				player2Hopping.value = false;
-			}
-			playLand();
-
+		// Handle special tiles after hop animation
+		const finishMove = () => {
 			// Handle turn switching with extra turns
 			handleTurnSwitch(isPlayer1);
 
@@ -339,6 +512,126 @@ export function useCompetitiveGame(level: Level, aiEnabled = true) {
 			if (isAiEnabled.value && currentTurn.value === "player2" && !player2Stuck.value && !gameOver.value) {
 				scheduleAiMove();
 			}
+		};
+
+		// End hop animation after delay, then check for special tiles
+		setTimeout(() => {
+			if (isPlayer1) {
+				player1Hopping.value = false;
+			} else {
+				player2Hopping.value = false;
+			}
+
+			const landedTile = getTile(targetPos);
+
+			// Check for water slide
+			if (landedTile?.type === TileType.WATER) {
+				playWater();
+				const slideDestination = computeWaterSlideDestination(targetPos, otherPos);
+
+				if (isPlayer1) {
+					player1Sliding.value = true;
+				} else {
+					player2Sliding.value = true;
+				}
+
+				// Animate slide
+				setTimeout(() => {
+					if (isPlayer1) {
+						player1Position.value = { ...slideDestination };
+						player1Sliding.value = false;
+					} else {
+						player2Position.value = { ...slideDestination };
+						player2Sliding.value = false;
+					}
+
+					const finalTile = getTile(slideDestination);
+					if (finalTile?.type === TileType.STONE) {
+						playStone();
+					} else {
+						playLand();
+					}
+					finishMove();
+				}, 200);
+				return;
+			}
+
+			// Check for ice slide
+			if (landedTile?.type === TileType.ICE) {
+				try { startIceSlide(); } catch { /* ignore audio errors */ }
+				const slideDestination = computeIceSlideDestination(targetPos, direction, otherPos);
+
+				if (isPlayer1) {
+					player1Sliding.value = true;
+				} else {
+					player2Sliding.value = true;
+				}
+
+				// Animate slide
+				setTimeout(() => {
+					if (isPlayer1) {
+						player1Position.value = { ...slideDestination };
+						player1Sliding.value = false;
+					} else {
+						player2Position.value = { ...slideDestination };
+						player2Sliding.value = false;
+					}
+					try { stopIceSlide(); } catch { /* ignore audio errors */ }
+
+					const finalTile = getTile(slideDestination);
+					if (finalTile?.type === TileType.STONE) {
+						playStone();
+					} else {
+						playLand();
+					}
+					finishMove();
+				}, 200);
+				return;
+			}
+
+			// Check for bounce pad
+			if (landedTile?.type === TileType.BOUNCE_PAD) {
+				playBouncepad();
+				const bounceDestination = computeBounceDestination(targetPos, direction, otherPos);
+
+				// Set bounce pad activation for animation
+				lastBouncePadPosition.value = { ...targetPos };
+				setTimeout(() => {
+					if (lastBouncePadPosition.value?.x === targetPos.x && lastBouncePadPosition.value?.y === targetPos.y) {
+						lastBouncePadPosition.value = null;
+					}
+				}, 400);
+
+				if (bounceDestination.x !== targetPos.x || bounceDestination.y !== targetPos.y) {
+					if (isPlayer1) {
+						player1Hopping.value = true;
+					} else {
+						player2Hopping.value = true;
+					}
+
+					// Animate bounce
+					setTimeout(() => {
+						if (isPlayer1) {
+							player1Position.value = { ...bounceDestination };
+							player1Hopping.value = false;
+						} else {
+							player2Position.value = { ...bounceDestination };
+							player2Hopping.value = false;
+						}
+						playLand();
+						finishMove();
+					}, 300);
+					return;
+				}
+			}
+
+			// Normal landing
+			if (landedTile?.type === TileType.STONE) {
+				playStone();
+			} else {
+				playLand();
+			}
+			finishMove();
 		}, ANIMATION.HOP_DURATION);
 	}
 
@@ -475,26 +768,45 @@ export function useCompetitiveGame(level: Level, aiEnabled = true) {
 		if (validMoves.length === 0) return;
 
 		// AI Strategy:
-		// 1. Prioritize mushroom bags
-		// 2. Then prefer moves that give access to more grass tiles
-		// 3. Avoid getting cornered
+		// 1. Prioritize grass tiles (can plant mushrooms)
+		// 2. Prioritize mushroom bags
+		// 3. Consider final destination after sliding/bouncing
+		// 4. Prefer moves that give access to more grass tiles
+		// 5. Avoid getting cornered
 
 		const scoredMoves = validMoves.map((move) => {
 			let score = 0;
 			const tile = getTile(move);
 
-			// High priority: Mushroom bags
+			// Compute where we'll actually end up after ice/water/bounce
+			const finalPos = computeFinalDestination(player2Position.value, move, player1Position.value);
+			const finalTile = getTile(finalPos);
+
+			// Highest priority: Landing on grass (can plant mushroom next turn)
+			if (finalTile?.type === TileType.GRASS) {
+				score += 150;
+			}
+
+			// High priority: Mushroom bags (at immediate target or final destination)
 			if (tile?.type === TileType.MUSHROOM_BAG) {
 				score += 100;
 			}
+			if (finalTile?.type === TileType.MUSHROOM_BAG) {
+				score += 100;
+			}
 
-			// Count how many grass tiles are adjacent to this position
-			const futureMoves = getValidMoves(move, player1Position.value);
+			// Count how many grass tiles are reachable from the FINAL position
+			const futureMoves = getValidMoves(finalPos, player1Position.value);
 			score += futureMoves.length * 10;
 
-			// Slight preference for tiles that give more grass coverage
-			const grassCount = countAdjacentGrass(move);
+			// Slight preference for tiles that give more grass coverage from final position
+			const grassCount = countAdjacentGrass(finalPos);
 			score += grassCount * 5;
+
+			// Penalize moves that land on ice/water (sliding can be unpredictable)
+			if (finalTile?.type === TileType.ICE || finalTile?.type === TileType.WATER) {
+				score -= 20;
+			}
 
 			// Small random factor to add variety
 			score += Math.random() * 3;
@@ -567,10 +879,13 @@ export function useCompetitiveGame(level: Level, aiEnabled = true) {
 
 		player1Hopping,
 		player1Facing,
+		player1Sliding,
 		player2Hopping,
 		player2Facing,
+		player2Sliding,
 
 		lastPlantedPosition,
+		lastBouncePadPosition,
 
 		gameOver,
 		winner,

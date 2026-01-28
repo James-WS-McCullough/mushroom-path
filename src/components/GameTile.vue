@@ -89,6 +89,10 @@ const tileClass = computed(() => {
 		"tile--grass": props.tile.type === TileType.GRASS,
 		"tile--bramble": props.tile.type === TileType.BRAMBLE,
 		"tile--mushroom": props.tile.type === TileType.MUSHROOM,
+		// Competitive mode mushrooms
+		"tile--mushroom-red": props.tile.type === TileType.MUSHROOM_RED,
+		"tile--mushroom-blue": props.tile.type === TileType.MUSHROOM_BLUE,
+		"tile--mushroom-bag": props.tile.type === TileType.MUSHROOM_BAG,
 		"tile--void": props.tile.type === TileType.VOID,
 		"tile--stone": props.tile.type === TileType.STONE,
 		"tile--water": props.tile.type === TileType.WATER,
@@ -336,6 +340,34 @@ function handleClick() {
           <div class="mushroom__stem"></div>
         </div>
       </div>
+    </div>
+
+    <!-- Competitive Red Mushroom (Player 1) -->
+    <div v-if="tile.type === TileType.MUSHROOM_RED" :class="['mushroom-container', { 'mushroom--pop': isJustPlanted }]">
+      <div class="mushroom mushroom--competitive mushroom--competitive-red">
+        <div class="mushroom__cap">
+          <div class="mushroom__spots"></div>
+        </div>
+        <div class="mushroom__stem"></div>
+      </div>
+    </div>
+
+    <!-- Competitive Blue Mushroom (Player 2) -->
+    <div v-if="tile.type === TileType.MUSHROOM_BLUE" :class="['mushroom-container', { 'mushroom--pop': isJustPlanted }]">
+      <div class="mushroom mushroom--competitive mushroom--competitive-blue">
+        <div class="mushroom__cap">
+          <div class="mushroom__spots"></div>
+        </div>
+        <div class="mushroom__stem"></div>
+      </div>
+    </div>
+
+    <!-- Mushroom Bag (Competitive pickup) -->
+    <div v-if="tile.type === TileType.MUSHROOM_BAG" class="mushroom-bag">
+      <div class="bag-body"></div>
+      <div class="bag-tie"></div>
+      <div class="bag-mushroom bag-mushroom--1"></div>
+      <div class="bag-mushroom bag-mushroom--2"></div>
     </div>
 
     <!-- Bramble sprite - variants -->
@@ -2507,6 +2539,119 @@ function handleClick() {
   height: 3px;
   top: 9px;
   right: 8px;
+}
+
+/* Competitive mode mushrooms */
+.mushroom--competitive {
+  width: 36px;
+  height: 40px;
+}
+
+.mushroom--competitive .mushroom__cap {
+  width: 32px;
+  height: 20px;
+  border-radius: 16px 16px 5px 5px;
+}
+
+.mushroom--competitive .mushroom__stem {
+  width: 12px;
+  height: 20px;
+}
+
+.mushroom--competitive-red .mushroom__cap {
+  background: linear-gradient(135deg, #e85a5a 0%, #d43d3d 50%, #c42a2a 100%);
+}
+
+.mushroom--competitive-blue .mushroom__cap {
+  background: linear-gradient(135deg, #5a5ae8 0%, #3d3dd4 50%, #2a2ac4 100%);
+}
+
+/* Tile backgrounds for competitive mushrooms */
+.tile--mushroom-red {
+  background: linear-gradient(145deg, #c88080 0%, #a85050 50%, #8a3a3a 100%);
+}
+
+.tile--mushroom-blue {
+  background: linear-gradient(145deg, #8080c8 0%, #5050a8 50%, #3a3a8a 100%);
+}
+
+/* Mushroom bag (competitive pickup) */
+.tile--mushroom-bag {
+  background: linear-gradient(145deg, #7cb668 0%, #5a9a4a 50%, #4a8a3a 100%);
+}
+
+.mushroom-bag {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 32px;
+  height: 32px;
+}
+
+.bag-body {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 28px;
+  height: 24px;
+  background: linear-gradient(145deg, #d4a574 0%, #b8956a 50%, #a08050 100%);
+  border-radius: 4px 4px 8px 8px;
+  box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.2);
+}
+
+.bag-tie {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 18px;
+  height: 6px;
+  background: #8a6a4a;
+  border-radius: 2px;
+}
+
+.bag-mushroom {
+  position: absolute;
+  width: 10px;
+  height: 12px;
+}
+
+.bag-mushroom::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 10px;
+  height: 6px;
+  background: linear-gradient(135deg, #e8a87c 0%, #d4896a 100%);
+  border-radius: 5px 5px 2px 2px;
+}
+
+.bag-mushroom::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 6px;
+  background: #f5e6d3;
+  border-radius: 1px;
+}
+
+.bag-mushroom--1 {
+  top: -2px;
+  left: 4px;
+  transform: rotate(-15deg);
+}
+
+.bag-mushroom--2 {
+  top: -4px;
+  right: 4px;
+  transform: rotate(10deg);
 }
 
 /* Mushroom clusters */

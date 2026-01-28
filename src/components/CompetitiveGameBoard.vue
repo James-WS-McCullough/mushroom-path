@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted } from "vue";
 import { useCompetitiveGame } from "../composables/useCompetitiveGame";
-import type { Level, Position } from "../types/game";
-import CompetitiveTile from "./CompetitiveTile.vue";
+import type { FlowDirection, Level, Position } from "../types/game";
+import GameTile from "./GameTile.vue";
 import GameCharacter from "./GameCharacter.vue";
 import DewCharacter from "./DewCharacter.vue";
 
@@ -16,9 +16,17 @@ const props = defineProps<{
 const emit = defineEmits<{
 	gameOver: [winner: "player1" | "player2" | "tie"];
 	backToMenu: [];
+	restart: [];
 }>();
 
 const game = useCompetitiveGame(props.level);
+
+// Get water flow direction for a position
+function getWaterFlow(pos: Position): FlowDirection | null {
+	if (!props.level.waterFlow) return null;
+	const key = `${pos.x},${pos.y}`;
+	return props.level.waterFlow[key] ?? null;
+}
 
 // Keyboard handling
 function handleKeyDown(e: KeyboardEvent) {
@@ -59,18 +67,24 @@ function isJustPlanted(pos: Position): boolean {
 	return planted !== null && planted.x === pos.x && planted.y === pos.y;
 }
 
+// Check if a bounce pad at this position is activated
+function isBounceActivated(pos: Position): boolean {
+	const bouncePos = game.lastBouncePadPosition.value;
+	return bouncePos !== null && bouncePos.x === pos.x && bouncePos.y === pos.y;
+}
+
 // Handle tile click
 function handleTileClick(pos: Position): void {
 	game.handleClick(pos);
 }
 
 function handleRestart(): void {
-	game.initializeGame();
+	emit("restart");
 }
 </script>
 
 <template>
-  <div class="competitive-game">
+  <div :class="['competitive-game', { 'competitive-game--player1-turn': game.isPlayer1Turn.value && !game.gameOver.value, 'competitive-game--player2-turn': game.isPlayer2Turn.value && !game.gameOver.value }]">
     <!-- Score Header -->
     <div class="score-header">
       <div :class="['player-score', 'player-score--p1', { 'player-score--active': game.isPlayer1Turn.value }]">
@@ -86,7 +100,8 @@ function handleRestart(): void {
       </div>
 
       <div class="turn-indicator">
-        <span v-if="!game.gameOver.value">
+        <span class="level-name">{{ props.level.name }}</span>
+        <span v-if="!game.gameOver.value" class="turn-text">
           <template v-if="game.isPlayer1Turn.value">Your Turn</template>
           <template v-else>
             <span v-if="game.isAiThinking.value" class="ai-thinking">Dew is thinking...</span>
@@ -112,14 +127,15 @@ function handleRestart(): void {
     <!-- Game Board -->
     <div class="board-container">
       <div class="board" :style="boardStyle">
-        <CompetitiveTile
+        <GameTile
           v-for="tile in game.tiles.value.flat()"
           :key="`${tile.position.x}-${tile.position.y}`"
           :tile="tile"
-          :is-player1-here="game.player1Position.value.x === tile.position.x && game.player1Position.value.y === tile.position.y"
-          :is-player2-here="game.player2Position.value.x === tile.position.x && game.player2Position.value.y === tile.position.y"
-          :is-valid-move="isValidMove(tile.position)"
+          :is-player-here="false"
+          :is-reachable="isValidMove(tile.position)"
           :is-just-planted="isJustPlanted(tile.position)"
+          :is-bounce-activated="isBounceActivated(tile.position)"
+          :flow-direction="getWaterFlow(tile.position)"
           @click="handleTileClick(tile.position)"
         />
 
@@ -127,13 +143,13 @@ function handleRestart(): void {
         <GameCharacter
           :position="game.player1Position.value"
           :is-hopping="game.player1Hopping.value"
-          :is-sliding="false"
+          :is-sliding="game.player1Sliding.value"
           :is-bouncing="false"
           :is-stuck="game.player1Stuck.value"
           :is-teleporting="false"
           :teleport-phase="null"
           :facing-direction="game.player1Facing.value"
-          :board-padding="0"
+          :board-padding="12"
           :disabled="!game.isPlayer1Turn.value"
         />
 
@@ -141,13 +157,13 @@ function handleRestart(): void {
         <DewCharacter
           :position="game.player2Position.value"
           :is-hopping="game.player2Hopping.value"
-          :is-sliding="false"
+          :is-sliding="game.player2Sliding.value"
           :is-bouncing="false"
           :is-stuck="game.player2Stuck.value"
           :is-teleporting="false"
           :teleport-phase="null"
           :facing-direction="game.player2Facing.value"
-          :board-padding="0"
+          :board-padding="12"
           :disabled="!game.isPlayer2Turn.value"
         />
       </div>
@@ -229,6 +245,17 @@ function handleRestart(): void {
   height: 100vh;
   height: 100dvh;
   background: linear-gradient(180deg, #4a6741 0%, #3d5636 50%, #2d4028 100%);
+  transition: background 0.5s ease;
+}
+
+/* Player 1 turn - warm/red tint */
+.competitive-game--player1-turn {
+  background: linear-gradient(180deg, #5a5045 0%, #4a3d36 50%, #3a2d28 100%);
+}
+
+/* Player 2 turn - cool/blue tint */
+.competitive-game--player2-turn {
+  background: linear-gradient(180deg, #454a5a 0%, #363d4a 50%, #282d3a 100%);
 }
 
 /* Score Header */
@@ -333,10 +360,25 @@ function handleRestart(): void {
   font-size: 18px;
   color: #f5edd6;
   text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.level-name {
+  font-size: 12px;
+  color: rgba(245, 237, 214, 0.6);
+  font-weight: normal;
+}
+
+.turn-text {
+  font-weight: bold;
 }
 
 .game-over-text {
   color: #e8a87c;
+  font-weight: bold;
 }
 
 .ai-badge {
