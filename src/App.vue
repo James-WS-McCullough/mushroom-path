@@ -1746,6 +1746,13 @@ watch(isPlayerStuck, (isStuck) => {
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
+  /* Handle mobile browser chrome and notches */
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  box-sizing: border-box;
+  position: relative;
 }
 
 .app {
@@ -1843,7 +1850,7 @@ watch(isPlayerStuck, (isStuck) => {
 /* Dew Hint Message */
 .hint-message {
   position: fixed;
-  bottom: 68px;
+  bottom: calc(68px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
   z-index: 150;
@@ -1925,7 +1932,7 @@ watch(isPlayerStuck, (isStuck) => {
 
 @media (max-width: 480px) {
   .hint-message {
-    bottom: 84px;
+    bottom: calc(84px + env(safe-area-inset-bottom, 0px));
   }
 
   .hint-sprite {

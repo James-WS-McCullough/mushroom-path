@@ -814,7 +814,7 @@ defineExpose({
 /* Floating remaining tiles counter */
 .tiles-remaining {
   position: fixed;
-  bottom: 70px;
+  bottom: calc(70px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
   font-family: 'Georgia', serif;
@@ -830,7 +830,7 @@ defineExpose({
 
 @media (max-width: 480px) {
   .tiles-remaining {
-    bottom: 86px;
+    bottom: calc(86px + env(safe-area-inset-bottom, 0px));
   }
 }
 </style>

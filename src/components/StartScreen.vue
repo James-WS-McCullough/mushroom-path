@@ -506,7 +506,7 @@ function handleTutorial() {
 
 .ground {
   position: absolute;
-  bottom: 60px;
+  bottom: calc(60px + env(safe-area-inset-bottom, 0px));
   display: flex;
   gap: 80px;
 }

@@ -564,8 +564,8 @@ onUnmounted(() => {
 
 .volume-popup {
   position: fixed;
-  top: 72px;
-  right: 16px;
+  top: calc(72px + env(safe-area-inset-top, 0px));
+  right: calc(16px + env(safe-area-inset-right, 0px));
   z-index: 1000;
   min-width: 180px;
   background: linear-gradient(180deg, rgba(255, 248, 230, 0.98) 0%, rgba(240, 230, 210, 0.98) 100%);

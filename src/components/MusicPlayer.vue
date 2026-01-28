@@ -811,7 +811,7 @@ onUnmounted(() => {
 
 .ground {
   position: fixed;
-  bottom: 40px;
+  bottom: calc(40px + env(safe-area-inset-bottom, 0px));
   display: flex;
   gap: 120px;
   pointer-events: none;
