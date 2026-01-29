@@ -17,6 +17,7 @@ const allElements: { id: WorldElement; name: string; icon: string }[] = [
 	{ id: WE.BOUNCE, name: "Bounce", icon: "🦘" },
 	{ id: WE.HONEY, name: "Honey", icon: "🍯" },
 	{ id: WE.ACORN, name: "Acorns", icon: "🌰" },
+	{ id: WE.STAR, name: "Star Path", icon: "⭐" },
 ];
 
 const selectedElements = ref<Set<WorldElement>>(new Set());
@@ -33,6 +34,9 @@ const incompatiblePairs: [WorldElement, WorldElement][] = [
 	[WE.ACORN, WE.ICE], // Autumn and frozen don't mix
 	[WE.ACORN, WE.POND], // Autumn and lily pads don't mix
 	[WE.ACORN, WE.TIDES], // Autumn and beach don't mix
+	[WE.STAR, WE.ICE], // Starlit and frozen don't mix
+	[WE.STAR, WE.POND], // Starlit and lily pads don't mix
+	[WE.STAR, WE.TIDES], // Starlit and beach don't mix
 ];
 
 function isIncompatible(element: WorldElement): boolean {

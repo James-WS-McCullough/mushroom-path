@@ -35,6 +35,9 @@ export interface GeneratorConfig {
 	bounceChance: number;
 	honeyChance: number;
 	acornChance: number;
+	starChance: number;
+	starPathMinLength: number;
+	starPathMaxLength: number;
 }
 
 const DEFAULT_CONFIG: GeneratorConfig = {
@@ -60,6 +63,9 @@ const DEFAULT_CONFIG: GeneratorConfig = {
 	bounceChance: 0.08,
 	honeyChance: 0.08,
 	acornChance: 0.1, // 1-3 squirrels when ACORN element is active
+	starChance: 0.1,
+	starPathMinLength: 2,
+	starPathMaxLength: 5,
 };
 
 interface Rectangle {
@@ -677,6 +683,7 @@ function computeSlideDestination(
 // Dirt tiles need to be visited TWICE (first visit: dirt->grass, second visit: grass->mushroom)
 // Ice tiles are slippery - entering from a direction causes sliding until leaving ice
 // Low sand tiles are walkable and need to be visited, but must avoid being on them during flood (pathLength % MECHANICS.TIDE_PERIOD === 0)
+// Star tiles: BASE_STAR acts like grass, and stepping on it "blooms" all connected STAR_PATH tiles (marks them as visited)
 function findHamiltonianPath(
 	grassTiles: Position[],
 	obstacleTiles: Set<string>,
@@ -690,12 +697,27 @@ function findHamiltonianPath(
 	lowSandTiles: Set<string> = new Set(),
 	bouncePadTiles: Set<string> = new Set(),
 	honeyTiles: Set<string> = new Set(),
+	baseStarTiles: Set<string> = new Set(),
+	starPathTiles: Set<string> = new Set(),
+	starConnections: Record<string, string> = {}, // STAR_PATH key -> BASE_STAR key
 ): Position[] | null {
 	const grassSet = new Set(grassTiles.map((t) => posKey(t.x, t.y)));
 
-	// Total visits needed: each grass tile once, each dirt tile twice, each low sand tile once
-	// grassTiles already includes low sand tiles
-	const totalVisitsNeeded = grassTiles.length + dirtTiles.size;
+	// Build reverse mapping: BASE_STAR key -> array of STAR_PATH keys
+	const baseStarToStarPaths: Record<string, string[]> = {};
+	for (const [starPathKey, baseStarKey] of Object.entries(starConnections)) {
+		if (!baseStarToStarPaths[baseStarKey]) {
+			baseStarToStarPaths[baseStarKey] = [];
+		}
+		baseStarToStarPaths[baseStarKey].push(starPathKey);
+	}
+
+	// Total visits needed: each grass tile once, each dirt tile twice
+	// Star tiles count as grass tiles (BASE_STAR needs visiting, STAR_PATH tiles are auto-completed when their BASE_STAR is visited)
+	// grassTiles already includes low sand tiles, base stars, and star paths
+	// But we don't need to count STAR_PATH tiles separately since they're completed by visiting BASE_STAR
+	const starPathCount = starPathTiles.size;
+	const totalVisitsNeeded = grassTiles.length + dirtTiles.size - starPathCount;
 
 	// Limit iterations to prevent freezing
 	// With connectivity pruning, we need far fewer iterations
@@ -724,6 +746,7 @@ function findHamiltonianPath(
 
 		const key = posKey(current.x, current.y);
 		const isDirt = dirtTiles.has(key);
+		const isBaseStar = baseStarTiles.has(key);
 		const wasVisitedOnce = visitedOnce.has(key);
 
 		// Build new recent path for lily-pad cooldown tracking
@@ -734,21 +757,32 @@ function findHamiltonianPath(
 			// Second visit to dirt tile
 			visitedTwice.add(key);
 		} else {
-			// First visit (grass or dirt)
+			// First visit (grass or dirt or base star)
 			visitedOnce.add(key);
+
+			// If this is a BASE_STAR, bloom all connected STAR_PATH tiles
+			if (isBaseStar) {
+				const connectedStarPaths = baseStarToStarPaths[key] ?? [];
+				for (const starPathKey of connectedStarPaths) {
+					visitedOnce.add(starPathKey);
+				}
+			}
 		}
 
 		// Count completed tiles
 		// Grass tiles: completed after 1 visit
 		// Dirt tiles: completed after 2 visits
+		// STAR_PATH tiles are completed when their BASE_STAR is visited (already handled above)
 		// Only count actual grass tiles (not lilypads or other visited tiles)
+		// Don't count STAR_PATH tiles separately - they're completed via BASE_STAR
 		const completedGrass = [...visitedOnce].filter(
-			(k) => grassSet.has(k) && !dirtTiles.has(k),
+			(k) => grassSet.has(k) && !dirtTiles.has(k) && !starPathTiles.has(k),
 		).length;
 		const completedDirt = visitedTwice.size;
 
 		// Check if path is complete
-		const grassOnlyCount = grassTiles.length - dirtTiles.size;
+		// grassOnlyCount excludes dirt tiles and STAR_PATH tiles (since STAR_PATHs are auto-completed)
+		const grassOnlyCount = grassTiles.length - dirtTiles.size - starPathTiles.size;
 		if (completedGrass === grassOnlyCount && completedDirt === dirtTiles.size) {
 			return [current];
 		}
@@ -1554,6 +1588,134 @@ function placeSquirrelsAndAcorns(
 	}
 
 	return { squirrels, acorns, squirrelRequirements };
+}
+
+// Generate star paths - a BASE_STAR tile with 2-5 connected STAR_PATH tiles in a snake pattern
+// Landing on BASE_STAR blooms all connected STAR_PATH tiles into mushrooms instantly
+function generateStarPaths(
+	grass: Set<string>,
+	brambles: Set<string>,
+	stones: Set<string>,
+	water: Set<string>,
+	ice: Set<string>,
+	chance: number,
+	minLength: number,
+	maxLength: number,
+): {
+	grass: Set<string>;
+	baseStars: Set<string>;
+	starPaths: Set<string>;
+	starConnections: Record<string, string>; // STAR_PATH key -> BASE_STAR key
+	starTrailFrom: Record<string, string>; // STAR_PATH key -> previous tile key (for visual trail)
+	starTrailTo: Record<string, string>; // tile key -> next tile key (for visual trail)
+} {
+	const remainingGrass = new Set(grass);
+	const baseStars = new Set<string>();
+	const starPaths = new Set<string>();
+	const starConnections: Record<string, string> = {};
+	const starTrailFrom: Record<string, string> = {};
+	const starTrailTo: Record<string, string> = {};
+
+	if (chance <= 0) {
+		return { grass: remainingGrass, baseStars, starPaths, starConnections, starTrailFrom, starTrailTo };
+	}
+
+	// Target 1-3 star paths per level
+	const numStarPaths = randomInt(1, 3);
+
+	for (let i = 0; i < numStarPaths; i++) {
+		// Pick a random grass tile as the BASE_STAR
+		const candidates = shuffleArray(Array.from(remainingGrass));
+		let pathCreated = false;
+
+		for (const startKey of candidates) {
+			if (!remainingGrass.has(startKey)) continue;
+
+			// Try to grow a snake path from this starting point
+			const pathLength = randomInt(minLength, maxLength);
+			const pathTiles: string[] = [];
+			const visited = new Set<string>();
+			let current = startKey;
+			visited.add(current);
+
+			// BFS-style growth: extend in snake pattern
+			for (let step = 0; step < pathLength; step++) {
+				const currentPos = parseKey(current);
+				const neighbors = shuffleArray([
+					posKey(currentPos.x + 1, currentPos.y),
+					posKey(currentPos.x - 1, currentPos.y),
+					posKey(currentPos.x, currentPos.y + 1),
+					posKey(currentPos.x, currentPos.y - 1),
+				]);
+
+				let foundNext = false;
+				for (const neighbor of neighbors) {
+					if (
+						!visited.has(neighbor) &&
+						remainingGrass.has(neighbor) &&
+						!stones.has(neighbor) &&
+						!water.has(neighbor) &&
+						!ice.has(neighbor)
+					) {
+						pathTiles.push(neighbor);
+						visited.add(neighbor);
+						current = neighbor;
+						foundNext = true;
+						break;
+					}
+				}
+
+				if (!foundNext) break;
+			}
+
+			// Need at least minLength tiles in the path
+			if (pathTiles.length < minLength) continue;
+
+			// Validate: check connectivity after removing these tiles
+			const testGrass = new Set(remainingGrass);
+			testGrass.delete(startKey);
+			for (const tile of pathTiles) {
+				testGrass.delete(tile);
+			}
+
+			// Need at least 8 grass tiles remaining
+			if (testGrass.size < 8) continue;
+
+			// Check connectivity (star tiles act as walkable bridges like grass)
+			const walkableBridges = new Set([
+				...stones,
+				...water,
+				...ice,
+				startKey,
+				...pathTiles,
+			]);
+			if (!isConnectedWithJumps(testGrass, brambles, walkableBridges)) continue;
+
+			// Valid star path! Commit it
+			remainingGrass.delete(startKey);
+			baseStars.add(startKey);
+
+			// Record trail connections: each tile points to the previous and next tile in the chain
+			let prevTile = startKey;
+			for (let i = 0; i < pathTiles.length; i++) {
+				const tile = pathTiles[i]!;
+				remainingGrass.delete(tile);
+				starPaths.add(tile);
+				starConnections[tile] = startKey;
+				starTrailFrom[tile] = prevTile; // This tile connects from the previous one
+				starTrailTo[prevTile] = tile; // Previous tile connects to this one
+				prevTile = tile;
+			}
+
+			pathCreated = true;
+			break;
+		}
+
+		// If we couldn't create a path, stop trying
+		if (!pathCreated) break;
+	}
+
+	return { grass: remainingGrass, baseStars, starPaths, starConnections, starTrailFrom, starTrailTo };
 }
 
 // Add ice tiles in clusters - ice acts as walkable bridge that causes sliding
@@ -2493,6 +2655,11 @@ function buildLevelFromPath(
 	squirrels: Set<string> = new Set(),
 	acorns: Set<string> = new Set(),
 	squirrelRequirementsInput: Record<string, number> = {},
+	baseStars: Set<string> = new Set(),
+	starPaths: Set<string> = new Set(),
+	starConnectionsInput: Record<string, string> = {},
+	starTrailFromInput: Record<string, string> = {},
+	starTrailToInput: Record<string, string> = {},
 ): Level {
 	let minX = Number.POSITIVE_INFINITY;
 	let minY = Number.POSITIVE_INFINITY;
@@ -2547,6 +2714,10 @@ function buildLevelFromPath(
 				row.push(TileType.SQUIRREL);
 			} else if (acorns.has(key)) {
 				row.push(TileType.ACORN);
+			} else if (baseStars.has(key)) {
+				row.push(TileType.BASE_STAR);
+			} else if (starPaths.has(key)) {
+				row.push(TileType.STAR_PATH);
 			} else if (allShapeTiles.has(key)) {
 				row.push(TileType.GRASS);
 			} else {
@@ -2593,6 +2764,36 @@ function buildLevelFromPath(
 		adjustedSquirrelRequirements[adjustedKey] = requirement;
 	}
 
+	// Adjust star connections coordinates relative to grid
+	const adjustedStarConnections: Record<string, string> = {};
+	for (const [starPathKey, baseStarKey] of Object.entries(starConnectionsInput)) {
+		const starPathPos = parseKey(starPathKey);
+		const baseStarPos = parseKey(baseStarKey);
+		const adjustedStarPathKey = posKey(starPathPos.x - minX, starPathPos.y - minY);
+		const adjustedBaseStarKey = posKey(baseStarPos.x - minX, baseStarPos.y - minY);
+		adjustedStarConnections[adjustedStarPathKey] = adjustedBaseStarKey;
+	}
+
+	// Adjust star trail from coordinates relative to grid
+	const adjustedStarTrailFrom: Record<string, string> = {};
+	for (const [tileKey, fromKey] of Object.entries(starTrailFromInput)) {
+		const tilePos = parseKey(tileKey);
+		const fromPos = parseKey(fromKey);
+		const adjustedTileKey = posKey(tilePos.x - minX, tilePos.y - minY);
+		const adjustedFromKey = posKey(fromPos.x - minX, fromPos.y - minY);
+		adjustedStarTrailFrom[adjustedTileKey] = adjustedFromKey;
+	}
+
+	// Adjust star trail to coordinates relative to grid
+	const adjustedStarTrailTo: Record<string, string> = {};
+	for (const [tileKey, toKey] of Object.entries(starTrailToInput)) {
+		const tilePos = parseKey(tileKey);
+		const toPos = parseKey(toKey);
+		const adjustedTileKey = posKey(tilePos.x - minX, tilePos.y - minY);
+		const adjustedToKey = posKey(toPos.x - minX, toPos.y - minY);
+		adjustedStarTrailTo[adjustedTileKey] = adjustedToKey;
+	}
+
 	return {
 		name: "Generated",
 		width,
@@ -2606,6 +2807,18 @@ function buildLevelFromPath(
 		squirrelRequirements:
 			Object.keys(adjustedSquirrelRequirements).length > 0
 				? adjustedSquirrelRequirements
+				: undefined,
+		starConnections:
+			Object.keys(adjustedStarConnections).length > 0
+				? adjustedStarConnections
+				: undefined,
+		starTrailFrom:
+			Object.keys(adjustedStarTrailFrom).length > 0
+				? adjustedStarTrailFrom
+				: undefined,
+		starTrailTo:
+			Object.keys(adjustedStarTrailTo).length > 0
+				? adjustedStarTrailTo
 				: undefined,
 	};
 }
@@ -2627,10 +2840,11 @@ function verifyLevel(level: Level): boolean {
 		return false;
 	}
 
-	// Count grass, dirt, low_sand, portal, squirrel, and acorn tiles - should be at least 8
+	// Count grass, dirt, low_sand, portal, squirrel, acorn, and star tiles - should be at least 8
 	// Dirt counts as 1 tile (even though it needs 2 visits)
 	// Portal tiles count as grass tiles (walkable, need to be visited)
 	// Squirrel and acorn tiles count as walkable tiles
+	// Star tiles (base star and star path) count as walkable tiles
 	let grassCount = 0;
 	for (const row of level.grid) {
 		for (const tile of row) {
@@ -2642,7 +2856,9 @@ function verifyLevel(level: Level): boolean {
 				tile === TileType.PORTAL_BLUE ||
 				tile === TileType.PORTAL_YELLOW ||
 				tile === TileType.SQUIRREL ||
-				tile === TileType.ACORN
+				tile === TileType.ACORN ||
+				tile === TileType.BASE_STAR ||
+				tile === TileType.STAR_PATH
 			) {
 				grassCount++;
 			}
@@ -2734,6 +2950,14 @@ export function generateLevel(
 		elementConfig.acornChance = 1.0; // Always generate squirrels when element is active
 	}
 
+	// Star paths only generate if the STAR element is active
+	if (!elements.includes(WE.STAR)) {
+		elementConfig.starChance = 0;
+	} else {
+		// Set star chance to ensure star paths appear reliably
+		elementConfig.starChance = 1.0; // Always generate star paths when element is active
+	}
+
 	const fullConfig = { ...DEFAULT_CONFIG, ...elementConfig };
 	const maxRetries = 100;
 
@@ -2794,7 +3018,7 @@ export function generateLevel(
 
 		// Add tidal zones (low sand and sea tiles)
 		const {
-			grass,
+			grass: grassAfterTides,
 			lowSand,
 			sea,
 		} = addTidalZones(
@@ -2807,12 +3031,34 @@ export function generateLevel(
 			fullConfig.tidesClusterSize,
 		);
 
+		// Generate star paths (base star + connected star path tiles)
+		const {
+			grass,
+			baseStars,
+			starPaths,
+			starConnections,
+			starTrailFrom,
+			starTrailTo,
+		} = generateStarPaths(
+			grassAfterTides,
+			bramblesAfterPond,
+			stonesAfterPond,
+			water,
+			ice,
+			fullConfig.starChance,
+			fullConfig.starPathMinLength,
+			fullConfig.starPathMaxLength,
+		);
+
 		const shape = new Set(baseShape);
 
-		// Include lowSand tiles in grassTiles for pathfinding (they need to be visited)
+		// Include lowSand tiles and star tiles in grassTiles for pathfinding (they need to be visited)
+		// For star paths: BASE_STAR acts like grass (needs to be visited), STAR_PATH tiles bloom when BASE_STAR is stepped on
 		const grassTiles = [
 			...Array.from(grass).map(parseKey),
 			...Array.from(lowSand).map(parseKey),
+			...Array.from(baseStars).map(parseKey),
+			...Array.from(starPaths).map(parseKey),
 		];
 
 		if (grassTiles.length < 8) continue;
@@ -2841,7 +3087,8 @@ export function generateLevel(
 		);
 
 		// Find path - path finder will visit dirt tiles twice, handle ice sliding,
-		// avoid low sand during floods, handle bounce pad mechanics, and respect honey no-jump restriction
+		// avoid low sand during floods, handle bounce pad mechanics, respect honey no-jump restriction,
+		// and handle star bloom (BASE_STAR blooms connected STAR_PATH tiles when visited)
 		const path = findHamiltonianPath(
 			grassTiles,
 			bramblesAfterPond,
@@ -2855,6 +3102,9 @@ export function generateLevel(
 			lowSand,
 			bouncePads,
 			honey,
+			baseStars,
+			starPaths,
+			starConnections,
 		);
 
 		if (path) {
@@ -2877,6 +3127,8 @@ export function generateLevel(
 				...dirt,
 				...honey,
 				...portals.keys(),
+				...baseStars,
+				...starPaths,
 			]);
 
 			// Place squirrels and acorns along the solved path
@@ -2907,6 +3159,11 @@ export function generateLevel(
 				squirrels,
 				acorns,
 				squirrelRequirements,
+				baseStars,
+				starPaths,
+				starConnections,
+				starTrailFrom,
+				starTrailTo,
 			);
 			if (verifyLevel(level)) {
 				return level;

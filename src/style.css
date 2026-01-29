@@ -768,3 +768,147 @@ body.biome-autumn::after {
 		radial-gradient(circle at 72% 88%, rgba(100, 50, 35, 0.4) 0%, transparent 3px),
 		radial-gradient(circle at 48% 92%, rgba(100, 50, 35, 0.3) 0%, transparent 3px);
 }
+
+/* ============================================================================
+   STARLIT PLAINS BIOME
+   ============================================================================ */
+
+body.biome-starlit {
+	background:
+		/* Soft starlight glow at top */
+		radial-gradient(
+			ellipse 80% 50% at 30% 20%,
+			rgba(180, 200, 220, 0.4) 0%,
+			transparent 50%
+		),
+		radial-gradient(
+			ellipse 60% 40% at 70% 30%,
+			rgba(200, 220, 180, 0.3) 0%,
+			transparent 45%
+		),
+		/* Main starlit gradient - pale green/blue pastels */
+		linear-gradient(
+			180deg,
+			#a8c8b8 0%,
+			#98baa8 15%,
+			#88ac98 30%,
+			#789e88 50%,
+			#689078 70%,
+			#588268 85%,
+			#487458 100%
+		);
+}
+
+/* Twinkling stars particles */
+body.biome-starlit::before {
+	background-image:
+		/* Large bright stars */
+		radial-gradient(
+			circle at 15% 15%,
+			rgba(255, 255, 200, 0.95) 0%,
+			rgba(255, 255, 150, 0.6) 2px,
+			transparent 4px
+		),
+		radial-gradient(
+			circle at 75% 12%,
+			rgba(255, 255, 200, 0.9) 0%,
+			rgba(255, 255, 150, 0.5) 2px,
+			transparent 4px
+		),
+		radial-gradient(
+			circle at 45% 8%,
+			rgba(255, 255, 200, 0.85) 0%,
+			rgba(255, 255, 150, 0.4) 2px,
+			transparent 3px
+		),
+		/* Medium stars */
+		radial-gradient(
+			circle at 25% 25%,
+			rgba(255, 250, 205, 0.8) 0%,
+			transparent 2px
+		),
+		radial-gradient(
+			circle at 85% 22%,
+			rgba(255, 250, 205, 0.75) 0%,
+			transparent 2px
+		),
+		radial-gradient(
+			circle at 55% 18%,
+			rgba(255, 250, 205, 0.7) 0%,
+			transparent 2px
+		),
+		radial-gradient(
+			circle at 35% 35%,
+			rgba(255, 250, 205, 0.65) 0%,
+			transparent 2px
+		),
+		radial-gradient(
+			circle at 65% 28%,
+			rgba(255, 250, 205, 0.7) 0%,
+			transparent 2px
+		),
+		/* Small twinkling stars */
+		radial-gradient(
+			circle at 10% 40%,
+			rgba(255, 255, 220, 0.5) 0%,
+			transparent 1px
+		),
+		radial-gradient(
+			circle at 92% 35%,
+			rgba(255, 255, 220, 0.5) 0%,
+			transparent 1px
+		),
+		radial-gradient(
+			circle at 50% 32%,
+			rgba(255, 255, 220, 0.5) 0%,
+			transparent 1px
+		),
+		radial-gradient(
+			circle at 20% 50%,
+			rgba(255, 255, 220, 0.4) 0%,
+			transparent 1px
+		),
+		radial-gradient(
+			circle at 80% 45%,
+			rgba(255, 255, 220, 0.4) 0%,
+			transparent 1px
+		),
+		radial-gradient(
+			circle at 40% 55%,
+			rgba(255, 255, 220, 0.4) 0%,
+			transparent 1px
+		);
+	animation: twinkle 4s ease-in-out infinite;
+}
+
+@keyframes twinkle {
+	0%, 100% {
+		opacity: 0.7;
+		transform: scale(1);
+	}
+	25% {
+		opacity: 1;
+		transform: scale(1.05);
+	}
+	50% {
+		opacity: 0.8;
+		transform: scale(0.98);
+	}
+	75% {
+		opacity: 0.95;
+		transform: scale(1.02);
+	}
+}
+
+/* Starlit floor silhouettes */
+body.biome-starlit::after {
+	background:
+		/* Soft grassy mounds */
+		radial-gradient(ellipse 35px 20px at 10% 100%, #3a6050 0%, transparent 70%),
+		radial-gradient(ellipse 28px 16px at 18% 95%, #4a7060 0%, transparent 70%),
+		radial-gradient(ellipse 40px 22px at 85% 100%, #3a6050 0%, transparent 70%),
+		radial-gradient(ellipse 30px 18px at 78% 92%, #4a7060 0%, transparent 70%),
+		radial-gradient(ellipse 45px 20px at 50% 100%, #3a6050 0%, transparent 70%),
+		radial-gradient(ellipse 22px 12px at 35% 98%, #4a7060 0%, transparent 70%),
+		radial-gradient(ellipse 25px 14px at 65% 96%, #4a7060 0%, transparent 70%);
+}

@@ -18,6 +18,7 @@ const props = defineProps<{
 	hasPondElement?: boolean;
 	hasTidesElement?: boolean;
 	hasAcornElement?: boolean;
+	hasStarElement?: boolean;
 	disabled?: boolean;
 	hintTiles?: Position[];
 	stuckTiles?: Position[];
@@ -363,6 +364,51 @@ function getMovesUntilFloodForTile(tilePos: Position): number | undefined {
 	return game.getMovesUntilFlood();
 }
 
+// Get the direction the star trail comes FROM for a given tile position
+// Get the direction the star trail comes FROM for a given tile position
+function getStarTrailFromDirection(tilePos: Position): "up" | "down" | "left" | "right" | null {
+	if (!props.level.starTrailFrom) return null;
+	const key = `${tilePos.x},${tilePos.y}`;
+	const fromKey = props.level.starTrailFrom[key];
+	if (!fromKey) return null;
+
+	// Parse the "from" position and determine direction
+	const [fromX, fromY] = fromKey.split(",").map(Number);
+	if (fromX === undefined || fromY === undefined) return null;
+
+	const dx = fromX - tilePos.x;
+	const dy = fromY - tilePos.y;
+
+	if (dx === -1 && dy === 0) return "left";
+	if (dx === 1 && dy === 0) return "right";
+	if (dx === 0 && dy === -1) return "up";
+	if (dx === 0 && dy === 1) return "down";
+
+	return null;
+}
+
+// Get the direction the star trail goes TO for a given tile position
+function getStarTrailToDirection(tilePos: Position): "up" | "down" | "left" | "right" | null {
+	if (!props.level.starTrailTo) return null;
+	const key = `${tilePos.x},${tilePos.y}`;
+	const toKey = props.level.starTrailTo[key];
+	if (!toKey) return null;
+
+	// Parse the "to" position and determine direction
+	const [toX, toY] = toKey.split(",").map(Number);
+	if (toX === undefined || toY === undefined) return null;
+
+	const dx = toX - tilePos.x;
+	const dy = toY - tilePos.y;
+
+	if (dx === -1 && dy === 0) return "left";
+	if (dx === 1 && dy === 0) return "right";
+	if (dx === 0 && dy === -1) return "up";
+	if (dx === 0 && dy === 1) return "down";
+
+	return null;
+}
+
 function getPoofStyle(position: Position) {
 	const boardPadding = hasRooms.value ? 0 : 3;
 	// Match character positioning: boardPadding + position * 67, then add half tile for center
@@ -511,11 +557,14 @@ defineExpose({
             :has-pond-element="hasPondElement"
             :has-tides-element="hasTidesElement"
             :has-acorn-element="hasAcornElement"
+            :has-star-element="hasStarElement"
             :tide-phase="game.tidePhase.value"
             :moves-until-flood="getMovesUntilFloodForTile(tile.position)"
             :lilypad-state="game.getLilypadState(tile.position)"
             :squirrel-requirement="game.getSquirrelRequirement(tile.position)"
             :collected-acorns="game.collectedAcorns.value"
+            :star-trail-from-direction="getStarTrailFromDirection(tile.position)"
+            :star-trail-to-direction="getStarTrailToDirection(tile.position)"
             :should-shimmer="shouldShimmer()"
             @click="handleTileClick(tile.position)"
           />

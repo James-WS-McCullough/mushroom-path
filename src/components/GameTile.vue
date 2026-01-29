@@ -24,12 +24,15 @@ const props = defineProps<{
 	hasPondElement?: boolean;
 	hasTidesElement?: boolean;
 	hasAcornElement?: boolean;
+	hasStarElement?: boolean;
 	shouldShimmer?: boolean;
 	lilypadState?: LilypadState;
 	tidePhase?: number;
 	movesUntilFlood?: number;
 	squirrelRequirement?: number;
 	collectedAcorns?: number;
+	starTrailFromDirection?: "up" | "down" | "left" | "right" | null; // Direction the trail comes FROM
+	starTrailToDirection?: "up" | "down" | "left" | "right" | null; // Direction the trail goes TO
 }>();
 
 // Check if low sand tiles are currently flooded (tidePhase === 0)
@@ -73,7 +76,9 @@ const tileClass = computed(() => {
 		(props.tile.type === TileType.GRASS ||
 			props.tile.type === TileType.DIRT ||
 			props.tile.type === TileType.LOW_SAND ||
-			props.tile.type === TileType.ACORN);
+			props.tile.type === TileType.ACORN ||
+			props.tile.type === TileType.BASE_STAR ||
+			props.tile.type === TileType.STAR_PATH);
 
 	// Night biome (pond element) overrides other biomes
 	const isNightBiome = props.hasPondElement && !props.hasIceElement;
@@ -81,8 +86,11 @@ const tileClass = computed(() => {
 	// Beach biome (tides element)
 	const isBeachBiome = props.hasTidesElement && !props.hasIceElement && !isNightBiome;
 
+	// Starlit biome (star element) - between beach and autumn
+	const isStarlitBiome = props.hasStarElement && !props.hasIceElement && !isNightBiome && !isBeachBiome;
+
 	// Autumn biome (acorn element) - higher priority than swamp
-	const isAutumnBiome = props.hasAcornElement && !props.hasIceElement && !isNightBiome && !isBeachBiome;
+	const isAutumnBiome = props.hasAcornElement && !props.hasIceElement && !isNightBiome && !isBeachBiome && !isStarlitBiome;
 
 	return {
 		tile: true,
@@ -153,6 +161,10 @@ const tileClass = computed(() => {
 		"tile--squirrel-ready":
 			props.tile.type === TileType.SQUIRREL &&
 			(props.collectedAcorns ?? 0) >= (props.squirrelRequirement ?? 1),
+		// Star path tiles
+		"tile--base-star": props.tile.type === TileType.BASE_STAR,
+		"tile--star-path": props.tile.type === TileType.STAR_PATH,
+		"tile--star-mushroom": props.tile.type === TileType.STAR_MUSHROOM,
 		// Sand mushroom (mushroom planted on low sand)
 		"tile--sand-mushroom": props.tile.type === TileType.SAND_MUSHROOM,
 		"tile--sand-mushroom-flooded":
@@ -198,11 +210,20 @@ const tileClass = computed(() => {
 			isAutumnBiome && props.tile.type === TileType.MUSHROOM,
 		"tile--autumn-dirt":
 			isAutumnBiome && (props.tile.type === TileType.DIRT || props.isJustCleaned),
-		// Swamp biome (fallback when no ice, night, beach, or autumn)
+		// Starlit biome (star element) - pale green/blue pastels
+		"tile--starlit":
+			isStarlitBiome &&
+			(props.tile.type === TileType.GRASS || props.tile.type === TileType.BASE_STAR || props.tile.type === TileType.STAR_PATH || isPortal.value),
+		"tile--starlit-mushroom":
+			isStarlitBiome && props.tile.type === TileType.MUSHROOM,
+		"tile--starlit-dirt":
+			isStarlitBiome && (props.tile.type === TileType.DIRT || props.isJustCleaned),
+		// Swamp biome (fallback when no ice, night, beach, starlit, or autumn)
 		"tile--swamp":
 			!props.hasIceElement &&
 			!isNightBiome &&
 			!isBeachBiome &&
+			!isStarlitBiome &&
 			!isAutumnBiome &&
 			props.hasDirtElement &&
 			(props.tile.type === TileType.GRASS || isPortal.value),
@@ -210,6 +231,7 @@ const tileClass = computed(() => {
 			!props.hasIceElement &&
 			!isNightBiome &&
 			!isBeachBiome &&
+			!isStarlitBiome &&
 			!isAutumnBiome &&
 			props.hasDirtElement &&
 			props.tile.type === TileType.MUSHROOM,
@@ -217,6 +239,7 @@ const tileClass = computed(() => {
 			!props.hasIceElement &&
 			!isNightBiome &&
 			!isBeachBiome &&
+			!isStarlitBiome &&
 			!isAutumnBiome &&
 			props.hasDirtElement &&
 			(props.tile.type === TileType.DIRT || props.isJustCleaned),
@@ -255,6 +278,12 @@ const brambleVariant = computed(() => {
 const honeyVariant = computed(() => {
 	const hash = props.tile.position.x * 19 + props.tile.position.y * 23;
 	return hash % 4;
+});
+
+// Deterministic star mushroom variant based on position (0-4)
+const starMushroomVariant = computed(() => {
+	const hash = props.tile.position.x * 29 + props.tile.position.y * 31;
+	return hash % 5;
 });
 
 // Deterministic dirt layout variant based on position (0-3)
@@ -334,6 +363,82 @@ function handleClick() {
         <div class="mushroom mushroom--tiny mushroom--tan">
           <div class="mushroom__cap"></div>
           <div class="mushroom__stem"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Star Mushroom - unique glowing star-themed mushroom for starlit biome -->
+    <div v-if="tile.type === TileType.STAR_MUSHROOM" :class="['star-mushroom-container', { 'mushroom--pop': isJustPlanted }]">
+      <!-- Ground star imprint beneath the mushroom -->
+      <div class="star-mushroom__ground-star"></div>
+
+      <!-- Variant 0: Single gold star mushroom -->
+      <div v-if="starMushroomVariant === 0" class="star-mushroom star-mushroom--gold">
+        <div class="star-mushroom__glow"></div>
+        <div class="star-mushroom__cap">
+          <div class="star-mushroom__star"></div>
+        </div>
+        <div class="star-mushroom__stem"></div>
+      </div>
+
+      <!-- Variant 1: Single silver/blue star mushroom -->
+      <div v-else-if="starMushroomVariant === 1" class="star-mushroom star-mushroom--silver">
+        <div class="star-mushroom__glow"></div>
+        <div class="star-mushroom__cap">
+          <div class="star-mushroom__star"></div>
+        </div>
+        <div class="star-mushroom__stem"></div>
+      </div>
+
+      <!-- Variant 2: Double star mushrooms (gold + silver) -->
+      <div v-else-if="starMushroomVariant === 2" class="star-mushroom-cluster">
+        <div class="star-mushroom star-mushroom--gold star-mushroom--small star-mushroom--left">
+          <div class="star-mushroom__glow"></div>
+          <div class="star-mushroom__cap">
+            <div class="star-mushroom__star"></div>
+          </div>
+          <div class="star-mushroom__stem"></div>
+        </div>
+        <div class="star-mushroom star-mushroom--silver star-mushroom--small star-mushroom--right">
+          <div class="star-mushroom__glow"></div>
+          <div class="star-mushroom__cap">
+            <div class="star-mushroom__star"></div>
+          </div>
+          <div class="star-mushroom__stem"></div>
+        </div>
+      </div>
+
+      <!-- Variant 3: Single pink/rose star mushroom -->
+      <div v-else-if="starMushroomVariant === 3" class="star-mushroom star-mushroom--rose">
+        <div class="star-mushroom__glow"></div>
+        <div class="star-mushroom__cap">
+          <div class="star-mushroom__star"></div>
+        </div>
+        <div class="star-mushroom__stem"></div>
+      </div>
+
+      <!-- Variant 4: Triple tiny star mushrooms -->
+      <div v-else class="star-mushroom-cluster star-mushroom-cluster--triple">
+        <div class="star-mushroom star-mushroom--tiny star-mushroom--gold">
+          <div class="star-mushroom__glow"></div>
+          <div class="star-mushroom__cap">
+            <div class="star-mushroom__star"></div>
+          </div>
+          <div class="star-mushroom__stem"></div>
+        </div>
+        <div class="star-mushroom star-mushroom--tiny star-mushroom--silver">
+          <div class="star-mushroom__glow"></div>
+          <div class="star-mushroom__cap">
+            <div class="star-mushroom__star"></div>
+          </div>
+          <div class="star-mushroom__stem"></div>
+        </div>
+        <div class="star-mushroom star-mushroom--tiny star-mushroom--rose">
+          <div class="star-mushroom__glow"></div>
+          <div class="star-mushroom__cap">
+            <div class="star-mushroom__star"></div>
+          </div>
+          <div class="star-mushroom__stem"></div>
         </div>
       </div>
     </div>
@@ -936,6 +1041,37 @@ function handleClick() {
           <ellipse cx="8" cy="5" rx="6" ry="4" fill="#8B4513"/>
           <ellipse cx="8" cy="13" rx="5" ry="7" fill="#D2691E"/>
         </svg>
+      </div>
+    </div>
+
+    <!-- Base Star tile - landing here blooms connected star paths -->
+    <div v-if="tile.type === TileType.BASE_STAR" class="star-tile star-tile--base">
+      <div class="grass-detail">
+        <div class="grass-blade"></div>
+        <div class="grass-blade"></div>
+        <div class="grass-blade"></div>
+      </div>
+      <!-- Trail connector showing path to next star -->
+      <div v-if="starTrailToDirection" :class="['star-trail', `star-trail--to-${starTrailToDirection}`]"></div>
+      <div class="star star--base">
+        <div class="star__shape"></div>
+        <div class="star__glow"></div>
+      </div>
+    </div>
+
+    <!-- Star Path tile - blooms to mushroom when base star is landed on -->
+    <div v-if="tile.type === TileType.STAR_PATH" class="star-tile star-tile--path">
+      <div class="grass-detail">
+        <div class="grass-blade"></div>
+        <div class="grass-blade"></div>
+        <div class="grass-blade"></div>
+      </div>
+      <!-- Trail connectors showing path from previous and to next star -->
+      <div v-if="starTrailFromDirection" :class="['star-trail', `star-trail--from-${starTrailFromDirection}`]"></div>
+      <div v-if="starTrailToDirection" :class="['star-trail', `star-trail--to-${starTrailToDirection}`]"></div>
+      <div class="star star--path">
+        <div class="star__shape"></div>
+        <div class="star__sparkle"></div>
       </div>
     </div>
 
@@ -4848,5 +4984,609 @@ function handleClick() {
 
 .tile--autumn .squirrel-tile .grass-blade {
   background: linear-gradient(to top, #c68c52 0%, #d49550 50%, #e5b572 100%);
+}
+
+/* ======================================
+   STAR PATH TILE STYLES
+   ====================================== */
+
+.tile--base-star {
+  background: linear-gradient(145deg, #8fbc8f, #6b8e6b);
+}
+
+.tile--star-path {
+  background: linear-gradient(145deg, #8fbc8f, #6b8e6b);
+}
+
+.star-tile {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Base star - larger yellow 5-point star with magical glow */
+.star--base {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  z-index: 2;
+}
+
+.star--base .star__shape {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, #FFD700 0%, #FFC000 50%, #FFB000 100%);
+  clip-path: polygon(
+    50% 0%,
+    61% 35%,
+    98% 35%,
+    68% 57%,
+    79% 91%,
+    50% 70%,
+    21% 91%,
+    32% 57%,
+    2% 35%,
+    39% 35%
+  );
+  filter: drop-shadow(0 0 4px rgba(255, 215, 0, 0.8));
+}
+
+.star--base .star__glow {
+  position: absolute;
+  inset: -8px;
+  background: radial-gradient(
+    circle,
+    rgba(255, 215, 0, 0.6) 0%,
+    rgba(255, 200, 0, 0.3) 40%,
+    transparent 70%
+  );
+  animation: star-pulse 2s ease-in-out infinite;
+}
+
+@keyframes star-pulse {
+  0%, 100% {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+/* Star path - smaller yellow stars with gentle sparkle */
+.star--path {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  z-index: 2;
+}
+
+.star--path .star__shape {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, #FFE44D 0%, #FFD700 50%, #FFC000 100%);
+  clip-path: polygon(
+    50% 0%,
+    61% 35%,
+    98% 35%,
+    68% 57%,
+    79% 91%,
+    50% 70%,
+    21% 91%,
+    32% 57%,
+    2% 35%,
+    39% 35%
+  );
+  filter: drop-shadow(0 0 2px rgba(255, 215, 0, 0.6));
+}
+
+.star--path .star__sparkle {
+  position: absolute;
+  inset: -4px;
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 200, 0.5) 0%,
+    rgba(255, 230, 100, 0.2) 40%,
+    transparent 60%
+  );
+  animation: star-sparkle 3s ease-in-out infinite;
+}
+
+@keyframes star-sparkle {
+  0%, 100% {
+    opacity: 0.5;
+    transform: scale(1) rotate(0deg);
+  }
+  33% {
+    opacity: 0.8;
+    transform: scale(1.1) rotate(5deg);
+  }
+  66% {
+    opacity: 0.6;
+    transform: scale(0.95) rotate(-5deg);
+  }
+}
+
+/* Star trail connector - shows path from previous star in chain */
+.star-trail {
+  position: absolute;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 215, 0, 0.6) 0%,
+    rgba(255, 230, 100, 0.4) 50%,
+    transparent 100%
+  );
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* Trail coming from the left (previous star is to the left) */
+.star-trail--from-left {
+  left: -3px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 35px;
+  height: 8px;
+  border-radius: 4px 0 0 4px;
+}
+
+/* Trail coming from the right */
+.star-trail--from-right {
+  right: -3px;
+  top: 50%;
+  transform: translateY(-50%) rotate(180deg);
+  width: 35px;
+  height: 8px;
+  border-radius: 4px 0 0 4px;
+}
+
+/* Trail coming from above */
+.star-trail--from-up {
+  top: -3px;
+  left: 50%;
+  transform: translateX(-50%) rotate(90deg);
+  width: 35px;
+  height: 8px;
+  border-radius: 4px 0 0 4px;
+}
+
+/* Trail coming from below */
+.star-trail--from-down {
+  bottom: -3px;
+  left: 50%;
+  transform: translateX(-50%) rotate(-90deg);
+  width: 35px;
+  height: 8px;
+  border-radius: 4px 0 0 4px;
+}
+
+/* Trail going TO a direction (outgoing) - same visual but positioned on opposite side */
+.star-trail--to-left {
+  left: -3px;
+  top: 50%;
+  transform: translateY(-50%) rotate(180deg);
+  width: 35px;
+  height: 8px;
+  border-radius: 4px 0 0 4px;
+}
+
+.star-trail--to-right {
+  right: -3px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 35px;
+  height: 8px;
+  border-radius: 4px 0 0 4px;
+}
+
+.star-trail--to-up {
+  top: -3px;
+  left: 50%;
+  transform: translateX(-50%) rotate(-90deg);
+  width: 35px;
+  height: 8px;
+  border-radius: 4px 0 0 4px;
+}
+
+.star-trail--to-down {
+  bottom: -3px;
+  left: 50%;
+  transform: translateX(-50%) rotate(90deg);
+  width: 35px;
+  height: 8px;
+  border-radius: 4px 0 0 4px;
+}
+
+/* ======================================
+   STARLIT BIOME STYLES
+   ====================================== */
+
+.tile--starlit {
+  background: linear-gradient(145deg, #98c8a8, #7ab090);
+}
+
+.tile--starlit .grass-blade {
+  background: linear-gradient(to top, #7ab090 0%, #98c8a8 50%, #b0dcc0 100%);
+}
+
+.tile--starlit-mushroom {
+  background: linear-gradient(145deg, #7aa888, #5c9070);
+}
+
+/* Starlit mushroom cap colors - soft magical hues */
+.tile--starlit-mushroom .mushroom--tan .mushroom__cap {
+  background: linear-gradient(145deg, #c4b8a0, #a09080);
+}
+
+.tile--starlit-mushroom .mushroom--red .mushroom__cap {
+  background: linear-gradient(145deg, #c87088, #a05068);
+}
+
+.tile--starlit-mushroom .mushroom--purple .mushroom__cap {
+  background: linear-gradient(145deg, #9080b0, #706090);
+}
+
+/* Starlit dirt - uses same background as starlit grass */
+.tile--starlit-dirt {
+  background: linear-gradient(145deg, #98c8a8, #7ab090);
+}
+
+.tile--starlit-dirt .dirt-clump,
+.tile--starlit-dirt .dirt-clump--1,
+.tile--starlit-dirt .dirt-clump--2,
+.tile--starlit-dirt .dirt-clump--3 {
+  background: radial-gradient(ellipse, #5a8068 0%, #4a7058 70%, transparent 100%);
+}
+
+.tile--starlit-dirt .dirt-rock,
+.tile--starlit-dirt .dirt-rock--1,
+.tile--starlit-dirt .dirt-rock--2 {
+  background: radial-gradient(ellipse, #7a9888 30%, #6a8878 100%);
+}
+
+/* Starlit dirt uses normal starlit grass blade colors */
+.tile--starlit-dirt .grass-blade {
+  background: linear-gradient(to top, #7ab090 0%, #98c8a8 50%, #b0dcc0 100%);
+}
+
+/* Starlit star tiles */
+.tile--starlit.tile--base-star {
+  background: linear-gradient(145deg, #98c8a8, #7ab090);
+}
+
+.tile--starlit.tile--star-path {
+  background: linear-gradient(145deg, #98c8a8, #7ab090);
+}
+
+.tile--starlit .star-tile .grass-blade {
+  background: linear-gradient(to top, #7ab090 0%, #98c8a8 50%, #b0dcc0 100%);
+}
+
+/* ==========================================================================
+   STAR MUSHROOM - Unique glowing mushroom for starlit biome
+   ========================================================================== */
+.tile--star-mushroom {
+  background: linear-gradient(145deg, #7aa888, #5c9070);
+}
+
+.star-mushroom-container {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+
+.star-mushroom-container.mushroom--pop {
+  animation: mushroomPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Ground star imprint beneath mushrooms */
+.star-mushroom__ground-star {
+  position: absolute;
+  bottom: 8%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 65%;
+  height: 35%;
+  background: linear-gradient(145deg, rgba(255, 220, 100, 0.7), rgba(230, 190, 60, 0.5));
+  clip-path: polygon(
+    50% 0%,
+    61% 35%,
+    98% 35%,
+    68% 57%,
+    79% 91%,
+    50% 70%,
+    21% 91%,
+    32% 57%,
+    2% 35%,
+    39% 35%
+  );
+  z-index: 0;
+  opacity: 0.8;
+  filter: blur(0.5px);
+}
+
+.star-mushroom {
+  position: relative;
+  width: 60%;
+  height: 70%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  z-index: 2;
+}
+
+/* Magical glow effect behind the mushroom */
+.star-mushroom__glow {
+  position: absolute;
+  width: 120%;
+  height: 120%;
+  top: -10%;
+  left: -10%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(255, 223, 128, 0.4) 0%, rgba(255, 200, 100, 0.2) 40%, transparent 70%);
+  animation: star-mushroom-pulse 2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Mushroom cap base styles */
+.star-mushroom__cap {
+  width: 100%;
+  height: 55%;
+  border-radius: 50% 50% 45% 45% / 60% 60% 40% 40%;
+  position: relative;
+  box-shadow:
+    inset 2px 2px 4px rgba(255, 255, 255, 0.4),
+    inset -2px -2px 4px rgba(0, 0, 0, 0.1),
+    0 2px 4px rgba(0, 0, 0, 0.2);
+  z-index: 2;
+}
+
+/* Star shape on the cap */
+.star-mushroom__star {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 50%;
+  height: 50%;
+  clip-path: polygon(
+    50% 0%,
+    61% 35%,
+    98% 35%,
+    68% 57%,
+    79% 91%,
+    50% 70%,
+    21% 91%,
+    32% 57%,
+    2% 35%,
+    39% 35%
+  );
+  animation: star-twinkle 1.5s ease-in-out infinite;
+}
+
+/* Mushroom stem */
+.star-mushroom__stem {
+  width: 35%;
+  height: 45%;
+  background: linear-gradient(90deg, #e8d8a8 0%, #f5ead0 50%, #e8d8a8 100%);
+  border-radius: 20% 20% 30% 30% / 10% 10% 40% 40%;
+  position: relative;
+  top: -5%;
+  box-shadow:
+    inset 1px 0 2px rgba(255, 255, 255, 0.3),
+    inset -1px 0 2px rgba(0, 0, 0, 0.1);
+  z-index: 1;
+}
+
+/* ==========================================================================
+   STAR MUSHROOM COLOR VARIANTS
+   ========================================================================== */
+
+/* Gold variant (default) */
+.star-mushroom--gold .star-mushroom__cap {
+  background: linear-gradient(145deg, #f0d878, #d4b850);
+}
+.star-mushroom--gold .star-mushroom__star {
+  background: linear-gradient(145deg, #fff8e0, #ffe090);
+}
+.star-mushroom--gold .star-mushroom__glow {
+  background: radial-gradient(ellipse, rgba(255, 223, 128, 0.4) 0%, rgba(255, 200, 100, 0.2) 40%, transparent 70%);
+}
+
+/* Silver/Blue variant */
+.star-mushroom--silver .star-mushroom__cap {
+  background: linear-gradient(145deg, #b8c8d8, #98a8b8);
+}
+.star-mushroom--silver .star-mushroom__star {
+  background: linear-gradient(145deg, #e8f0ff, #c0d0e8);
+}
+.star-mushroom--silver .star-mushroom__glow {
+  background: radial-gradient(ellipse, rgba(180, 200, 230, 0.4) 0%, rgba(150, 180, 220, 0.2) 40%, transparent 70%);
+}
+.star-mushroom--silver .star-mushroom__stem {
+  background: linear-gradient(90deg, #c8d0d8 0%, #e0e8f0 50%, #c8d0d8 100%);
+}
+
+/* Rose/Pink variant */
+.star-mushroom--rose .star-mushroom__cap {
+  background: linear-gradient(145deg, #e8a0b8, #d080a0);
+}
+.star-mushroom--rose .star-mushroom__star {
+  background: linear-gradient(145deg, #ffe0e8, #ffc0d0);
+}
+.star-mushroom--rose .star-mushroom__glow {
+  background: radial-gradient(ellipse, rgba(255, 180, 200, 0.4) 0%, rgba(230, 150, 180, 0.2) 40%, transparent 70%);
+}
+.star-mushroom--rose .star-mushroom__stem {
+  background: linear-gradient(90deg, #e8d0d8 0%, #f5e8ec 50%, #e8d0d8 100%);
+}
+
+/* ==========================================================================
+   STAR MUSHROOM SIZE VARIANTS
+   ========================================================================== */
+
+/* Cluster container */
+.star-mushroom-cluster {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 2;
+}
+
+/* Small variant (for double clusters) */
+.star-mushroom--small {
+  width: 45%;
+  height: 55%;
+}
+
+.star-mushroom--small .star-mushroom__cap {
+  height: 50%;
+}
+
+.star-mushroom--small .star-mushroom__stem {
+  width: 30%;
+  height: 40%;
+}
+
+.star-mushroom--small .star-mushroom__glow {
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+}
+
+.star-mushroom--small .star-mushroom__star {
+  width: 45%;
+  height: 45%;
+}
+
+/* Positioning for double cluster */
+.star-mushroom--left {
+  position: absolute;
+  left: 5%;
+  bottom: 15%;
+}
+
+.star-mushroom--right {
+  position: absolute;
+  right: 5%;
+  bottom: 5%;
+}
+
+/* Triple cluster */
+.star-mushroom-cluster--triple {
+  gap: 2%;
+  padding-bottom: 10%;
+}
+
+/* Tiny variant (for triple clusters) */
+.star-mushroom--tiny {
+  width: 30%;
+  height: 45%;
+  position: relative;
+}
+
+.star-mushroom--tiny .star-mushroom__cap {
+  height: 45%;
+}
+
+.star-mushroom--tiny .star-mushroom__stem {
+  width: 28%;
+  height: 35%;
+}
+
+.star-mushroom--tiny .star-mushroom__glow {
+  width: 90%;
+  height: 90%;
+  top: 5%;
+  left: 5%;
+}
+
+.star-mushroom--tiny .star-mushroom__star {
+  width: 40%;
+  height: 40%;
+}
+
+.star-mushroom-cluster--triple .star-mushroom--tiny:nth-child(1) {
+  transform: translateY(10%);
+}
+
+.star-mushroom-cluster--triple .star-mushroom--tiny:nth-child(2) {
+  transform: translateY(-5%);
+}
+
+.star-mushroom-cluster--triple .star-mushroom--tiny:nth-child(3) {
+  transform: translateY(15%);
+}
+
+/* ==========================================================================
+   STAR MUSHROOM ANIMATIONS
+   ========================================================================== */
+
+/* Pulsing glow animation */
+@keyframes star-mushroom-pulse {
+  0%, 100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+/* Star twinkle animation */
+@keyframes star-twinkle {
+  0%, 100% {
+    opacity: 0.8;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.1);
+  }
+}
+
+/* Stagger animations for clusters */
+.star-mushroom--left .star-mushroom__glow {
+  animation-delay: 0s;
+}
+.star-mushroom--right .star-mushroom__glow {
+  animation-delay: 0.5s;
+}
+.star-mushroom--left .star-mushroom__star {
+  animation-delay: 0.2s;
+}
+.star-mushroom--right .star-mushroom__star {
+  animation-delay: 0.7s;
+}
+
+.star-mushroom-cluster--triple .star-mushroom--tiny:nth-child(1) .star-mushroom__glow {
+  animation-delay: 0s;
+}
+.star-mushroom-cluster--triple .star-mushroom--tiny:nth-child(2) .star-mushroom__glow {
+  animation-delay: 0.4s;
+}
+.star-mushroom-cluster--triple .star-mushroom--tiny:nth-child(3) .star-mushroom__glow {
+  animation-delay: 0.8s;
+}
+.star-mushroom-cluster--triple .star-mushroom--tiny:nth-child(1) .star-mushroom__star {
+  animation-delay: 0.1s;
+}
+.star-mushroom-cluster--triple .star-mushroom--tiny:nth-child(2) .star-mushroom__star {
+  animation-delay: 0.5s;
+}
+.star-mushroom-cluster--triple .star-mushroom--tiny:nth-child(3) .star-mushroom__star {
+  animation-delay: 0.9s;
 }
 </style>

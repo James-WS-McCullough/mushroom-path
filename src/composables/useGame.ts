@@ -44,6 +44,8 @@ const LANDING_SOUNDS: Partial<Record<TileType, () => void>> = {
 	[TileType.POND]: playWater,
 	[TileType.LOW_SAND]: playSandLand,
 	[TileType.HONEY]: playHoneyLand,
+	[TileType.BASE_STAR]: playLand,
+	[TileType.STAR_PATH]: playLand,
 };
 
 /** Play the appropriate landing sound for a tile type */
@@ -64,6 +66,8 @@ const TILE_LEAVE_CONVERSIONS: Partial<Record<TileType, TileType>> = {
 	[TileType.DIRT]: TileType.GRASS,
 	[TileType.LOW_SAND]: TileType.SAND_MUSHROOM,
 	[TileType.HONEY]: TileType.HONEY_MUSHROOM,
+	[TileType.BASE_STAR]: TileType.STAR_MUSHROOM,
+	[TileType.STAR_PATH]: TileType.STAR_MUSHROOM,
 };
 
 /** Get what a tile converts to when leaving it (or null if no conversion) */
@@ -78,6 +82,7 @@ const BLOCKED_TILE_TYPES: readonly TileType[] = [
 	TileType.MUSHROOM,
 	TileType.SAND_MUSHROOM,
 	TileType.HONEY_MUSHROOM,
+	TileType.STAR_MUSHROOM,
 	TileType.POND_WATER,
 	TileType.SEA,
 ];
@@ -144,6 +149,10 @@ export function useGame(level: Level) {
 	// Acorn/squirrel state
 	const collectedAcorns = ref(0);
 	const squirrelRequirements = level.squirrelRequirements ?? {};
+
+	// Star connections for bloom mechanic
+	const starConnections = level.starConnections ?? {};
+	const starTrailTo = level.starTrailTo ?? {};
 
 	// Acorn popup state (shows +X or -X above player when collecting/spending)
 	const acornPopupValue = ref<number | null>(null);
@@ -358,6 +367,7 @@ export function useGame(level: Level) {
 			tile.type === TileType.MUSHROOM ||
 			tile.type === TileType.SAND_MUSHROOM ||
 			tile.type === TileType.HONEY_MUSHROOM ||
+			tile.type === TileType.STAR_MUSHROOM ||
 			tile.type === TileType.POND_WATER
 		);
 	}
@@ -475,6 +485,7 @@ export function useGame(level: Level) {
 					adjType === TileType.MUSHROOM ||
 					adjType === TileType.SAND_MUSHROOM ||
 					adjType === TileType.HONEY_MUSHROOM ||
+					adjType === TileType.STAR_MUSHROOM ||
 					adjType === TileType.POND_WATER ||
 					adjType === TileType.SEA ||
 					(adjType === TileType.POND && lilypads.get(adjKey)?.submerged);
@@ -826,6 +837,7 @@ export function useGame(level: Level) {
 					adjTileType === TileType.MUSHROOM ||
 					adjTileType === TileType.SAND_MUSHROOM ||
 					adjTileType === TileType.HONEY_MUSHROOM ||
+					adjTileType === TileType.STAR_MUSHROOM ||
 					adjTileType === TileType.POND_WATER ||
 					adjTileType === TileType.SEA ||
 					(adjTileType === TileType.POND &&
@@ -978,6 +990,7 @@ export function useGame(level: Level) {
 					nextType === TileType.MUSHROOM ||
 					nextType === TileType.SAND_MUSHROOM ||
 					nextType === TileType.HONEY_MUSHROOM ||
+					nextType === TileType.STAR_MUSHROOM ||
 					nextType === TileType.VOID ||
 					nextType === TileType.POND_WATER
 				) {
@@ -1138,7 +1151,7 @@ export function useGame(level: Level) {
 						const nextType = newTileStates[next.y]?.[next.x];
 						if (nextType === TileType.BRAMBLE || nextType === TileType.MUSHROOM ||
 							nextType === TileType.SAND_MUSHROOM || nextType === TileType.HONEY_MUSHROOM ||
-							nextType === TileType.VOID || nextType === TileType.POND_WATER) {
+							nextType === TileType.STAR_MUSHROOM || nextType === TileType.VOID || nextType === TileType.POND_WATER) {
 							break;
 						}
 						if (nextType === TileType.ICE) {
@@ -1153,7 +1166,7 @@ export function useGame(level: Level) {
 			}
 		}
 
-		// Handle landing on ACORN or SQUIRREL tiles
+		// Handle landing on ACORN, SQUIRREL, or BASE_STAR tiles
 		const landingTileType = newTileStates[finalPos.y]?.[finalPos.x];
 		if (landingTileType === TileType.ACORN) {
 			// Collect the acorn and convert tile to grass
@@ -1166,6 +1179,20 @@ export function useGame(level: Level) {
 			acornCount -= requirement;
 			const row = newTileStates[finalPos.y];
 			if (row) row[finalPos.x] = TileType.GRASS;
+		} else if (landingTileType === TileType.BASE_STAR) {
+			// Bloom all connected STAR_PATH tiles to star mushrooms
+			const baseKey = `${finalPos.x},${finalPos.y}`;
+			for (const [starPathKey, belongsToBaseKey] of Object.entries(starConnections)) {
+				if (belongsToBaseKey === baseKey) {
+					const [x, y] = starPathKey.split(",").map(Number);
+					if (x !== undefined && y !== undefined) {
+						const row = newTileStates[y];
+						if (row && row[x] === TileType.STAR_PATH) {
+							row[x] = TileType.STAR_MUSHROOM;
+						}
+					}
+				}
+			}
 		}
 
 		return { finalPos, newTiles: newTileStates, newLilypads, newTidePhase, newAcorns: acornCount };
@@ -1235,6 +1262,7 @@ export function useGame(level: Level) {
 				nextTile.type === TileType.MUSHROOM ||
 				nextTile.type === TileType.SAND_MUSHROOM ||
 				nextTile.type === TileType.HONEY_MUSHROOM ||
+				nextTile.type === TileType.STAR_MUSHROOM ||
 				nextTile.type === TileType.VOID ||
 				nextTile.type === TileType.POND_WATER
 			) {
@@ -1495,7 +1523,90 @@ export function useGame(level: Level) {
 		return null;
 	}
 
-	// Handle landing on special tiles (acorn collection, squirrel feeding)
+	// Find all STAR_PATH tiles connected to a BASE_STAR at given position
+	// Returns them in sequence order by following the trail
+	function findConnectedStarPathsInOrder(baseStarPos: Position): Position[] {
+		const baseKey = `${baseStarPos.x},${baseStarPos.y}`;
+		const orderedPaths: Position[] = [];
+
+		// Start from base star and follow the trail
+		let currentKey = baseKey;
+		while (starTrailTo[currentKey]) {
+			const nextKey = starTrailTo[currentKey];
+			if (!nextKey) break;
+
+			const [x, y] = nextKey.split(",").map(Number);
+			if (x !== undefined && y !== undefined) {
+				// Verify this tile belongs to this base star
+				if (starConnections[nextKey] === baseKey) {
+					orderedPaths.push({ x, y });
+					currentKey = nextKey;
+				} else {
+					break;
+				}
+			} else {
+				break;
+			}
+		}
+
+		return orderedPaths;
+	}
+
+	// Bloom all connected STAR_PATH tiles to MUSHROOM when landing on BASE_STAR
+	// Animates each tile with a delay for a satisfying "pop pop pop" effect
+	// Returns the changed tiles for undo tracking and the total animation duration
+	function bloomStarPaths(baseStarPos: Position): { changes: ChangedTile[]; animationDuration: number } {
+		const connectedPaths = findConnectedStarPathsInOrder(baseStarPos);
+		const changes: ChangedTile[] = [];
+
+		// Record all changes immediately for undo tracking
+		for (const pathPos of connectedPaths) {
+			const row = tiles.value[pathPos.y];
+			const cell = row?.[pathPos.x];
+			if (cell && cell.type === TileType.STAR_PATH) {
+				changes.push({ position: { ...pathPos }, originalType: TileType.STAR_PATH });
+			}
+		}
+
+		// Animate each tile with a delay
+		const BLOOM_DELAY = 150; // ms between each pop
+		const isLastTile = (index: number) => index === connectedPaths.length - 1;
+
+		connectedPaths.forEach((pathPos, index) => {
+			setTimeout(() => {
+				const row = tiles.value[pathPos.y];
+				const cell = row?.[pathPos.x];
+				if (cell && cell.type === TileType.STAR_PATH) {
+					cell.type = TileType.STAR_MUSHROOM;
+					playRandomPop();
+					// Show plant animation
+					lastPlantedPosition.value = { ...pathPos };
+					setTimeout(() => {
+						// Only clear if still showing this position
+						if (lastPlantedPosition.value?.x === pathPos.x &&
+						    lastPlantedPosition.value?.y === pathPos.y) {
+							lastPlantedPosition.value = null;
+						}
+					}, 400);
+				}
+
+				// After the last tile blooms, check win condition
+				// (player may have won by blooming all remaining required tiles)
+				if (isLastTile(index) && checkWinCondition()) {
+					hasWon.value = true;
+				}
+			}, index * BLOOM_DELAY);
+		});
+
+		// Total animation time: (n-1) * delay + last tile animation
+		const animationDuration = connectedPaths.length > 0
+			? (connectedPaths.length - 1) * BLOOM_DELAY + 100
+			: 0;
+
+		return { changes, animationDuration };
+	}
+
+	// Handle landing on special tiles (acorn collection, squirrel feeding, star bloom)
 	// Returns any additional tile changes for undo tracking
 	function handleLandingTile(position: Position): ChangedTile[] {
 		const tile = getTile(position);
@@ -1522,6 +1633,11 @@ export function useGame(level: Level) {
 			cell.type = TileType.GRASS;
 			showAcornPopup(-required); // Show -X
 			playSquirrel();
+		} else if (tile.type === TileType.BASE_STAR) {
+			// Landing on BASE_STAR blooms all connected STAR_PATH tiles
+			// The BASE_STAR itself converts to mushroom when leaving (same as grass)
+			const bloomResult = bloomStarPaths(position);
+			changes.push(...bloomResult.changes);
 		}
 
 		return changes;
@@ -1580,6 +1696,22 @@ export function useGame(level: Level) {
 				state.cooldown = 4;
 				playLilypadSink();
 			}
+		} else if (tile.type === TileType.BASE_STAR) {
+			// Base star becomes star mushroom when left (same as grass)
+			cell.type = TileType.STAR_MUSHROOM;
+			playRandomPop();
+			lastPlantedPosition.value = { ...position };
+			setTimeout(() => {
+				lastPlantedPosition.value = null;
+			}, 400);
+		} else if (tile.type === TileType.STAR_PATH) {
+			// Star path becomes star mushroom when left (same as grass)
+			cell.type = TileType.STAR_MUSHROOM;
+			playRandomPop();
+			lastPlantedPosition.value = { ...position };
+			setTimeout(() => {
+				lastPlantedPosition.value = null;
+			}, 400);
 		}
 		// Portal tiles stay as portals - they can be used multiple times
 
@@ -1923,7 +2055,8 @@ export function useGame(level: Level) {
 				if (
 					tile.type === TileType.MUSHROOM ||
 					tile.type === TileType.SAND_MUSHROOM ||
-					tile.type === TileType.HONEY_MUSHROOM
+					tile.type === TileType.HONEY_MUSHROOM ||
+					tile.type === TileType.STAR_MUSHROOM
 				) {
 					count++;
 				}
@@ -2097,7 +2230,7 @@ export function useGame(level: Level) {
 
 		// Restore the tile at current position (remove mushroom if it was planted)
 		// Stone tiles never have mushrooms planted, so only restore MUSHROOM -> GRASS,
-		// SAND_MUSHROOM -> LOW_SAND, and HONEY_MUSHROOM -> HONEY
+		// SAND_MUSHROOM -> LOW_SAND, HONEY_MUSHROOM -> HONEY, STAR_MUSHROOM -> STAR_PATH
 		const currentPos = playerPosition.value;
 		const currentRow = tiles.value[currentPos.y];
 		const currentCell = currentRow?.[currentPos.x];
@@ -2107,6 +2240,8 @@ export function useGame(level: Level) {
 			currentCell.type = TileType.LOW_SAND;
 		} else if (currentCell && currentCell.type === TileType.HONEY_MUSHROOM) {
 			currentCell.type = TileType.HONEY;
+		} else if (currentCell && currentCell.type === TileType.STAR_MUSHROOM) {
+			currentCell.type = TileType.STAR_PATH;
 		}
 
 		// Restore the previous position's tile state

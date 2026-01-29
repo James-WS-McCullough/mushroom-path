@@ -310,8 +310,8 @@ export function getBiomeFromElements(elements: string[]): BiomeType {
 	if (elements.includes("ice")) return "ice";
 	// Beach/tides
 	if (elements.includes("tides")) return "beach";
-	// Dark for pond (night) or dirt (swamp)
-	if (elements.includes("pond") || elements.includes("dirt")) return "dark";
+	// Dark for pond (night), dirt (swamp), or star (starlit plains)
+	if (elements.includes("pond") || elements.includes("dirt") || elements.includes("star")) return "dark";
 	// Default for everything else
 	return "default";
 }

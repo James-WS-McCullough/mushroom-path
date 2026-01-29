@@ -87,7 +87,7 @@ onUnmounted(() => {
           :key="element"
           class="element-icon"
           :class="{ 'element-icon--dirt': element === WE.DIRT }"
-          :title="element === WE.RIVERS ? 'Rivers' : element === WE.DIRT ? 'Dirt Patches' : element === WE.ICE ? 'Ice' : element === WE.FAIRY ? 'Fairy Rings' : element === WE.POND ? 'Lily Pads' : element === WE.TIDES ? 'Tides' : element === WE.BOUNCE ? 'Bounce Pads' : element === WE.HONEY ? 'Honey' : element"
+          :title="element === WE.RIVERS ? 'Rivers' : element === WE.DIRT ? 'Dirt Patches' : element === WE.ICE ? 'Ice' : element === WE.FAIRY ? 'Fairy Rings' : element === WE.POND ? 'Lily Pads' : element === WE.TIDES ? 'Tides' : element === WE.BOUNCE ? 'Bounce Pads' : element === WE.HONEY ? 'Honey' : element === WE.ACORN ? 'Acorns' : element === WE.STAR ? 'Star Path' : element"
         >
           <!-- Water droplet icon for rivers -->
           <svg v-if="element === WE.RIVERS" viewBox="0 0 24 24" class="element-svg element-svg--water">
@@ -160,6 +160,13 @@ onUnmounted(() => {
             <ellipse cx="12" cy="16" rx="6" ry="7" fill="currentColor"/>
             <!-- Highlight -->
             <ellipse cx="9" cy="14" rx="2" ry="3" fill="#E89040" opacity="0.5"/>
+          </svg>
+          <!-- Star icon for star path -->
+          <svg v-else-if="element === WE.STAR" viewBox="0 0 24 24" class="element-svg element-svg--star" title="Star Path">
+            <!-- 5-point star -->
+            <polygon points="12,2 15,9 22,9 16.5,14 18.5,22 12,17.5 5.5,22 7.5,14 2,9 9,9" fill="currentColor"/>
+            <!-- Inner glow -->
+            <polygon points="12,5 13.5,9.5 18,9.5 14.5,12.5 15.5,17 12,14.5 8.5,17 9.5,12.5 6,9.5 10.5,9.5" fill="#fff8e0" opacity="0.6"/>
           </svg>
         </div>
       </div>
@@ -501,6 +508,10 @@ onUnmounted(() => {
 
 .element-svg--acorn {
   color: #D2691E;
+}
+
+.element-svg--star {
+  color: #f0d878;
 }
 
 .sound-controls {

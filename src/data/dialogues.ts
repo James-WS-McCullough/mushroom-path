@@ -736,6 +736,57 @@ export const acornIntroDialogue: DialogueScene = {
 	],
 };
 
+// Star path intro - magical starlit plains with connected star tiles
+export const starIntroDialogue: DialogueScene = {
+	id: "star-intro",
+	background: "",
+	leftCharacter: "sprout",
+	rightCharacter: "dew",
+	overlay: true,
+	lines: [
+		{
+			speaker: "sprout",
+			name: "Sprout",
+			text: "wooow dew look!! the stars came down from the sky~! theyre so sparkly!",
+			leftSprite: "MushroomGirl-Excited",
+			rightSprite: "BlueGirl-Normal",
+			leftHighlight: true,
+		},
+		{
+			speaker: "dew",
+			name: "Dew",
+			text: "these are star paths! see how the little stars are all connected to that big one?",
+			leftSprite: "MushroomGirl-Excited",
+			rightSprite: "BlueGirl-Thinking",
+			rightHighlight: true,
+		},
+		{
+			speaker: "sprout",
+			name: "Sprout",
+			text: "ooh theyre like a little constellation! whats so special about them~?",
+			leftSprite: "MushroomGirl-Happy",
+			rightSprite: "BlueGirl-Thinking",
+			leftHighlight: true,
+		},
+		{
+			speaker: "dew",
+			name: "Dew",
+			text: "when you step on the big star... all the connected little stars bloom into mushrooms at once!",
+			leftSprite: "MushroomGirl-Happy",
+			rightSprite: "BlueGirl-Laughing",
+			rightHighlight: true,
+		},
+		{
+			speaker: "sprout",
+			name: "Sprout",
+			text: "a whole trail of mushrooms with one hop?! thats like magic~!!",
+			leftSprite: "MushroomGirl-Confident",
+			rightSprite: "BlueGirl-Laughing",
+			leftHighlight: true,
+		},
+	],
+};
+
 // Map mechanic types to their intro dialogues
 export const mechanicDialogues: Record<string, DialogueScene> = {
 	ice: iceIntroDialogue,
@@ -747,6 +798,7 @@ export const mechanicDialogues: Record<string, DialogueScene> = {
 	bounce: bounceIntroDialogue,
 	honey: honeyIntroDialogue,
 	acorn: acornIntroDialogue,
+	star: starIntroDialogue,
 };
 
 // Random adventure scenes - short moments between Sprout and Dew

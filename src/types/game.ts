@@ -25,6 +25,10 @@ export const TileType = {
 	// Acorn/Autumn tiles
 	ACORN: "acorn", // Collectible - gives player an acorn when landed on
 	SQUIRREL: "squirrel", // Obstacle that requires acorns to pass, becomes grass when fed
+	// Star path tiles
+	BASE_STAR: "base_star", // Landing here blooms all connected STAR_PATH tiles into mushrooms
+	STAR_PATH: "star_path", // Connected to BASE_STAR, blooms when BASE_STAR is landed on
+	STAR_MUSHROOM: "star_mushroom", // Mushroom planted on star tiles - unique starlit design
 } as const;
 
 export type TileType = (typeof TileType)[keyof typeof TileType];
@@ -58,6 +62,9 @@ export interface Level {
 	waterFlow?: Record<string, FlowDirection>; // key: "x,y" -> flow direction
 	solutionPath?: Position[]; // Pre-computed winning path from level generation
 	squirrelRequirements?: Record<string, number>; // key: "x,y" -> acorns required (1-3)
+	starConnections?: Record<string, string>; // key: STAR_PATH "x,y" -> BASE_STAR "x,y" it belongs to
+	starTrailFrom?: Record<string, string>; // key: STAR_PATH "x,y" -> previous tile "x,y" in the chain (for visual trail)
+	starTrailTo?: Record<string, string>; // key: tile "x,y" -> next tile "x,y" in the chain (for visual trail)
 }
 
 export interface GameState {
@@ -79,6 +86,7 @@ export const WorldElement = {
 	BOUNCE: "bounce",
 	HONEY: "honey",
 	ACORN: "acorn", // Autumn biome - squirrels need acorns to pass
+	STAR: "star", // Starlit Plains - star paths that bloom when base star is stepped on
 } as const;
 
 export type WorldElement = (typeof WorldElement)[keyof typeof WorldElement];
@@ -101,6 +109,8 @@ export const RequiredTileTypes = [
 	TileType.HONEY,
 	TileType.ACORN,
 	TileType.SQUIRREL,
+	TileType.BASE_STAR,
+	TileType.STAR_PATH,
 ] as const;
 
 export type RequiredTileType = (typeof RequiredTileTypes)[number];
@@ -122,6 +132,8 @@ export const WalkableTileTypes = [
 	TileType.BOUNCE_PAD,
 	TileType.HONEY,
 	TileType.ACORN,
+	TileType.BASE_STAR,
+	TileType.STAR_PATH,
 ] as const;
 
 export type WalkableTileType = (typeof WalkableTileTypes)[number];
