@@ -13,7 +13,7 @@ import StartScreen from "./components/StartScreen.vue";
 import TopBar from "./components/TopBar.vue";
 import TutorialModal from "./components/TutorialModal.vue";
 import WelcomeSign from "./components/WelcomeSign.vue";
-import { LEVELS_PER_WORLD } from "./constants/game";
+import { INCOMPATIBLE_ELEMENTS, LEVELS_PER_WORLD } from "./constants/game";
 import { getLevelQueue } from "./composables/useLevelQueue";
 import {
 	changeWorldBGM,
@@ -554,6 +554,7 @@ const allElements: WorldElement[] = [
 	WE.POND,
 	WE.TIDES,
 	WE.BOUNCE,
+	WE.HONEY,
 	WE.ACORN,
 	WE.STAR,
 ];
@@ -658,21 +659,8 @@ function generateWorldElementsInner(): WorldElement[] {
 	const result = shuffledSeen.slice(0, elementCount);
 
 	// Handle incompatible elements
-	const incompatiblePairs: [WE, WE][] = [
-		[WE.RIVERS, WE.POND], // Both water-based, conflicting mechanics
-		[WE.ICE, WE.POND], // Vibes don't match (frozen vs lily-pads)
-		[WE.TIDES, WE.ICE], // Beach and frozen don't mix
-		[WE.TIDES, WE.POND], // Too much water mechanics confusion
-		[WE.TIDES, WE.RIVERS], // Too much water mechanics confusion
-		[WE.ACORN, WE.ICE], // Autumn doesn't mix with frozen
-		[WE.ACORN, WE.POND], // Autumn doesn't mix with night/lily-pads
-		[WE.ACORN, WE.TIDES], // Autumn doesn't mix with beach
-		[WE.STAR, WE.ICE], // Starlit doesn't mix with frozen
-		[WE.STAR, WE.POND], // Starlit doesn't mix with night/lily-pads
-		[WE.STAR, WE.TIDES], // Starlit doesn't mix with beach
-	];
 
-	for (const [a, b] of incompatiblePairs) {
+	for (const [a, b] of INCOMPATIBLE_ELEMENTS) {
 		if (result.includes(a) && result.includes(b)) {
 			// Remove one randomly (50/50 chance)
 			const removeFirst = Math.random() < 0.5;
@@ -824,8 +812,10 @@ function handleWin() {
 	// After showing the modal briefly, start the transition
 	setTimeout(() => {
 		pendingNewWorld.value = advanceLevel();
-		// Add captured mushroom count to total (using captured value, not ref)
+		// Move the level's mushrooms into the total (using captured value, not ref)
+		// so the counter doesn't show them twice until the next level loads
 		totalMushroomsPlanted.value += mushroomsToAdd;
+		levelMushroomsPlanted.value = 0;
 		// Save progress only if tutorial is complete
 		if (localStorage.getItem("mushroom-path-tutorial-complete")) {
 			saveProgress();
@@ -997,6 +987,7 @@ function doSkip() {
 	setTimeout(() => {
 		pendingNewWorld.value = advanceLevel();
 		// Skipping forfeits the level's mushrooms - don't add to total
+		levelMushroomsPlanted.value = 0;
 		// Save progress only if tutorial is complete
 		if (localStorage.getItem("mushroom-path-tutorial-complete")) {
 			saveProgress();

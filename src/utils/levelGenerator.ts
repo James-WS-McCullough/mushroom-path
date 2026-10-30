@@ -22,9 +22,7 @@ import { LEVEL_GEN, LEVELS_PER_WORLD } from "../constants/game";
 import { getDirectionDelta, posKey, parseKey } from "./positionUtils";
 
 export interface GeneratorConfig {
-	minWidth: number;
 	maxWidth: number;
-	minHeight: number;
 	maxHeight: number;
 	minRectangles: number;
 	maxRectangles: number;
@@ -54,9 +52,7 @@ export interface GeneratorConfig {
 }
 
 const DEFAULT_CONFIG: GeneratorConfig = {
-	minWidth: 8,
 	maxWidth: 12,
-	minHeight: 8,
 	maxHeight: 12,
 	minRectangles: 2,
 	maxRectangles: 3,

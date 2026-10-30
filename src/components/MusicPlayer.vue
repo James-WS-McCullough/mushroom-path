@@ -181,6 +181,16 @@ function updateProgress() {
 	}
 }
 
+/** Play the current track, showing it as paused if the browser blocks playback */
+function playCurrent() {
+	const el = audio.value;
+	if (!el) return;
+	isPlaying.value = true;
+	el.play().catch(() => {
+		if (audio.value === el) isPlaying.value = false;
+	});
+}
+
 function playTrack(index: number) {
 	// Exit shuffle mode when directly selecting a track
 	isShuffleMode.value = false;
@@ -192,8 +202,7 @@ function playTrack(index: number) {
 			audio.value.pause();
 			isPlaying.value = false;
 		} else {
-			audio.value.play();
-			isPlaying.value = true;
+			playCurrent();
 		}
 		return;
 	}
@@ -221,8 +230,7 @@ function playTrack(index: number) {
 		}
 	});
 
-	audio.value.play();
-	isPlaying.value = true;
+	playCurrent();
 }
 
 function startShuffle() {
@@ -253,8 +261,7 @@ function startShuffle() {
 		}
 	});
 
-	audio.value.play();
-	isPlaying.value = true;
+	playCurrent();
 
 	// Schedule transition to next track
 	scheduleNextShuffleTrack();

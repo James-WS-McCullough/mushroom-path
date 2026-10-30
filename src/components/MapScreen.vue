@@ -297,6 +297,7 @@ onUnmounted(() => {
         :overlay="true"
         @complete="handleDialogueComplete"
         @skip="handleDialogueComplete"
+        @click.stop
       />
     </Transition>
   </div>

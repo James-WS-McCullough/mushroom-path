@@ -282,9 +282,8 @@ describe("levelGenerator", () => {
 			expect(uniqueGrids.size).toBeGreaterThan(1);
 		}, 15000);
 
-		it("should respect minWidth and maxWidth config", () => {
+		it("should respect maxWidth config", () => {
 			const level = generateLevel({
-				minWidth: 6,
 				maxWidth: 8,
 			});
 			expect(level).not.toBeNull();
@@ -294,9 +293,8 @@ describe("levelGenerator", () => {
 			expect(level.width).toBeLessThanOrEqual(10); // Some buffer for edge cases
 		});
 
-		it("should respect minHeight and maxHeight config", () => {
+		it("should respect maxHeight config", () => {
 			const level = generateLevel({
-				minHeight: 6,
 				maxHeight: 8,
 			});
 			expect(level).not.toBeNull();
@@ -591,9 +589,7 @@ describe("levelGenerator", () => {
 	describe("edge cases", () => {
 		it("should handle small config values", () => {
 			const level = generateLevel({
-				minWidth: 5,
 				maxWidth: 6,
-				minHeight: 5,
 				maxHeight: 6,
 				minRectangles: 1,
 				maxRectangles: 2,
@@ -609,9 +605,7 @@ describe("levelGenerator", () => {
 
 		it("should handle larger config values", () => {
 			const level = generateLevel({
-				minWidth: 10,
 				maxWidth: 14,
-				minHeight: 10,
 				maxHeight: 14,
 				minRectangles: 3,
 				maxRectangles: 4,
@@ -646,9 +640,7 @@ describe("levelGenerator", () => {
 			const result = generateLevel({
 				minRectangles: 1,
 				maxRectangles: 1,
-				minWidth: 5,
 				maxWidth: 5,
-				minHeight: 5,
 				maxHeight: 5,
 			});
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { INCOMPATIBLE_ELEMENTS } from "../constants/game";
 import { WorldElement as WE, type WorldElement } from "../types/game";
 
 const emit = defineEmits<{
@@ -24,23 +25,8 @@ const selectedElements = ref<Set<WorldElement>>(new Set());
 
 const canSelectMore = computed(() => selectedElements.value.size < 2);
 
-// Incompatible element pairs
-const incompatiblePairs: [WorldElement, WorldElement][] = [
-	[WE.RIVERS, WE.POND], // Both water-based, conflicting mechanics
-	[WE.ICE, WE.POND], // Vibes don't match (frozen vs lily-pads)
-	[WE.TIDES, WE.ICE], // Beach and frozen don't mix
-	[WE.TIDES, WE.POND], // Too much water mechanics confusion
-	[WE.TIDES, WE.RIVERS], // Too much water mechanics confusion
-	[WE.ACORN, WE.ICE], // Autumn and frozen don't mix
-	[WE.ACORN, WE.POND], // Autumn and lily pads don't mix
-	[WE.ACORN, WE.TIDES], // Autumn and beach don't mix
-	[WE.STAR, WE.ICE], // Starlit and frozen don't mix
-	[WE.STAR, WE.POND], // Starlit and lily pads don't mix
-	[WE.STAR, WE.TIDES], // Starlit and beach don't mix
-];
-
 function isIncompatible(element: WorldElement): boolean {
-	for (const [a, b] of incompatiblePairs) {
+	for (const [a, b] of INCOMPATIBLE_ELEMENTS) {
 		if (element === a && selectedElements.value.has(b)) return true;
 		if (element === b && selectedElements.value.has(a)) return true;
 	}
