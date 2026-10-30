@@ -16,9 +16,14 @@ export function setMusicVolume(volume: number): void {
 	updateMusicVolume();
 }
 
+// Background music volume after applying the player's music slider
+function getBgmVolume(): number {
+	return BGM_VOLUME * musicVolume.value;
+}
+
 function updateMusicVolume(): void {
 	if (currentBgm) {
-		currentBgm.volume = BGM_VOLUME * musicVolume.value;
+		currentBgm.volume = getBgmVolume();
 	}
 }
 
@@ -46,7 +51,10 @@ async function ensureAudioContextResumed(): Promise<void> {
 }
 
 // Set up event listeners to resume audio context on any interaction
+let audioListenersReady = false;
 function setupAudioContextListeners(): void {
+	if (audioListenersReady) return;
+	audioListenersReady = true;
 	const resume = () => {
 		ensureAudioContextResumed();
 		tryResumeMusic();
@@ -96,8 +104,10 @@ let needsResumeOnInteraction = false;
 // Resume music on user interaction if needed
 function tryResumeMusic(): void {
 	if (needsResumeOnInteraction && currentBgm && musicStarted && !isMusicMuted.value) {
-		currentBgm.play().catch(() => {});
 		needsResumeOnInteraction = false;
+		currentBgm.play().catch(() => {
+			needsResumeOnInteraction = true;
+		});
 	}
 }
 
@@ -161,7 +171,6 @@ const ALL_SFX_PATHS = [
 	// Tile sounds
 	"/sfx/hit-water.mp3",
 	"/sfx/hit-stone.mp3",
-	"/sfx/ice-slide.mp3",
 	"/sfx/ice-slide-loop.mp3",
 	// UI sounds
 	"/sfx/success.mp3",
@@ -399,7 +408,10 @@ function fadeInAudio(
 	duration: number,
 ): void {
 	audio.volume = 0;
-	audio.play().catch(() => {});
+	audio.play().catch(() => {
+		// Autoplay was blocked - start on the next user interaction instead
+		needsResumeOnInteraction = true;
+	});
 
 	const steps = 20;
 	const stepDuration = duration / steps;
@@ -425,11 +437,12 @@ export function startBackgroundMusic(): void {
 
 	currentBgm = new Audio(firstTrack);
 	currentBgm.loop = true;
-	currentBgm.volume = BGM_VOLUME;
+	currentBgm.volume = getBgmVolume();
 	currentBgm.muted = isMusicMuted.value;
 
 	currentBgm.play().catch(() => {
-		musicStarted = false;
+		// Autoplay was blocked - start on the next user interaction instead
+		needsResumeOnInteraction = true;
 	});
 }
 
@@ -443,11 +456,12 @@ export function startTutorialMusic(): void {
 
 	currentBgm = new Audio(tutorialTrack);
 	currentBgm.loop = true;
-	currentBgm.volume = BGM_VOLUME;
+	currentBgm.volume = getBgmVolume();
 	currentBgm.muted = isMusicMuted.value;
 
 	currentBgm.play().catch(() => {
-		musicStarted = false;
+		// Autoplay was blocked - start on the next user interaction instead
+		needsResumeOnInteraction = true;
 	});
 
 	// Pre-shuffle playlist for when we transition out of tutorial
@@ -472,7 +486,7 @@ export async function changeWorldBGM(biome: BiomeType = "default"): Promise<void
 	currentBgm = new Audio(nextTrack);
 	currentBgm.loop = true;
 	currentBgm.muted = isMusicMuted.value;
-	fadeInAudio(currentBgm, BGM_VOLUME, FADE_DURATION);
+	fadeInAudio(currentBgm, getBgmVolume(), FADE_DURATION);
 }
 
 // Switch to tutorial music (Dewdrop Dawn)
@@ -488,7 +502,7 @@ export async function switchToTutorialMusic(): Promise<void> {
 	currentBgm = new Audio(tutorialTrack);
 	currentBgm.loop = true;
 	currentBgm.muted = isMusicMuted.value;
-	fadeInAudio(currentBgm, BGM_VOLUME, FADE_DURATION);
+	fadeInAudio(currentBgm, getBgmVolume(), FADE_DURATION);
 }
 
 // ============================================
@@ -591,10 +605,6 @@ export function stopIceSlide(): void {
 		iceSlideGain.disconnect();
 		iceSlideGain = null;
 	}
-}
-
-export function playIce(volume = 0.4): void {
-	playSound("/sfx/ice-slide.mp3", volume);
 }
 
 export function playBouncepad(volume = 0.4): void {
