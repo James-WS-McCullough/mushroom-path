@@ -5,15 +5,26 @@ import {
 	playLand,
 	playRandomDirt,
 	playRandomPop,
+	playStone,
+	playUndo,
 	playWater,
 } from "../composables/useSound";
 import type { Position } from "../types/game";
-import { parseKey } from "../utils/positionUtils";
+import { parseKey, posKey } from "../utils/positionUtils";
 import FarmTile from "./FarmTile.vue";
 import {
+	buyPlot,
 	createFarm,
 	deserializeFarm,
 	type FarmState,
+	getExpansionSpots,
+	getPlotCost,
+	getSprinkledKeys,
+	getSprinklerCost,
+	getTile,
+	moveBuilding,
+	placeSprinkler,
+	removeBuilding,
 	serializeFarm,
 	type TapResult,
 	tapTile,
@@ -111,9 +122,106 @@ const tiles = computed(() =>
 	})),
 );
 
+// ---------------------------------------------------------------------------
+// Build mode
+// ---------------------------------------------------------------------------
+
+type Mode = "farm" | "build";
+type Tool = "sprinkler" | "move" | "remove" | null;
+
+const mode = ref<Mode>("farm");
+const tool = ref<Tool>(null);
+/** A building picked up with the move tool, waiting to be put down */
+const movingFrom = ref<Position | null>(null);
+
+const plotCost = computed(() => getPlotCost(farm));
+const sprinklerCost = computed(() => getSprinklerCost(farm));
+const sprinkledKeys = computed(() => getSprinkledKeys(farm));
+
+/** Faded plots for sale around the farm, shown while building */
+const ghostSpots = computed(() =>
+	mode.value === "build" ? getExpansionSpots(farm) : [],
+);
+
+/** Nudge towards build mode when there's something to buy */
+const canAffordUpgrade = computed(
+	() => farm.money >= plotCost.value || farm.money >= sprinklerCost.value,
+);
+
+function setMode(next: Mode) {
+	mode.value = next;
+	tool.value = null;
+	movingFrom.value = null;
+}
+
+function selectTool(next: Tool) {
+	tool.value = tool.value === next ? null : next;
+	movingFrom.value = null;
+}
+
+function isMovingFrom(position: Position): boolean {
+	return (
+		movingFrom.value?.x === position.x && movingFrom.value?.y === position.y
+	);
+}
+
+function handleGhostTap(position: Position) {
+	const cost = plotCost.value;
+	if (buyPlot(farm, position)) {
+		playRandomDirt();
+		showPopup(position, `-${formatNumber(cost)} 🍄`, "info");
+		saveFarm();
+	} else {
+		playLand();
+		showPopup(position, `Need ${formatNumber(cost)} 🍄`, "warn");
+	}
+}
+
+function handleBuildTap(position: Position) {
+	const tile = getTile(farm, position);
+
+	if (tool.value === "sprinkler") {
+		const cost = sprinklerCost.value;
+		if (placeSprinkler(farm, position)) {
+			playWater();
+			showPopup(position, `-${formatNumber(cost)} 🍄`, "info");
+			saveFarm();
+		} else if (tile?.kind === "plot") {
+			playLand();
+			showPopup(position, `Need ${formatNumber(cost)} 🍄`, "warn");
+		}
+		return;
+	}
+
+	if (tool.value === "move") {
+		const from = movingFrom.value;
+		if (from && moveBuilding(farm, from, position)) {
+			playStone();
+			movingFrom.value = null;
+			saveFarm();
+		} else if (tile && tile.kind !== "plot") {
+			// Pick up (or swap to) a building; tapping it again puts it back
+			movingFrom.value = isMovingFrom(position) ? null : position;
+		}
+		return;
+	}
+
+	if (tool.value === "remove" && removeBuilding(farm, position)) {
+		playUndo();
+		showPopup(position, "Removed", "info");
+		saveFarm();
+	}
+}
+
 const bounds = computed(() => {
-	const xs = tiles.value.map((t) => t.position.x);
-	const ys = tiles.value.map((t) => t.position.y);
+	const xs = [
+		...tiles.value.map((t) => t.position.x),
+		...ghostSpots.value.map((p) => p.x),
+	];
+	const ys = [
+		...tiles.value.map((t) => t.position.y),
+		...ghostSpots.value.map((p) => p.y),
+	];
 	const minX = Math.min(...xs);
 	const minY = Math.min(...ys);
 	return {
@@ -175,6 +283,10 @@ function showPopup(position: Position, text: string, tone: Popup["tone"]) {
 }
 
 function handleTap(position: Position) {
+	if (mode.value === "build") {
+		handleBuildTap(position);
+		return;
+	}
 	const result: TapResult = tapTile(farm, position);
 	switch (result.kind) {
 		case "planted":
@@ -206,9 +318,23 @@ function handleTap(position: Position) {
 
 const isBasketFull = computed(() => farm.basket >= farm.basketCapacity);
 
-/** A gentle nudge for brand new farms */
+/** A gentle nudge for brand new farms, and what each build tool does */
 const hint = computed(() => {
-	if (farm.totalSold > 0) return null;
+	if (mode.value === "build") {
+		if (tool.value === "sprinkler")
+			return "Tap a plot to build a sprinkler - it waters the 8 plots around it";
+		if (tool.value === "move") {
+			return movingFrom.value
+				? "Now tap a plot to move it there"
+				: "Tap the log or a sprinkler to pick it up";
+		}
+		if (tool.value === "remove") return "Tap a sprinkler to take it down";
+		return "Tap a faded plot to buy it, or pick a tool below";
+	}
+	if (farm.totalSold > 0) {
+		const isFirstPlot = farm.plotsBought === 0 && farm.money >= plotCost.value;
+		return isFirstPlot ? "You can afford a new plot! Tap 🔨 Build" : null;
+	}
 	const hasPlanted = Object.values(farm.tiles).some(
 		(tile) => tile.kind === "plot" && tile.growth !== null,
 	);
@@ -272,8 +398,22 @@ function formatNumber(n: number): string {
             :tile="t.tile"
             :position="t.position"
             :can-sell="farm.basket > 0"
+            :sprinkled="sprinkledKeys.has(t.key)"
+            :selected="isMovingFrom(t.position)"
             @click="handleTap(t.position)"
           />
+
+          <button
+            v-for="spot in ghostSpots"
+            :key="`ghost-${posKey(spot.x, spot.y)}`"
+            :class="['ghost', { 'ghost--affordable': farm.money >= plotCost }]"
+            :style="tileStyle(spot)"
+            :aria-label="`Buy a plot for ${plotCost} mushrooms`"
+            @click="handleGhostTap(spot)"
+          >
+            <span class="ghost__plus">+</span>
+            <span class="ghost__price">{{ formatNumber(plotCost) }} 🍄</span>
+          </button>
 
           <TransitionGroup name="popup">
             <div
@@ -293,6 +433,43 @@ function formatNumber(n: number): string {
         <p v-if="hint" :key="hint" class="farm-hint">{{ hint }}</p>
       </Transition>
     </main>
+
+    <footer class="farm-tools">
+      <div v-if="mode === 'build'" class="tool-row">
+        <button
+          :class="['tool', { 'tool--active': tool === 'sprinkler' }]"
+          @click="selectTool('sprinkler')"
+        >
+          <span class="tool__icon">💦</span>
+          <span class="tool__label">Sprinkler</span>
+          <span :class="['tool__price', { 'tool__price--short': farm.money < sprinklerCost }]">
+            {{ formatNumber(sprinklerCost) }} 🍄
+          </span>
+        </button>
+        <button :class="['tool', { 'tool--active': tool === 'move' }]" @click="selectTool('move')">
+          <span class="tool__icon">✋</span>
+          <span class="tool__label">Move</span>
+        </button>
+        <button :class="['tool', { 'tool--active': tool === 'remove' }]" @click="selectTool('remove')">
+          <span class="tool__icon">🧹</span>
+          <span class="tool__label">Remove</span>
+        </button>
+      </div>
+      <div class="mode-row">
+        <button :class="['mode', { 'mode--active': mode === 'farm' }]" @click="setMode('farm')">
+          🌱 Farm
+        </button>
+        <button
+          :class="[
+            'mode',
+            { 'mode--active': mode === 'build', 'mode--glow': mode === 'farm' && canAffordUpgrade },
+          ]"
+          @click="setMode('build')"
+        >
+          🔨 Build
+        </button>
+      </div>
+    </footer>
   </div>
 </template>
 
@@ -441,6 +618,139 @@ function formatNumber(n: number): string {
   to {
     transform: translateY(-36px);
     opacity: 0;
+  }
+}
+
+.ghost {
+  position: absolute;
+  width: 64px;
+  height: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 0;
+  border: 2px dashed rgba(255, 248, 230, 0.45);
+  border-radius: 8px;
+  background: rgba(255, 248, 230, 0.08);
+  color: rgba(255, 248, 230, 0.6);
+  font: inherit;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.2s ease;
+}
+
+.ghost:active {
+  transform: scale(0.94);
+}
+
+.ghost--affordable {
+  border-color: rgba(255, 236, 160, 0.9);
+  background: rgba(255, 236, 160, 0.18);
+  color: #fff6d6;
+}
+
+.ghost__plus {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.ghost__price {
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.farm-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 16px;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, #76583f 0%, #634a35 100%);
+  box-shadow: 0 -3px 10px rgba(0, 0, 0, 0.2);
+}
+
+.tool-row,
+.mode-row {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.tool,
+.mode {
+  border: none;
+  border-radius: 14px;
+  color: #fff8ee;
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.12s ease;
+}
+
+.tool:active,
+.mode:active {
+  transform: scale(0.95);
+}
+
+.tool {
+  flex: 1;
+  max-width: 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 6px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.tool--active {
+  background: rgba(255, 236, 160, 0.3);
+  box-shadow: inset 0 0 0 2px rgba(255, 236, 160, 0.8);
+}
+
+.tool__icon {
+  font-size: 22px;
+}
+
+.tool__label {
+  font-size: 13px;
+}
+
+.tool__price {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff3c4;
+}
+
+.tool__price--short {
+  color: rgba(255, 220, 200, 0.6);
+}
+
+.mode {
+  flex: 1;
+  max-width: 180px;
+  padding: 10px 12px;
+  font-size: 16px;
+  background: rgba(40, 24, 14, 0.3);
+}
+
+.mode--active {
+  background: rgba(255, 255, 255, 0.24);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35);
+}
+
+.mode--glow {
+  animation: mode-glow 1.6s ease-in-out infinite;
+}
+
+@keyframes mode-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 226, 140, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgba(255, 226, 140, 0.85);
   }
 }
 

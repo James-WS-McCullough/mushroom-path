@@ -105,14 +105,14 @@ Example chain:
 
 ## Build phases
 
-1. **Foundations** - "Farming" on the start screen, simulation core, tap to
-   plant/harvest into your basket, tap the log to sell, watering can, growth
-   stages, saving and offline progress.
-2. **Building** - buying ghost plots; place/move/remove for the log, barrels,
-   paths and sprinklers.
-3. **Sprinklers** - watering the 8 surrounding tiles, wet-soil visuals.
-4. **Helpers** - Sprout and Dew, baskets, per-station pick up/drop off
-   settings, route previews and stats.
-5. **Cooking** - campfire and the recipe system, then the stew pot and well.
-6. **More helpers and progression** - Hopper, Skater, Fairy; upgrades,
-   golden mushrooms, sounds and balancing.
+1. **Foundations** ✅ - "Farming" on the start screen, simulation core, tap
+   to plant/harvest into your basket, tap the log to sell, watering can,
+   growth stages, saving and offline progress.
+2. **Building and sprinklers** ✅ - build mode with faded plots to buy
+   around the farm, sprinklers that water the 8 tiles around them,
+   moving the log and sprinklers, removing sprinklers.
+3. **Helpers** - Sprout and Dew, baskets, barrels and paths, per-station
+   pick up/drop off settings, route previews and stats.
+4. **Cooking** - campfire and the recipe system, then the stew pot and well.
+5. **More helpers and progression** - Hopper, Skater, Fairy; upgrades,
+   golden mushrooms, extra logs, sounds and balancing.

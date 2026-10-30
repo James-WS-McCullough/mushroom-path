@@ -10,7 +10,15 @@ const props = defineProps<{
 	position: Position;
 	/** The log glows when there's something to sell */
 	canSell?: boolean;
+	/** A sprinkler is keeping this tile watered */
+	sprinkled?: boolean;
+	/** Highlighted by the build tools (e.g. picked up to move) */
+	selected?: boolean;
 }>();
+
+const isWet = computed(
+	() => props.tile.kind === "plot" && (props.tile.watered || props.sprinkled),
+);
 
 /** Growth below this shows as a little sprout, then the mushroom grows in */
 const SPROUT_UNTIL = 0.3;
@@ -48,7 +56,8 @@ const mushroomTile = computed(() => ({
       'farm-tile',
       `farm-tile--${tile.kind}`,
       {
-        'farm-tile--wet': tile.kind === 'plot' && tile.watered,
+        'farm-tile--wet': isWet,
+        'farm-tile--selected': selected,
         'farm-tile--ripe': stage === 'ripe',
         'farm-tile--can-sell': tile.kind === 'log' && canSell,
       },
@@ -92,11 +101,29 @@ const mushroomTile = computed(() => ({
         />
       </svg>
 
-      <div v-if="tile.watered" class="droplets">
+      <div v-if="isWet && stage !== 'empty'" class="droplets">
         <div class="droplet"></div>
         <div class="droplet"></div>
       </div>
     </template>
+
+    <!-- Sprinkler: keeps the 8 tiles around it watered -->
+    <svg v-else-if="tile.kind === 'sprinkler'" class="sprinkler" viewBox="0 0 64 64" aria-hidden="true">
+      <ellipse class="sprinkler__puddle" cx="32" cy="46" rx="20" ry="7" />
+      <g class="sprinkler__spray">
+        <circle cx="32" cy="10" r="2.2" />
+        <circle cx="52" cy="22" r="1.8" />
+        <circle cx="50" cy="42" r="2" />
+        <circle cx="14" cy="42" r="1.8" />
+        <circle cx="12" cy="22" r="2.2" />
+        <circle cx="22" cy="12" r="1.5" />
+        <circle cx="43" cy="12" r="1.5" />
+      </g>
+      <rect class="sprinkler__base" x="22" y="40" width="20" height="8" rx="4" />
+      <rect class="sprinkler__pipe" x="29.5" y="24" width="5" height="18" rx="2" />
+      <ellipse class="sprinkler__head" cx="32" cy="24" rx="8" ry="4.5" />
+      <ellipse class="sprinkler__shine" cx="29.5" cy="22.8" rx="3" ry="1.3" />
+    </svg>
 
     <!-- Hollow log: where mushrooms are sold -->
     <svg v-else-if="tile.kind === 'log'" class="log" viewBox="0 0 64 64" aria-hidden="true">
@@ -308,6 +335,77 @@ const mushroomTile = computed(() => ({
 
 .farm-tile--wet .progress__fill {
   stroke: #7cc4f0;
+}
+
+.farm-tile--selected {
+  box-shadow:
+    0 0 0 3px #fff2b8,
+    0 0 14px rgba(255, 236, 160, 0.9);
+  z-index: 2;
+}
+
+/* Sprinkler */
+.farm-tile--sprinkler {
+  background:
+    radial-gradient(circle at 50% 70%, rgba(120, 190, 220, 0.35) 0%, transparent 55%),
+    linear-gradient(135deg, #7cb668 0%, #5a9a4a 100%);
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.1);
+}
+
+.sprinkler {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.sprinkler__puddle {
+  fill: rgba(110, 180, 220, 0.45);
+}
+
+.sprinkler__base {
+  fill: #8a8a86;
+  stroke: #6a6a66;
+  stroke-width: 1;
+}
+
+.sprinkler__pipe {
+  fill: #b8893c;
+  stroke: #8a6526;
+  stroke-width: 1;
+}
+
+.sprinkler__head {
+  fill: #d4a54a;
+  stroke: #8a6526;
+  stroke-width: 1.2;
+}
+
+.sprinkler__shine {
+  fill: rgba(255, 245, 210, 0.7);
+}
+
+.sprinkler__spray {
+  fill: #9fd6f5;
+  transform-origin: 32px 26px;
+  animation: spray-spin 2.8s linear infinite;
+}
+
+@keyframes spray-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sprinkler__spray,
+  .farm-tile--ripe .crop,
+  .farm-tile--can-sell .log,
+  .droplet {
+    animation: none;
+  }
 }
 
 /* Hollow log */

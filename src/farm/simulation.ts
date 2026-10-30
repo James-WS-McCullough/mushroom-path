@@ -8,7 +8,7 @@
  */
 
 import type { Position } from "../types/game";
-import { posKey } from "../utils/positionUtils";
+import { DIRECTIONS, getDirectionDelta, posKey } from "../utils/positionUtils";
 
 export const FARM = {
 	/** How long a mushroom takes to grow */
@@ -21,6 +21,11 @@ export const FARM = {
 	MUSHROOM_VALUE: 1,
 	/** Most time away that counts towards offline progress */
 	OFFLINE_CAP_MS: 8 * 60 * 60 * 1000,
+	/** The first extra plot costs this, and each one after costs more */
+	PLOT_BASE_COST: 10,
+	PLOT_COST_GROWTH: 1.15,
+	SPRINKLER_BASE_COST: 40,
+	SPRINKLER_COST_GROWTH: 1.3,
 } as const;
 
 /** A patch of soil. `growth` is null when empty, then 0 → 1 while growing; 1 is ripe */
@@ -35,7 +40,12 @@ export interface LogTile {
 	kind: "log";
 }
 
-export type FarmTile = PlotTile | LogTile;
+/** Keeps the 8 tiles around it watered */
+export interface SprinklerTile {
+	kind: "sprinkler";
+}
+
+export type FarmTile = PlotTile | LogTile | SprinklerTile;
 
 export interface FarmState {
 	/** Keyed by "x,y" */
@@ -47,6 +57,8 @@ export interface FarmState {
 	basketCapacity: number;
 	/** Lifetime mushrooms sold, for stats */
 	totalSold: number;
+	/** Extra plots bought so far, which sets the price of the next */
+	plotsBought: number;
 }
 
 export type TapResult =
@@ -75,6 +87,7 @@ export function createFarm(): FarmState {
 		basket: 0,
 		basketCapacity: FARM.BASKET_CAPACITY,
 		totalSold: 0,
+		plotsBought: 0,
 	};
 }
 
@@ -94,14 +107,31 @@ export function isGrowing(tile: FarmTile | undefined): boolean {
 	return tile?.kind === "plot" && tile.growth !== null && tile.growth < 1;
 }
 
+/** Keys of every tile a sprinkler is keeping watered */
+export function getSprinkledKeys(state: FarmState): Set<string> {
+	const sprinkled = new Set<string>();
+	for (const [key, tile] of Object.entries(state.tiles)) {
+		if (tile.kind !== "sprinkler") continue;
+		const [x = 0, y = 0] = key.split(",").map(Number);
+		for (let dy = -1; dy <= 1; dy++) {
+			for (let dx = -1; dx <= 1; dx++) {
+				if (dx !== 0 || dy !== 0) sprinkled.add(posKey(x + dx, y + dy));
+			}
+		}
+	}
+	return sprinkled;
+}
+
 /** Advance the farm by `ms` milliseconds */
 export function tick(state: FarmState, ms: number): void {
 	if (ms <= 0) return;
-	for (const tile of Object.values(state.tiles)) {
+	const sprinkled = getSprinkledKeys(state);
+	for (const [key, tile] of Object.entries(state.tiles)) {
 		if (tile.kind !== "plot" || tile.growth === null || tile.growth >= 1) {
 			continue;
 		}
-		const speed = tile.watered ? FARM.WATERED_SPEEDUP : 1;
+		const isWet = tile.watered || sprinkled.has(key);
+		const speed = isWet ? FARM.WATERED_SPEEDUP : 1;
 		tile.growth = Math.min(1, tile.growth + (ms * speed) / FARM.GROW_MS);
 	}
 }
@@ -112,7 +142,7 @@ export function tick(state: FarmState, ms: number): void {
  */
 export function tapTile(state: FarmState, pos: Position): TapResult {
 	const tile = getTile(state, pos);
-	if (!tile) return { kind: "nothing" };
+	if (!tile || tile.kind === "sprinkler") return { kind: "nothing" };
 
 	if (tile.kind === "log") {
 		if (state.basket === 0) return { kind: "nothing" };
@@ -130,7 +160,9 @@ export function tapTile(state: FarmState, pos: Position): TapResult {
 	}
 
 	if (tile.growth < 1) {
-		if (tile.watered) return { kind: "nothing" };
+		if (tile.watered || getSprinkledKeys(state).has(posKey(pos.x, pos.y))) {
+			return { kind: "nothing" };
+		}
 		tile.watered = true;
 		return { kind: "watered" };
 	}
@@ -142,6 +174,86 @@ export function tapTile(state: FarmState, pos: Position): TapResult {
 	tile.growth = null;
 	tile.watered = false;
 	return { kind: "harvested" };
+}
+
+// =============================================================================
+// BUILDING
+// =============================================================================
+
+/** Empty spots beside the farm where a new plot can be bought */
+export function getExpansionSpots(state: FarmState): Position[] {
+	const spots = new Map<string, Position>();
+	for (const key of Object.keys(state.tiles)) {
+		const [x = 0, y = 0] = key.split(",").map(Number);
+		for (const direction of DIRECTIONS) {
+			const delta = getDirectionDelta(direction);
+			const spot = { x: x + delta.x, y: y + delta.y };
+			const spotKey = posKey(spot.x, spot.y);
+			if (!state.tiles[spotKey]) spots.set(spotKey, spot);
+		}
+	}
+	return [...spots.values()];
+}
+
+export function getPlotCost(state: FarmState): number {
+	return Math.round(
+		FARM.PLOT_BASE_COST * FARM.PLOT_COST_GROWTH ** state.plotsBought,
+	);
+}
+
+export function getSprinklerCost(state: FarmState): number {
+	const owned = Object.values(state.tiles).filter(
+		(tile) => tile.kind === "sprinkler",
+	).length;
+	return Math.round(
+		FARM.SPRINKLER_BASE_COST * FARM.SPRINKLER_COST_GROWTH ** owned,
+	);
+}
+
+/** Buy a new plot on an empty spot beside the farm */
+export function buyPlot(state: FarmState, pos: Position): boolean {
+	const cost = getPlotCost(state);
+	const isSpot = getExpansionSpots(state).some(
+		(spot) => spot.x === pos.x && spot.y === pos.y,
+	);
+	if (!isSpot || state.money < cost) return false;
+
+	state.money -= cost;
+	state.plotsBought += 1;
+	state.tiles[posKey(pos.x, pos.y)] = emptyPlot();
+	return true;
+}
+
+/** Build a sprinkler on a plot (anything growing there is cleared) */
+export function placeSprinkler(state: FarmState, pos: Position): boolean {
+	const cost = getSprinklerCost(state);
+	if (getTile(state, pos)?.kind !== "plot" || state.money < cost) return false;
+
+	state.money -= cost;
+	state.tiles[posKey(pos.x, pos.y)] = { kind: "sprinkler" };
+	return true;
+}
+
+/** Move a building onto a plot; the spot it left becomes an empty plot */
+export function moveBuilding(
+	state: FarmState,
+	from: Position,
+	to: Position,
+): boolean {
+	const building = getTile(state, from);
+	if (!building || building.kind === "plot") return false;
+	if (getTile(state, to)?.kind !== "plot") return false;
+
+	state.tiles[posKey(to.x, to.y)] = building;
+	state.tiles[posKey(from.x, from.y)] = emptyPlot();
+	return true;
+}
+
+/** Take down a building (the hollow log stays), leaving an empty plot */
+export function removeBuilding(state: FarmState, pos: Position): boolean {
+	if (getTile(state, pos)?.kind !== "sprinkler") return false;
+	state.tiles[posKey(pos.x, pos.y)] = emptyPlot();
+	return true;
 }
 
 // =============================================================================
@@ -194,6 +306,7 @@ export function deserializeFarm(
 		basket: state.basket,
 		basketCapacity: state.basketCapacity ?? FARM.BASKET_CAPACITY,
 		totalSold: state.totalSold ?? 0,
+		plotsBought: state.plotsBought ?? 0,
 	};
 	const awayMs = Math.min(Math.max(now - save.savedAt, 0), FARM.OFFLINE_CAP_MS);
 	tick(restored, awayMs);
