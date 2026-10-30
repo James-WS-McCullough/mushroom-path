@@ -1,0 +1,386 @@
+<script setup lang="ts">
+import { computed } from "vue";
+import GameTile from "../components/GameTile.vue";
+import type { Position } from "../types/game";
+import { TileType } from "../types/game";
+import type { FarmTile } from "./simulation";
+
+const props = defineProps<{
+	tile: FarmTile;
+	position: Position;
+	/** The log glows when there's something to sell */
+	canSell?: boolean;
+}>();
+
+/** Growth below this shows as a little sprout, then the mushroom grows in */
+const SPROUT_UNTIL = 0.3;
+
+const stage = computed(() => {
+	if (props.tile.kind !== "plot" || props.tile.growth === null) return "empty";
+	if (props.tile.growth >= 1) return "ripe";
+	return props.tile.growth < SPROUT_UNTIL ? "sprout" : "growing";
+});
+
+const growth = computed(() =>
+	props.tile.kind === "plot" ? (props.tile.growth ?? 0) : 0,
+);
+
+/** The mushroom swells from 40% to full size as it ripens */
+const cropScale = computed(() => {
+	if (stage.value === "ripe") return 1;
+	const t = (growth.value - SPROUT_UNTIL) / (1 - SPROUT_UNTIL);
+	return 0.4 + 0.5 * Math.max(0, t);
+});
+
+// Progress ring around growing plots
+const RING_RADIUS = 7;
+const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
+
+const mushroomTile = computed(() => ({
+	type: TileType.MUSHROOM,
+	position: props.position,
+}));
+</script>
+
+<template>
+  <div
+    :class="[
+      'farm-tile',
+      `farm-tile--${tile.kind}`,
+      {
+        'farm-tile--wet': tile.kind === 'plot' && tile.watered,
+        'farm-tile--ripe': stage === 'ripe',
+        'farm-tile--can-sell': tile.kind === 'log' && canSell,
+      },
+    ]"
+  >
+    <template v-if="tile.kind === 'plot'">
+      <div class="soil">
+        <div class="furrow"></div>
+        <div class="furrow"></div>
+        <div class="furrow"></div>
+      </div>
+
+      <div v-if="stage === 'sprout'" class="sprout">
+        <div class="sprout__stem"></div>
+        <div class="sprout__leaf sprout__leaf--left"></div>
+        <div class="sprout__leaf sprout__leaf--right"></div>
+      </div>
+
+      <div
+        v-else-if="stage === 'growing' || stage === 'ripe'"
+        class="crop"
+        :style="{ transform: `scale(${cropScale})` }"
+      >
+        <GameTile
+          :tile="mushroomTile"
+          :is-player-here="false"
+          :is-reachable="false"
+          :is-just-planted="false"
+        />
+      </div>
+
+      <svg v-if="stage === 'sprout' || stage === 'growing'" class="progress" viewBox="0 0 20 20">
+        <circle class="progress__track" cx="10" cy="10" :r="RING_RADIUS" />
+        <circle
+          class="progress__fill"
+          cx="10"
+          cy="10"
+          :r="RING_RADIUS"
+          :stroke-dasharray="RING_LENGTH"
+          :stroke-dashoffset="RING_LENGTH * (1 - growth)"
+        />
+      </svg>
+
+      <div v-if="tile.watered" class="droplets">
+        <div class="droplet"></div>
+        <div class="droplet"></div>
+      </div>
+    </template>
+
+    <!-- Hollow log: where mushrooms are sold -->
+    <svg v-else-if="tile.kind === 'log'" class="log" viewBox="0 0 64 64" aria-hidden="true">
+      <ellipse class="log__shadow" cx="33" cy="52" rx="26" ry="5" />
+      <rect class="log__bark" x="12" y="20" width="46" height="30" rx="9" />
+      <path class="log__grain" d="M24 26 Q34 24 46 27 M22 35 Q36 33 52 36 M26 44 Q38 42 50 45" />
+      <ellipse class="log__end" cx="14" cy="35" rx="10" ry="15" />
+      <ellipse class="log__ring" cx="14" cy="35" rx="7" ry="11" />
+      <ellipse class="log__hole" cx="14" cy="35" rx="4.5" ry="8" />
+      <path class="log__moss" d="M20 21 Q26 14 33 19 Q39 13 46 19 Q52 15 57 22 L57 25 Q40 21 20 25 Z" />
+      <g class="log__mushroom">
+        <rect x="44" y="12" width="3" height="7" rx="1.5" fill="#f3e6d4" />
+        <path d="M40 13 Q45.5 5 51 13 Z" fill="#d9534f" />
+        <circle cx="44" cy="10.5" r="0.9" fill="#fff" />
+        <circle cx="47.5" cy="11.5" r="0.7" fill="#fff" />
+      </g>
+    </svg>
+  </div>
+</template>
+
+<style scoped>
+.farm-tile {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.12s ease;
+}
+
+.farm-tile:active {
+  transform: scale(0.94);
+}
+
+/* Tilled soil */
+.soil {
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 30% 25%, rgba(150, 105, 70, 0.35) 0%, transparent 45%),
+    linear-gradient(160deg, #8c6142 0%, #74503a 60%, #644432 100%);
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.15);
+  transition: filter 0.6s ease;
+  overflow: hidden;
+}
+
+.furrow {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(60, 38, 26, 0.45);
+  box-shadow: 0 2px 0 rgba(170, 125, 90, 0.25);
+}
+
+.furrow:nth-child(1) {
+  top: 14px;
+}
+
+.furrow:nth-child(2) {
+  top: 29px;
+}
+
+.furrow:nth-child(3) {
+  top: 44px;
+}
+
+/* Watered soil is darker */
+.farm-tile--wet .soil {
+  filter: brightness(0.72) saturate(1.15);
+}
+
+.droplets {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.droplet {
+  position: absolute;
+  width: 6px;
+  height: 8px;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  background: radial-gradient(circle at 35% 35%, #e2f4ff 0%, #7cc4f0 60%, #4a9ad0 100%);
+  opacity: 0.85;
+  animation: droplet-shine 2.4s ease-in-out infinite;
+}
+
+.droplet:nth-child(1) {
+  top: 8px;
+  left: 9px;
+}
+
+.droplet:nth-child(2) {
+  bottom: 9px;
+  right: 10px;
+  animation-delay: 1.2s;
+}
+
+@keyframes droplet-shine {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.95;
+  }
+}
+
+/* Little sprout before the mushroom appears */
+.sprout {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 20px;
+  height: 20px;
+  transform: translate(-50%, -40%);
+}
+
+.sprout__stem {
+  position: absolute;
+  left: 9px;
+  bottom: 0;
+  width: 3px;
+  height: 12px;
+  border-radius: 2px;
+  background: #5c9a42;
+}
+
+.sprout__leaf {
+  position: absolute;
+  top: 2px;
+  width: 9px;
+  height: 6px;
+  background: #7cc25a;
+  border-radius: 100% 0;
+}
+
+.sprout__leaf--left {
+  left: 1px;
+  transform: rotate(-20deg);
+}
+
+.sprout__leaf--right {
+  right: 0;
+  transform: scaleX(-1) rotate(-20deg);
+}
+
+/* Growing mushroom, reusing the puzzle game's mushroom art */
+.crop {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 85%;
+  transition: transform 0.3s ease;
+  pointer-events: none;
+}
+
+.crop :deep(.tile) {
+  background: transparent;
+  box-shadow: none;
+}
+
+.farm-tile--ripe .crop {
+  animation: ripe-bob 1.8s ease-in-out infinite;
+}
+
+@keyframes ripe-bob {
+  0%,
+  100% {
+    transform: scale(1) translateY(0);
+  }
+  50% {
+    transform: scale(1.04) translateY(-2px);
+  }
+}
+
+.farm-tile--ripe .soil {
+  box-shadow:
+    inset 0 -4px 0 rgba(0, 0, 0, 0.15),
+    inset 0 0 0 2px rgba(255, 236, 170, 0.55);
+}
+
+.progress {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 18px;
+  height: 18px;
+  transform: rotate(-90deg);
+  pointer-events: none;
+}
+
+.progress__track {
+  fill: rgba(40, 26, 18, 0.55);
+  stroke: rgba(255, 255, 255, 0.15);
+  stroke-width: 3;
+}
+
+.progress__fill {
+  fill: none;
+  stroke: #a8e07c;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.farm-tile--wet .progress__fill {
+  stroke: #7cc4f0;
+}
+
+/* Hollow log */
+.farm-tile--log {
+  background:
+    radial-gradient(circle at 25% 80%, rgba(120, 180, 100, 0.4) 0%, transparent 30%),
+    linear-gradient(135deg, #7cb668 0%, #5a9a4a 100%);
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.1);
+}
+
+.log {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.log__shadow {
+  fill: rgba(30, 50, 20, 0.3);
+}
+
+.log__bark {
+  fill: #7a5236;
+  stroke: #5a3a24;
+  stroke-width: 1.5;
+}
+
+.log__grain {
+  fill: none;
+  stroke: #5e3d27;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.log__end {
+  fill: #c99a68;
+  stroke: #6b4429;
+  stroke-width: 1.5;
+}
+
+.log__ring {
+  fill: none;
+  stroke: #a77a4e;
+  stroke-width: 1.2;
+}
+
+.log__hole {
+  fill: #2e1d12;
+}
+
+.log__moss {
+  fill: #6fae4f;
+}
+
+.farm-tile--can-sell .log {
+  animation: log-wiggle 1.6s ease-in-out infinite;
+}
+
+.farm-tile--can-sell {
+  box-shadow:
+    inset 0 -4px 0 rgba(0, 0, 0, 0.1),
+    0 0 0 3px rgba(255, 226, 140, 0.8);
+}
+
+@keyframes log-wiggle {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-2deg);
+  }
+  75% {
+    transform: rotate(2deg);
+  }
+}
+</style>
