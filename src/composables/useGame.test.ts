@@ -770,7 +770,7 @@ describe("useGame", () => {
 			const game = useGame(level);
 
 			game.movePlayer("right"); // Slides to stone at x=3
-			vi.advanceTimersByTime(500); // wait for all animations
+			vi.advanceTimersByTime(700); // wait for all animations
 			expect(game.playerPosition.value).toEqual({ x: 3, y: 0 });
 
 			game.undo();
@@ -1321,7 +1321,7 @@ describe("useGame", () => {
 			const game = useGame(level);
 
 			game.movePlayer("right");
-			vi.advanceTimersByTime(800);
+			vi.advanceTimersByTime(1000);
 
 			// Player should be at x=3
 			expect(game.playerPosition.value).toEqual({ x: 3, y: 0 });
@@ -1429,7 +1429,7 @@ describe("useGame", () => {
 
 			// First teleport: x=0 -> portal at x=1 -> teleport to x=3
 			game.movePlayer("right");
-			vi.advanceTimersByTime(800);
+			vi.advanceTimersByTime(1000);
 			expect(game.playerPosition.value).toEqual({ x: 3, y: 0 });
 
 			// Move to grass at x=4
@@ -1439,7 +1439,7 @@ describe("useGame", () => {
 
 			// Move back to portal at x=3, should teleport to x=1
 			game.movePlayer("left");
-			vi.advanceTimersByTime(800);
+			vi.advanceTimersByTime(1000);
 			expect(game.playerPosition.value).toEqual({ x: 1, y: 0 });
 		});
 	});
@@ -2713,6 +2713,183 @@ describe("useGame", () => {
 
 			// G=1, D=2 (needs 2 visits), H=1, A=1, X=1, L=1 = 7
 			expect(game.grassTilesRemaining.value).toBe(7);
+		});
+	});
+
+	describe("forced movement landing effects and input locking", () => {
+		beforeEach(() => {
+			vi.useFakeTimers();
+		});
+
+		afterEach(() => {
+			vi.useRealTimers();
+		});
+
+		// Row of grass, a base star at `baseX` and star paths trailing off to the right
+		function createStarLevel(row: TileType[], baseX: number, pathXs: number[]): Level {
+			const starConnections: Record<string, string> = {};
+			const starTrailTo: Record<string, string> = {};
+			let prev = `${baseX},0`;
+			for (const x of pathXs) {
+				starConnections[`${x},0`] = `${baseX},0`;
+				starTrailTo[prev] = `${x},0`;
+				prev = `${x},0`;
+			}
+			return {
+				name: "Star Test",
+				width: row.length,
+				height: 1,
+				grid: [row],
+				startPosition: { x: 0, y: 0 },
+				starConnections,
+				starTrailTo,
+			};
+		}
+
+		it("should collect an acorn reached by bouncing", () => {
+			const level = createTestLevel(["GTBBAG"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+			vi.advanceTimersByTime(1500);
+
+			expect(game.playerPosition.value).toEqual({ x: 4, y: 0 });
+			expect(game.collectedAcorns.value).toBe(1);
+			expect(game.tiles.value[0][4].type).toBe(TileType.GRASS);
+
+			// The level is still winnable
+			game.movePlayer("right");
+			expect(game.hasWon.value).toBe(true);
+		});
+
+		it("should collect an acorn reached by sliding on ice", () => {
+			const level = createTestLevel(["GIAG"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+			vi.advanceTimersByTime(1500);
+
+			expect(game.playerPosition.value).toEqual({ x: 2, y: 0 });
+			expect(game.collectedAcorns.value).toBe(1);
+			expect(game.tiles.value[0][2].type).toBe(TileType.GRASS);
+		});
+
+		it("should restore the acorn when undoing a bounce that collected it", () => {
+			const level = createTestLevel(["GTBBAG"], 0, 0);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+			vi.advanceTimersByTime(1500);
+			game.undo();
+
+			expect(game.playerPosition.value).toEqual({ x: 0, y: 0 });
+			expect(game.collectedAcorns.value).toBe(0);
+			expect(game.tiles.value[0][4].type).toBe(TileType.ACORN);
+		});
+
+		it("should not bounce onto a squirrel the player cannot feed", () => {
+			const level = createTestLevel(["GTBBX"], 0, 0, undefined, { "4,0": 1 });
+			const game = useGame(level);
+
+			game.movePlayer("right");
+			vi.advanceTimersByTime(1500);
+
+			expect(game.playerPosition.value).toEqual({ x: 1, y: 0 });
+			expect(game.collectedAcorns.value).toBe(0);
+			expect(game.tiles.value[0][4].type).toBe(TileType.SQUIRREL);
+		});
+
+		it("should stop an ice slide before a squirrel the player cannot feed", () => {
+			const level = createTestLevel(["GIIX"], 0, 0, undefined, { "3,0": 1 });
+			const game = useGame(level);
+
+			game.movePlayer("right");
+			vi.advanceTimersByTime(1500);
+
+			expect(game.playerPosition.value).toEqual({ x: 2, y: 0 });
+			expect(game.collectedAcorns.value).toBe(0);
+		});
+
+		it("should bloom star paths when bouncing onto a base star", () => {
+			const level = createStarLevel(
+				[
+					TileType.GRASS,
+					TileType.BOUNCE_PAD,
+					TileType.BRAMBLE,
+					TileType.BRAMBLE,
+					TileType.BASE_STAR,
+					TileType.STAR_PATH,
+					TileType.STAR_PATH,
+				],
+				4,
+				[5, 6],
+			);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+			vi.advanceTimersByTime(2000);
+
+			expect(game.playerPosition.value).toEqual({ x: 4, y: 0 });
+			expect(game.tiles.value[0][5].type).toBe(TileType.STAR_MUSHROOM);
+			expect(game.tiles.value[0][6].type).toBe(TileType.STAR_MUSHROOM);
+		});
+
+		it("should fully revert a star bloom when undoing mid-animation", () => {
+			const level = createStarLevel(
+				[
+					TileType.GRASS,
+					TileType.BASE_STAR,
+					TileType.STAR_PATH,
+					TileType.STAR_PATH,
+					TileType.STAR_PATH,
+					TileType.GRASS,
+				],
+				1,
+				[2, 3, 4],
+			);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+			vi.advanceTimersByTime(10);
+			game.undo();
+			vi.advanceTimersByTime(2000);
+
+			expect(game.playerPosition.value).toEqual({ x: 0, y: 0 });
+			expect(game.tiles.value[0][2].type).toBe(TileType.STAR_PATH);
+			expect(game.tiles.value[0][3].type).toBe(TileType.STAR_PATH);
+			expect(game.tiles.value[0][4].type).toBe(TileType.STAR_PATH);
+		});
+
+		it("should ignore undo while a water slide is still moving", () => {
+			const level = createTestLevel(["GWWSG"], 0, 0, {
+				"1,0": "right",
+				"2,0": "right",
+			});
+			const game = useGame(level);
+
+			game.movePlayer("right");
+			vi.advanceTimersByTime(250);
+			expect(game.canUndo.value).toBe(false);
+			game.undo();
+			vi.advanceTimersByTime(1000);
+
+			expect(game.playerPosition.value).toEqual({ x: 3, y: 0 });
+			expect(game.tiles.value[0][0].type).toBe(TileType.MUSHROOM);
+			expect(game.canUndo.value).toBe(true);
+		});
+
+		it("should ignore moves while a teleport is still in progress", () => {
+			const level = createTestLevel(["VGVVV", "GPBPG"], 0, 1);
+			const game = useGame(level);
+
+			game.movePlayer("right");
+			vi.advanceTimersByTime(300);
+			game.movePlayer("up");
+			vi.advanceTimersByTime(1500);
+
+			expect(game.playerPosition.value).toEqual({ x: 3, y: 1 });
+			// Only one move happened, so the tide only advanced once
+			expect(game.tidePhase.value).toBe(2);
 		});
 	});
 });

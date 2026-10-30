@@ -95,12 +95,15 @@ function isBlockedTileType(tileType: TileType): boolean {
 /** Check if a bounce pad can land on a tile type at a given tide phase */
 function canBounceLandOn(
 	tileType: TileType | undefined,
-	currentTidePhase: number
+	currentTidePhase: number,
+	canFeedSquirrel: boolean,
 ): boolean {
 	if (!tileType) return false;
 	if (isBlockedTileType(tileType)) return false;
 	// Can't land on flooded LOW_SAND
 	if (tileType === TileType.LOW_SAND && currentTidePhase === 0) return false;
+	// Squirrels only let you land if you can feed them
+	if (tileType === TileType.SQUIRREL && !canFeedSquirrel) return false;
 	return true;
 }
 
@@ -136,6 +139,9 @@ export function useGame(level: Level) {
 	const isBouncing = ref(false);
 	const lastBouncePadPosition = ref<Position | null>(null);
 	const isTeleporting = ref(false);
+	// True from the moment a move lands on a forced-movement tile (water, ice,
+	// bounce pad, portal) until the player finally settles
+	const isResolvingMove = ref(false);
 	const teleportPhase = ref<TeleportPhase>(null);
 	const poofPositions = ref<Position[]>([]);
 	const facingDirection = ref<FacingDirection>("left"); // Sprites face left by default
@@ -992,7 +998,9 @@ export function useGame(level: Level) {
 					nextType === TileType.HONEY_MUSHROOM ||
 					nextType === TileType.STAR_MUSHROOM ||
 					nextType === TileType.VOID ||
-					nextType === TileType.POND_WATER
+					nextType === TileType.POND_WATER ||
+					(nextType === TileType.SQUIRREL &&
+						acornCount < getSquirrelRequirement(next))
 				) {
 					break;
 				}
@@ -1041,7 +1049,13 @@ export function useGame(level: Level) {
 								// If chain fails (blocked), we still land on this bounce pad
 								return chainResult ?? landingPos;
 							}
-							if (canBounceLandOn(landingType, newTidePhase)) {
+							if (
+								canBounceLandOn(
+									landingType,
+									newTidePhase,
+									acornCount >= getSquirrelRequirement(landingPos),
+								)
+							) {
 								return landingPos;
 							}
 						}
@@ -1110,7 +1124,13 @@ export function useGame(level: Level) {
 							return chainResult ?? landingPos;
 						}
 
-						if (canBounceLandOn(landingType, newTidePhase)) {
+						if (
+							canBounceLandOn(
+								landingType,
+								newTidePhase,
+								acornCount >= getSquirrelRequirement(landingPos),
+							)
+						) {
 							return landingPos;
 						}
 					}
@@ -1264,7 +1284,9 @@ export function useGame(level: Level) {
 				nextTile.type === TileType.HONEY_MUSHROOM ||
 				nextTile.type === TileType.STAR_MUSHROOM ||
 				nextTile.type === TileType.VOID ||
-				nextTile.type === TileType.POND_WATER
+				nextTile.type === TileType.POND_WATER ||
+				// Hungry squirrels block the slide unless you can feed them
+				(nextTile.type === TileType.SQUIRREL && !canFeedSquirrel(next))
 			) {
 				break;
 			}
@@ -1304,7 +1326,13 @@ export function useGame(level: Level) {
 			const landingTile = getTile(landingPos);
 
 			// Check if we can land there (we can jump OVER obstacles, only landing matters)
-			if (canBounceLandOn(landingTile?.type, tidePhase.value)) {
+			if (
+				canBounceLandOn(
+					landingTile?.type,
+					tidePhase.value,
+					canFeedSquirrel(landingPos),
+				)
+			) {
 				// Build the path for animation (includes all positions we pass through)
 				const path: Position[] = [startPos];
 				for (let i = 1; i <= bounceDistance; i++) {
@@ -1374,19 +1402,18 @@ export function useGame(level: Level) {
 		}, ANIMATION.PORTAL_SHRINK);
 	}
 
-	// Helper function for recursive bounce chaining
-	function animateBounceChain(
+	/** Animate a single bounce from a bounce pad, then report where it landed */
+	function animateBounce(
 		startPos: Position,
 		direction: Direction,
-		onComplete: () => void,
+		onComplete: (destination: Position, didMove: boolean) => void,
 	): void {
 		const { path, destination, didMove } =
 			computeBounceDestination(startPos, direction);
 
 		// If we can't move at all, just complete immediately
 		if (!didMove) {
-			isBouncing.value = false;
-			onComplete();
+			onComplete(startPos, false);
 			return;
 		}
 
@@ -1424,71 +1451,73 @@ export function useGame(level: Level) {
 				clearInterval(bounceInterval);
 				isSliding.value = false;
 				slidePath.value = [];
-
-				// Check what we landed on
-				const finalTile = getTile(destination);
-
-				if (finalTile?.type === TileType.BOUNCE_PAD) {
-					// Chain into another bounce recursively!
-					animateBounceChain(destination, direction, onComplete);
-				} else if (finalTile?.type === TileType.WATER) {
-					// Chain into water slide
-					isBouncing.value = false;
-					const { path: waterPath } = computeSlideDestination(destination);
-					playWater();
-					animateSlide(waterPath, onComplete);
-				} else if (finalTile?.type === TileType.ICE) {
-					// Chain into ice slide
-					isBouncing.value = false;
-					const { path: icePath, destination: iceDestination } = computeIceSlideDestination(
-						destination,
-						direction,
-					);
-					startIceSlide();
-					animateSlide(icePath, () => {
-						stopIceSlide();
-
-						// Check for chaining after ice slide
-						const iceEndTile = getTile(iceDestination);
-						if (iceEndTile?.type === TileType.BOUNCE_PAD) {
-							// Chain into bounce pad
-							animateBounceChain(iceDestination, direction, onComplete);
-						} else if (iceEndTile?.type === TileType.WATER) {
-							// Chain into water slide
-							const { path: waterPath } = computeSlideDestination(iceDestination);
-							playWater();
-							animateSlide(waterPath, onComplete);
-						} else if (iceEndTile && isPortalTile(iceEndTile.type)) {
-							// Chain into portal
-							const portalType = iceEndTile.type as PortalType;
-							const matchingPortal = findMatchingPortal(portalType, iceDestination);
-							if (matchingPortal) {
-								performPortalTeleport(iceDestination, matchingPortal, onComplete);
-							} else {
-								onComplete();
-							}
-						} else {
-							onComplete();
-						}
-					});
-				} else if (finalTile && isPortalTile(finalTile.type)) {
-					// Chain into portal
-					isBouncing.value = false;
-					const portalType = finalTile.type as PortalType;
-					const matchingPortal = findMatchingPortal(portalType, destination);
-					if (matchingPortal) {
-						performPortalTeleport(destination, matchingPortal, onComplete);
-					} else {
-						onComplete();
-					}
-				} else {
-					// Normal landing - play sound based on tile
-					isBouncing.value = false;
-					playLandingSound(finalTile ?? undefined);
-					onComplete();
-				}
+				onComplete(destination, true);
 			}
 		}, intervalTime);
+	}
+
+	/** Check if landing on this tile type sends the player somewhere else */
+	function isForcedMovementTile(tileType: TileType | undefined): boolean {
+		return (
+			tileType === TileType.WATER ||
+			tileType === TileType.ICE ||
+			tileType === TileType.BOUNCE_PAD ||
+			(tileType !== undefined && isPortalTile(tileType))
+		);
+	}
+
+	/**
+	 * Carry the player through any forced movement starting at `pos` (water
+	 * slide, ice slide, bounce, portal), chaining from one to the next, and
+	 * report the tile where they finally settle.
+	 */
+	function resolveForcedMovement(
+		pos: Position,
+		direction: Direction,
+		onSettled: (finalPos: Position) => void,
+	): void {
+		const tile = getTile(pos);
+
+		if (tile?.type === TileType.WATER) {
+			// Rivers carry the player to the end of the flow
+			const { path, destination } = computeSlideDestination(pos);
+			playWater();
+			animateSlide(path, () => onSettled(destination));
+		} else if (tile?.type === TileType.ICE) {
+			const { path, destination } = computeIceSlideDestination(pos, direction);
+			startIceSlide();
+			animateSlide(path, () => {
+				stopIceSlide();
+				// Stopped on ice (blocked or at the edge) - nowhere else to go
+				if (getTile(destination)?.type === TileType.ICE) {
+					onSettled(destination);
+				} else {
+					resolveForcedMovement(destination, direction, onSettled);
+				}
+			});
+		} else if (tile?.type === TileType.BOUNCE_PAD) {
+			animateBounce(pos, direction, (destination, didMove) => {
+				isBouncing.value = false;
+				if (didMove) {
+					resolveForcedMovement(destination, direction, onSettled);
+				} else {
+					onSettled(pos);
+				}
+			});
+		} else if (tile && isPortalTile(tile.type)) {
+			// The arrival portal doesn't fire again, so the chain ends there
+			const matchingPortal = findMatchingPortal(tile.type, pos);
+			if (matchingPortal) {
+				performPortalTeleport(pos, matchingPortal, () =>
+					onSettled(matchingPortal),
+				);
+			} else {
+				onSettled(pos);
+			}
+		} else {
+			playLandingSound(tile ?? undefined);
+			onSettled(pos);
+		}
 	}
 
 	function tryMove(direction: Direction): Position | null {
@@ -1552,6 +1581,25 @@ export function useGame(level: Level) {
 		return orderedPaths;
 	}
 
+	// Star path tiles scheduled to bloom but not yet bloomed
+	interface PendingBloom {
+		position: Position;
+		timeoutId: ReturnType<typeof setTimeout>;
+	}
+	const pendingBlooms = new Set<PendingBloom>();
+
+	/** Bloom any still-animating star paths immediately (used before undo) */
+	function flushPendingBlooms() {
+		for (const pending of pendingBlooms) {
+			clearTimeout(pending.timeoutId);
+			const cell = tiles.value[pending.position.y]?.[pending.position.x];
+			if (cell && cell.type === TileType.STAR_PATH) {
+				cell.type = TileType.STAR_MUSHROOM;
+			}
+		}
+		pendingBlooms.clear();
+	}
+
 	// Bloom all connected STAR_PATH tiles to MUSHROOM when landing on BASE_STAR
 	// Animates each tile with a delay for a satisfying "pop pop pop" effect
 	// Returns the changed tiles for undo tracking and the total animation duration
@@ -1573,7 +1621,13 @@ export function useGame(level: Level) {
 		const isLastTile = (index: number) => index === connectedPaths.length - 1;
 
 		connectedPaths.forEach((pathPos, index) => {
-			setTimeout(() => {
+			const pending: PendingBloom = {
+				position: { ...pathPos },
+				timeoutId: 0,
+			};
+			pendingBlooms.add(pending);
+			pending.timeoutId = setTimeout(() => {
+				pendingBlooms.delete(pending);
 				const row = tiles.value[pathPos.y];
 				const cell = row?.[pathPos.x];
 				if (cell && cell.type === TileType.STAR_PATH) {
@@ -1802,16 +1856,6 @@ export function useGame(level: Level) {
 
 		isHopping.value = true;
 		plantMushroom(playerPosition.value);
-
-		// Handle landing on acorn/squirrel tiles (changes tile type and updates acorn count)
-		const landingChanges = handleLandingTile(targetPosition);
-		if (landingChanges.length > 0) {
-			historyEntry.additionalChanges = [
-				...(historyEntry.additionalChanges ?? []),
-				...landingChanges,
-			];
-		}
-
 		moveHistory.value.push(historyEntry);
 
 		// Play jump sound if jumping
@@ -1819,138 +1863,54 @@ export function useGame(level: Level) {
 			playJump();
 		}
 
-		// Check if landing on water - need to slide
 		const landingTile = getTile(targetPosition);
-		if (landingTile?.type === TileType.WATER) {
-			const { path } = computeSlideDestination(targetPosition);
-			slidePath.value = path;
-			playerPosition.value = targetPosition;
+		playerPosition.value = targetPosition;
 
-			// Start sliding animation after hop completes
-			setTimeout(() => {
-				isHopping.value = false;
-				playWater();
-				animateSlide(path, () => {
-					if (checkWinCondition()) {
-						hasWon.value = true;
-					}
-				});
-			}, ANIMATION.HOP_DURATION);
-		} else if (landingTile?.type === TileType.ICE) {
-			// Ice sliding - slide in the direction of movement
-			const { path, destination } = computeIceSlideDestination(
-				targetPosition,
-				direction,
-			);
-			slidePath.value = path;
-			playerPosition.value = targetPosition;
-
-			// Start sliding animation after hop completes
-			setTimeout(() => {
-				isHopping.value = false;
-				startIceSlide();
-				animateSlide(path, () => {
-					stopIceSlide();
-
-					// Check what we landed on - may need to chain
-					const finalTile = getTile(destination);
-					if (finalTile?.type === TileType.WATER) {
-						// Chain into water slide
-						const { path: waterPath } = computeSlideDestination(destination);
-						playWater();
-						animateSlide(waterPath, () => {
-							if (checkWinCondition()) {
-								hasWon.value = true;
-							}
-						});
-					} else if (finalTile && isPortalTile(finalTile.type)) {
-						// Chain into portal teleportation
-						const portalType = finalTile.type as PortalType;
-						const matchingPortal = findMatchingPortal(portalType, destination);
-						if (matchingPortal) {
-							performPortalTeleport(destination, matchingPortal, () => {
-								if (checkWinCondition()) {
-									hasWon.value = true;
-								}
-							});
-						} else {
-							if (checkWinCondition()) {
-								hasWon.value = true;
-							}
-						}
-					} else if (finalTile?.type === TileType.BOUNCE_PAD) {
-						// Chain into bounce pad
-						animateBounceChain(destination, direction, () => {
-							if (checkWinCondition()) {
-								hasWon.value = true;
-							}
-						});
-					} else {
-						// Play landing sound based on final tile type
-						playLandingSound(finalTile ?? undefined);
-						if (checkWinCondition()) {
-							hasWon.value = true;
-						}
-					}
-				});
-			}, ANIMATION.HOP_DURATION);
-		} else if (landingTile?.type === TileType.BOUNCE_PAD) {
-			// Bounce pad - bounce player 3 tiles in movement direction
-			playerPosition.value = targetPosition;
-
-			// Start bouncing animation after hop completes
-			setTimeout(() => {
-				isHopping.value = false;
-				// Use recursive helper for chain bouncing
-				animateBounceChain(targetPosition, direction, () => {
-					if (checkWinCondition()) {
-						hasWon.value = true;
-					}
-				});
-			}, ANIMATION.HOP_DURATION);
-		} else if (landingTile && isPortalTile(landingTile.type)) {
-			// Portal teleportation - portals stay active for bidirectional travel
-			const portalType = landingTile.type as PortalType;
-			playerPosition.value = targetPosition;
-
-			setTimeout(() => {
-				isHopping.value = false;
-
-				// Find matching portal
-				const matchingPortal = findMatchingPortal(portalType, targetPosition);
-				if (matchingPortal) {
-					performPortalTeleport(targetPosition, matchingPortal, () => {
-						if (checkWinCondition()) {
-							hasWon.value = true;
-						}
-					});
-				} else {
-					// No matching portal, just stay here
-					if (checkWinCondition()) {
-						hasWon.value = true;
-					}
-				}
-			}, ANIMATION.HOP_DURATION);
-		} else {
-			playerPosition.value = targetPosition;
-
-			// Reset hop animation and play landing sound based on tile type
-			setTimeout(() => {
-				isHopping.value = false;
-				playLandingSound(landingTile ?? undefined);
-			}, ANIMATION.HOP_DURATION);
-
-			if (checkWinCondition()) {
-				hasWon.value = true;
+		if (isForcedMovementTile(landingTile?.type)) {
+			// Preview the slide path during the hop
+			if (landingTile?.type === TileType.WATER) {
+				slidePath.value = computeSlideDestination(targetPosition).path;
+			} else if (landingTile?.type === TileType.ICE) {
+				slidePath.value = computeIceSlideDestination(targetPosition, direction).path;
 			}
+
+			isResolvingMove.value = true;
+			setTimeout(() => {
+				isHopping.value = false;
+				resolveForcedMovement(targetPosition, direction, (finalPos) => {
+					// Acorns, squirrels and base stars trigger where the player ends up
+					recordLandingChanges(historyEntry, handleLandingTile(finalPos));
+					isResolvingMove.value = false;
+					if (checkWinCondition()) {
+						hasWon.value = true;
+					}
+				});
+			}, ANIMATION.HOP_DURATION);
+			return;
+		}
+
+		// Handle landing on acorn/squirrel/star tiles (changes tile type and updates acorn count)
+		recordLandingChanges(historyEntry, handleLandingTile(targetPosition));
+
+		// Reset hop animation and play landing sound based on tile type
+		setTimeout(() => {
+			isHopping.value = false;
+			playLandingSound(landingTile ?? undefined);
+		}, ANIMATION.HOP_DURATION);
+
+		if (checkWinCondition()) {
+			hasWon.value = true;
+		}
+	}
+
+	function recordLandingChanges(entry: MoveHistory, changes: ChangedTile[]) {
+		if (changes.length > 0) {
+			entry.additionalChanges = [...(entry.additionalChanges ?? []), ...changes];
 		}
 	}
 
 	function movePlayer(direction: Direction) {
-		if (hasWon.value || isSliding.value) return;
-		// Block movement while hopping onto water (prevents overriding slide animation)
-		const currentTile = getTile(playerPosition.value);
-		if (isHopping.value && currentTile?.type === TileType.WATER) return;
+		if (hasWon.value || isSliding.value || isResolvingMove.value) return;
 
 		const newPosition = tryMove(direction);
 		if (!newPosition) return;
@@ -2002,10 +1962,7 @@ export function useGame(level: Level) {
 	}
 
 	function moveToPosition(target: Position) {
-		if (hasWon.value || isSliding.value) return;
-		// Block movement while hopping onto water (prevents overriding slide animation)
-		const currentTile = getTile(playerPosition.value);
-		if (isHopping.value && currentTile?.type === TileType.WATER) return;
+		if (hasWon.value || isSliding.value || isResolvingMove.value) return;
 		if (!canReachByClick(target)) return;
 
 		// Reset idle timer on successful move
@@ -2080,7 +2037,9 @@ export function useGame(level: Level) {
 		forceShowHints.value = !forceShowHints.value;
 	}
 
-	const canUndo = computed(() => moveHistory.value.length > 0);
+	const canUndo = computed(
+		() => moveHistory.value.length > 0 && !isResolvingMove.value,
+	);
 
 	// Hint system - uses graph connectivity to find valid moves
 	interface HintResult {
@@ -2196,8 +2155,11 @@ export function useGame(level: Level) {
 	});
 
 	function undo() {
-		if (moveHistory.value.length === 0) return;
+		if (!canUndo.value) return;
 		if (hasWon.value) return;
+
+		// Finish any blooms still animating so the restore below sees final tiles
+		flushPendingBlooms();
 
 		const lastMove = moveHistory.value.pop();
 		if (!lastMove) return;
