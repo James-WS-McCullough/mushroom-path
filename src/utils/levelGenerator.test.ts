@@ -1,6 +1,30 @@
 import { describe, expect, it } from "vitest";
+import {
+	applyMove,
+	createInitialState,
+	createLevelRules,
+	getDirectionToTarget,
+	isWin,
+} from "../game/rules";
 import { type Level, TileType, WorldElement } from "../types/game";
 import { generateLevel } from "./levelGenerator";
+
+/** Tap through a level's stored solution with the real game rules; true if it wins */
+function solutionWins(level: Level): boolean {
+	const rules = createLevelRules(level);
+	let state = createInitialState(level);
+	const [start, ...targets] = level.solutionPath ?? [];
+	if (!start || start.x !== state.player.x || start.y !== state.player.y) {
+		return false;
+	}
+	for (const target of targets) {
+		const direction = getDirectionToTarget(rules, state, target);
+		const move = direction && applyMove(rules, state, direction);
+		if (!move) return false;
+		state = move.final;
+	}
+	return isWin(state);
+}
 
 // Helper to count tiles of a specific type
 function countTiles(level: Level, type: TileType): number {
@@ -895,4 +919,39 @@ describe("levelGenerator", () => {
 			expect(validCount).toBeGreaterThanOrEqual(iterations * 0.7);
 		});
 	});
+
+	describe("solvability", () => {
+		const W = WorldElement;
+		const combos: WorldElement[][] = [
+			[],
+			[W.RIVERS],
+			[W.DIRT],
+			[W.ICE],
+			[W.POND],
+			[W.TIDES],
+			[W.BOUNCE],
+			[W.FAIRY],
+			[W.HONEY],
+			[W.ACORN],
+			[W.STAR],
+			[W.RIVERS, W.TIDES],
+			[W.ICE, W.BOUNCE],
+			[W.DIRT, W.ICE],
+			[W.ACORN, W.ICE],
+			[W.STAR, W.FAIRY],
+		];
+
+		it.each(combos.map((elements) => [elements.join("+") || "plain", elements]))(
+			"every %s level's solution wins under the game rules",
+			(_name, elements) => {
+				for (let i = 0; i < 6; i++) {
+					const level = generateLevel({}, elements as WorldElement[]);
+					expect(level).not.toBeNull();
+					if (level) expect(solutionWins(level)).toBe(true);
+				}
+			},
+			60_000,
+		);
+	});
 });
+

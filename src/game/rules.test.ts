@@ -100,9 +100,13 @@ describe("rules", () => {
 
 		it("follows a river to its stone", () => {
 			const { rules, state } = setup(
-				makeLevel(["GWWSG"], { x: 0, y: 0 }, {
-					waterFlow: { "1,0": "right", "2,0": "right" },
-				}),
+				makeLevel(
+					["GWWSG"],
+					{ x: 0, y: 0 },
+					{
+						waterFlow: { "1,0": "right", "2,0": "right" },
+					},
+				),
 			);
 			const move = applyMove(rules, state, "right");
 			expect(move?.settled).toEqual({ x: 3, y: 0 });
@@ -145,7 +149,10 @@ describe("rules", () => {
 		it("collects an acorn where a slide ends", () => {
 			const { rules, state } = setup(makeLevel(["GIAG"], { x: 0, y: 0 }));
 			const move = applyMove(rules, state, "right");
-			expect(move?.landing).toEqual({ kind: "acorn", position: { x: 2, y: 0 } });
+			expect(move?.landing).toEqual({
+				kind: "acorn",
+				position: { x: 2, y: 0 },
+			});
 			expect(move?.final.acorns).toBe(1);
 			expect(move?.final.tiles[0]?.[2]).toBe(TileType.GRASS);
 		});
@@ -205,7 +212,11 @@ describe("rules", () => {
 			const { moves } = solve(rules, state);
 
 			expect(moves).not.toBeNull();
-			const end = replayMoves(rules, state, moves?.map((m) => m.direction) ?? []);
+			const end = replayMoves(
+				rules,
+				state,
+				moves?.map((m) => m.direction) ?? [],
+			);
 			expect(end && isWin(end)).toBe(true);
 		});
 
@@ -219,21 +230,27 @@ describe("rules", () => {
 			expect(solve(rules, state).moves).not.toBeNull();
 		});
 
-		it.each([level1, ...tutorialLevels])("solves hand-made level $name", (level) => {
+		it.each([
+			level1,
+			...tutorialLevels,
+		])("solves hand-made level $name", (level) => {
 			const { rules, state } = setup(level);
 			const { moves } = solve(rules, state, 200_000);
-			const end = replayMoves(rules, state, moves?.map((m) => m.direction) ?? []);
+			const end = replayMoves(
+				rules,
+				state,
+				moves?.map((m) => m.direction) ?? [],
+			);
 			expect(end && isWin(end)).toBe(true);
 		});
 
-		it.each(unsolvableLevels as unknown as Level[])(
-			"proves $name has no solution",
-			(level) => {
-				const { rules, state } = setup(level);
-				const result = solve(rules, state, 2_000_000);
-				expect(result.timedOut).toBe(false);
-				expect(result.moves).toBeNull();
-			},
-		);
+		it.each(
+			unsolvableLevels as unknown as Level[],
+		)("proves $name has no solution", (level) => {
+			const { rules, state } = setup(level);
+			const result = solve(rules, state, 2_000_000);
+			expect(result.timedOut).toBe(false);
+			expect(result.moves).toBeNull();
+		});
 	});
 });

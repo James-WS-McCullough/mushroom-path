@@ -16,7 +16,13 @@ import {
 	type MoveSegment,
 	solve,
 } from "../game/rules";
-import type { Direction, FlowDirection, Level, Position, Tile } from "../types/game";
+import type {
+	Direction,
+	FlowDirection,
+	Level,
+	Position,
+	Tile,
+} from "../types/game";
 import { isRequiredTile, TileType } from "../types/game";
 import { DIRECTIONS, getDirectionDelta, posKey } from "../utils/positionUtils";
 import {
@@ -162,7 +168,9 @@ export function useGame(level: Level) {
 		state: GameState,
 		options: { resurfaced?: Position[]; skipTiles?: Position[] } = {},
 	) {
-		const skip = new Set((options.skipTiles ?? []).map((p) => posKey(p.x, p.y)));
+		const skip = new Set(
+			(options.skipTiles ?? []).map((p) => posKey(p.x, p.y)),
+		);
 		state.tiles.forEach((row, y) => {
 			row.forEach((type, x) => {
 				const cell = tiles.value[y]?.[x];
@@ -488,7 +496,11 @@ export function useGame(level: Level) {
 	}
 
 	/** Effects of leaving a tile: planting, dirt, lily-pads and tide sounds */
-	function playLeaveEffects(move: MoveResult, from: Position, oldTidePhase: number) {
+	function playLeaveEffects(
+		move: MoveResult,
+		from: Position,
+		oldTidePhase: number,
+	) {
 		const became = move.leftTileBecame;
 		if (became && MUSHROOM_TILES.includes(became)) {
 			playRandomPop();
@@ -512,10 +524,7 @@ export function useGame(level: Level) {
 	}
 
 	/** Effects of settling on a tile: acorns, squirrels and star blooms */
-	function applyLandingEffect(
-		move: MoveResult,
-		effect: LandingEffect | null,
-	) {
+	function applyLandingEffect(move: MoveResult, effect: LandingEffect | null) {
 		const bloomed = effect?.kind === "bloom" ? effect.bloomed : [];
 		writeState(move.final, { resurfaced: move.resurfaced, skipTiles: bloomed });
 
@@ -583,7 +592,9 @@ export function useGame(level: Level) {
 				// Slides and bounces end with a landing sound; rivers and portals have their own
 				const last = forced[forced.length - 1];
 				if (last?.kind === "ice" || last?.kind === "bounce") {
-					playLandingSound(move.afterLeave.tiles[move.settled.y]?.[move.settled.x]);
+					playLandingSound(
+						move.afterLeave.tiles[move.settled.y]?.[move.settled.x],
+					);
 				}
 				isResolvingMove.value = false;
 				// Acorns, squirrels and base stars trigger where the player ends up

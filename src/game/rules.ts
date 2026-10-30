@@ -235,11 +235,18 @@ function setTileType(state: GameState, pos: Position, type: TileType): void {
 	if (row && row[pos.x] !== undefined) row[pos.x] = type;
 }
 
-export function getSquirrelRequirement(rules: LevelRules, pos: Position): number {
+export function getSquirrelRequirement(
+	rules: LevelRules,
+	pos: Position,
+): number {
 	return rules.squirrelRequirements[posKey(pos.x, pos.y)] ?? 1;
 }
 
-function canFeedSquirrel(rules: LevelRules, state: GameState, pos: Position): boolean {
+function canFeedSquirrel(
+	rules: LevelRules,
+	state: GameState,
+	pos: Position,
+): boolean {
 	return state.acorns >= getSquirrelRequirement(rules, pos);
 }
 
@@ -256,7 +263,11 @@ function nextTidePhase(state: GameState): number {
  * Can the player walk or jump onto this tile with their next move?
  * Checked before the move, so low sand looks at the tide the move will bring.
  */
-export function canLandOn(rules: LevelRules, state: GameState, pos: Position): boolean {
+export function canLandOn(
+	rules: LevelRules,
+	state: GameState,
+	pos: Position,
+): boolean {
 	const type = getTileType(state, pos);
 	if (type === null) return false;
 
@@ -298,7 +309,11 @@ export function isObstacle(state: GameState, pos: Position): boolean {
  * Can the player end up on this tile partway through a move (slides,
  * bounces)? Checked after the move's tide and lily-pad tick.
  */
-function canSettleOn(rules: LevelRules, state: GameState, pos: Position): boolean {
+function canSettleOn(
+	rules: LevelRules,
+	state: GameState,
+	pos: Position,
+): boolean {
 	const type = getTileType(state, pos);
 	if (type === null || PERMANENTLY_BLOCKED.has(type)) return false;
 
@@ -442,7 +457,11 @@ export function computeBounce(
 	pad: Position,
 	direction: Direction,
 ): Position[] | null {
-	for (let distance = MECHANICS.MAX_BOUNCE_DISTANCE; distance >= 1; distance--) {
+	for (
+		let distance = MECHANICS.MAX_BOUNCE_DISTANCE;
+		distance >= 1;
+		distance--
+	) {
 		const landing = offset(pad, direction, distance);
 		if (canSettleOn(rules, state, landing)) {
 			const path = [pad];
@@ -455,7 +474,10 @@ export function computeBounce(
 	return null;
 }
 
-export function findMatchingPortal(state: GameState, pos: Position): Position | null {
+export function findMatchingPortal(
+	state: GameState,
+	pos: Position,
+): Position | null {
 	const type = getTileType(state, pos);
 	if (type === null || !isPortalTile(type)) return null;
 
@@ -650,7 +672,10 @@ export function applyMove(
 }
 
 /** Every move the player could make from this state */
-export function getAvailableMoves(rules: LevelRules, state: GameState): MoveResult[] {
+export function getAvailableMoves(
+	rules: LevelRules,
+	state: GameState,
+): MoveResult[] {
 	const moves: MoveResult[] = [];
 	for (const direction of DIRECTIONS) {
 		const result = applyMove(rules, state, direction);
@@ -670,7 +695,10 @@ export function getAvailableMoves(rules: LevelRules, state: GameState): MoveResu
  * anything a walk, jump, bounce, slide or portal could connect it to. So a
  * `false` answer always means the level can no longer be finished.
  */
-export function canReachAllRequired(rules: LevelRules, state: GameState): boolean {
+export function canReachAllRequired(
+	rules: LevelRules,
+	state: GameState,
+): boolean {
 	const { width, height } = rules;
 	const canEverStand = (x: number, y: number): boolean => {
 		const type = state.tiles[y]?.[x];
@@ -719,7 +747,11 @@ export function canReachAllRequired(rules: LevelRules, state: GameState): boolea
 	for (let y = 0; y < height; y++) {
 		for (let x = 0; x < width; x++) {
 			const type = state.tiles[y]?.[x];
-			if (type !== undefined && isRequiredTile(type) && !reached[y * width + x]) {
+			if (
+				type !== undefined &&
+				isRequiredTile(type) &&
+				!reached[y * width + x]
+			) {
 				return false;
 			}
 		}
@@ -758,10 +790,12 @@ export function solve(
 	maxIterations: number = MECHANICS.MAX_PATHFINDING_ITERATIONS,
 ): SolveResult {
 	if (isWin(state)) return { moves: [], timedOut: false };
-	if (!canReachAllRequired(rules, state)) return { moves: null, timedOut: false };
+	if (!canReachAllRequired(rules, state))
+		return { moves: null, timedOut: false };
 
 	const deadEnds = new Set<string>();
-	const line: { direction: Direction; target: Position; settled: Position }[] = [];
+	const line: { direction: Direction; target: Position; settled: Position }[] =
+		[];
 	let iterations = 0;
 	let timedOut = false;
 
@@ -776,10 +810,15 @@ export function solve(
 		// Mark before exploring so cycles through this state are cut off too
 		deadEnds.add(key);
 
-		const candidates: { move: MoveResult; exits: number; required: boolean }[] = [];
+		const candidates: { move: MoveResult; exits: number; required: boolean }[] =
+			[];
 		for (const move of getAvailableMoves(rules, current)) {
 			if (isWin(move.final)) {
-				line.push({ direction: move.direction, target: move.target, settled: move.settled });
+				line.push({
+					direction: move.direction,
+					target: move.target,
+					settled: move.settled,
+				});
 				return true;
 			}
 			if (!canReachAllRequired(rules, move.final)) continue;
@@ -802,7 +841,11 @@ export function solve(
 		);
 
 		for (const { move } of candidates) {
-			line.push({ direction: move.direction, target: move.target, settled: move.settled });
+			line.push({
+				direction: move.direction,
+				target: move.target,
+				settled: move.settled,
+			});
 			if (search(move.final)) return true;
 			line.pop();
 			if (timedOut) return false;

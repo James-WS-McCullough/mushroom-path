@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FlowDirection, Level } from "../types/game";
-import { TileType } from "../types/game";
+import { TileType, WorldElement } from "../types/game";
+import { generateLevel } from "../utils/levelGenerator";
 import { useGame } from "./useGame";
 
 // Helper to create a simple test level
@@ -2922,6 +2923,41 @@ describe("useGame", () => {
 			expect(game.hasUnreachableTiles()).toBe(true);
 			expect(game.getHint()).toMatchObject({ needsUndo: true });
 		});
+	});
+
+	describe("generated levels", () => {
+		beforeEach(() => {
+			vi.useFakeTimers();
+		});
+
+		afterEach(() => {
+			vi.useRealTimers();
+		});
+
+		const W = WorldElement;
+		it.each([
+			[W.RIVERS, W.TIDES],
+			[W.ICE, W.BOUNCE],
+			[W.FAIRY, W.STAR],
+			[W.ACORN, W.ICE],
+			[W.POND, W.DIRT, W.HONEY],
+		])("should be won by tapping the stored solution (%s, %s)", (...elements) => {
+			for (let i = 0; i < 3; i++) {
+				const level = generateLevel({}, elements);
+				expect(level).not.toBeNull();
+				if (!level) continue;
+
+				const game = useGame(level);
+				const [, ...targets] = level.solutionPath ?? [];
+				for (const target of targets) {
+					expect(game.canReachByClick(target)).toBe(true);
+					game.moveToPosition(target);
+					vi.advanceTimersByTime(3000); // let slides, bounces and blooms finish
+				}
+				expect(game.hasWon.value).toBe(true);
+				game.cleanupIdleTimer();
+			}
+		}, 60_000);
 	});
 });
 
