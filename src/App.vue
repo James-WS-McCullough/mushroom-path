@@ -3,10 +3,10 @@ import { computed, nextTick, ref, watch } from "vue";
 import BottomBar from "./components/BottomBar.vue";
 import ConfirmModal from "./components/ConfirmModal.vue";
 import CustomWorldModal from "./components/CustomWorldModal.vue";
-import HelpModeModal from "./components/HelpModeModal.vue";
 import DialogueScene from "./components/DialogueScene.vue";
 import FirstTimeModal from "./components/FirstTimeModal.vue";
 import GameBoard from "./components/GameBoard.vue";
+import HelpModeModal from "./components/HelpModeModal.vue";
 import MapScreen from "./components/MapScreen.vue";
 import MusicPlayer from "./components/MusicPlayer.vue";
 import StartScreen from "./components/StartScreen.vue";
@@ -25,6 +25,7 @@ import {
 	startTutorialMusic,
 	switchToTutorialMusic,
 } from "./composables/useSound";
+import { INCOMPATIBLE_ELEMENTS, LEVELS_PER_WORLD } from "./constants/game";
 import type { DialogueScene as DialogueSceneType } from "./data/dialogues";
 import {
 	adventureScenes,
@@ -63,8 +64,6 @@ function preloadSprites() {
 
 // Start preloading immediately
 preloadSprites();
-
-const LEVELS_PER_WORLD = 8;
 
 const forestWorldNames = [
 	"Mossy Meadow",
@@ -266,6 +265,8 @@ function getMechanicKey(element: WorldElement): string {
 			return "honey";
 		case WE.ACORN:
 			return "acorn";
+		case WE.STAR:
+			return "star";
 		default:
 			return "";
 	}
@@ -278,7 +279,6 @@ function queueUnseenMechanicDialogues(elements: WorldElement[]): void {
 		const key = getMechanicKey(element);
 		if (key && !hasSeenMechanic(key) && mechanicDialogues[key]) {
 			dialogues.push(mechanicDialogues[key]);
-			markMechanicSeen(key);
 		}
 	}
 	pendingMechanicDialogues.value = dialogues;
@@ -292,6 +292,22 @@ const loadingMessage = ref("");
 
 // Reference to GameBoard for undo functionality
 const gameBoardRef = ref<InstanceType<typeof GameBoard> | null>(null);
+
+// Any overlay, modal or transition that should keep the board from reacting to input
+const isInputLocked = computed(
+	() =>
+		isFading.value ||
+		isLoading.value ||
+		!!currentDialogue.value ||
+		!!confirmAction.value ||
+		showWinModal.value ||
+		showMapScreen.value ||
+		showTutorial.value ||
+		showHelpModeModal.value ||
+		showCustomWorldModal.value ||
+		showFirstTimeModal.value ||
+		showMusicPlayer.value,
+);
 
 const canUndo = computed(() => {
 	return gameBoardRef.value?.canUndo ?? false;
@@ -431,9 +447,15 @@ const iceNameOffset = ref(Math.floor(Math.random() * iceWorldNames.length));
 const swampNameOffset = ref(Math.floor(Math.random() * swampWorldNames.length));
 const nightNameOffset = ref(Math.floor(Math.random() * nightWorldNames.length));
 const beachNameOffset = ref(Math.floor(Math.random() * beachWorldNames.length));
-const bounceNameOffset = ref(Math.floor(Math.random() * bounceWorldNames.length));
-const autumnNameOffset = ref(Math.floor(Math.random() * autumnWorldNames.length));
-const starlitNameOffset = ref(Math.floor(Math.random() * starlitWorldNames.length));
+const bounceNameOffset = ref(
+	Math.floor(Math.random() * bounceWorldNames.length),
+);
+const autumnNameOffset = ref(
+	Math.floor(Math.random() * autumnWorldNames.length),
+);
+const starlitNameOffset = ref(
+	Math.floor(Math.random() * starlitWorldNames.length),
+);
 
 // Save game progress to localStorage
 const SAVE_KEY = "mushroom-path-progress";
@@ -449,6 +471,7 @@ interface SavedProgress {
 	swampNameOffset: number;
 	nightNameOffset: number;
 	beachNameOffset: number;
+	bounceNameOffset?: number;
 	autumnNameOffset: number;
 	starlitNameOffset: number;
 	totalMushroomsPlanted: number;
@@ -469,6 +492,7 @@ function saveProgress(): void {
 		swampNameOffset: swampNameOffset.value,
 		nightNameOffset: nightNameOffset.value,
 		beachNameOffset: beachNameOffset.value,
+		bounceNameOffset: bounceNameOffset.value,
 		autumnNameOffset: autumnNameOffset.value,
 		starlitNameOffset: starlitNameOffset.value,
 		totalMushroomsPlanted: totalMushroomsPlanted.value,
@@ -480,10 +504,47 @@ function loadProgress(): SavedProgress | null {
 	const saved = localStorage.getItem(SAVE_KEY);
 	if (!saved) return null;
 	try {
-		return JSON.parse(saved) as SavedProgress;
+		const parsed = JSON.parse(saved) as Partial<SavedProgress> | null;
+		// Reject saves missing the fields the game can't recover without
+		if (
+			!parsed ||
+			typeof parsed.currentWorldIndex !== "number" ||
+			typeof parsed.currentLevelNumber !== "number" ||
+			!Array.isArray(parsed.currentWorldElements)
+		) {
+			return null;
+		}
+		return parsed as SavedProgress;
 	} catch {
 		return null;
 	}
+}
+
+// Restore saved world state (everything except starting the level itself)
+function applySavedProgress(saved: SavedProgress): void {
+	currentWorldIndex.value = saved.currentWorldIndex;
+	// Saves from when worlds were longer may be past the last level
+	currentLevelNumber.value = Math.min(
+		Math.max(saved.currentLevelNumber, 1),
+		LEVELS_PER_WORLD,
+	);
+	worldElementHistory.value = Array.isArray(saved.worldElementHistory)
+		? saved.worldElementHistory
+		: [];
+	worldNameHistory.value = Array.isArray(saved.worldNameHistory)
+		? saved.worldNameHistory
+		: [];
+	currentWorldElements.value = saved.currentWorldElements;
+	forestNameOffset.value = saved.forestNameOffset ?? 0;
+	iceNameOffset.value = saved.iceNameOffset ?? 0;
+	swampNameOffset.value = saved.swampNameOffset ?? 0;
+	nightNameOffset.value = saved.nightNameOffset ?? 0;
+	beachNameOffset.value = saved.beachNameOffset ?? 0;
+	bounceNameOffset.value = saved.bounceNameOffset ?? 0;
+	autumnNameOffset.value = saved.autumnNameOffset ?? 0;
+	starlitNameOffset.value = saved.starlitNameOffset ?? 0;
+	totalMushroomsPlanted.value = saved.totalMushroomsPlanted ?? 0;
+	levelQueue.setWorldElements(saved.currentWorldElements);
 }
 
 function clearProgress(): void {
@@ -503,6 +564,7 @@ const allElements: WorldElement[] = [
 	WE.POND,
 	WE.TIDES,
 	WE.BOUNCE,
+	WE.HONEY,
 	WE.ACORN,
 	WE.STAR,
 ];
@@ -511,7 +573,14 @@ const allElements: WorldElement[] = [
 watch(
 	currentWorldElements,
 	(elements) => {
-		document.body.classList.remove("biome-ice", "biome-swamp", "biome-night", "biome-beach", "biome-autumn", "biome-starlit");
+		document.body.classList.remove(
+			"biome-ice",
+			"biome-swamp",
+			"biome-night",
+			"biome-beach",
+			"biome-autumn",
+			"biome-starlit",
+		);
 		if (elements.includes(WE.ICE)) {
 			document.body.classList.add("biome-ice");
 		} else if (elements.includes(WE.TIDES)) {
@@ -528,6 +597,10 @@ watch(
 	},
 	{ immediate: true },
 );
+
+function pickRandom<T>(items: readonly T[]): T | undefined {
+	return items[Math.floor(Math.random() * items.length)];
+}
 
 function generateWorldElements(): WorldElement[] {
 	// Get previous world's elements to avoid repetition
@@ -579,18 +652,16 @@ function generateWorldElementsInner(): WorldElement[] {
 	if (shouldIntroduceNew) {
 		// INTRODUCTION WORLD: Only the new element, no mixing
 		// This lets players learn one mechanic at a time
-		const randomUnseen =
-			unseenElements[Math.floor(Math.random() * unseenElements.length)]!;
-		return [randomUnseen];
+		const randomUnseen = pickRandom(unseenElements);
+		return randomUnseen ? [randomUnseen] : [];
 	}
 
 	// REMIX WORLD: Combine previously seen elements
 	// If no seen elements but we need at least 1, pick a random unseen element
 	if (seenElements.length === 0) {
 		if (minElements > 0 && unseenElements.length > 0) {
-			const randomUnseen =
-				unseenElements[Math.floor(Math.random() * unseenElements.length)]!;
-			return [randomUnseen];
+			const randomUnseen = pickRandom(unseenElements);
+			return randomUnseen ? [randomUnseen] : [];
 		}
 		return [];
 	}
@@ -607,21 +678,8 @@ function generateWorldElementsInner(): WorldElement[] {
 	const result = shuffledSeen.slice(0, elementCount);
 
 	// Handle incompatible elements
-	const incompatiblePairs: [WE, WE][] = [
-		[WE.RIVERS, WE.POND], // Both water-based, conflicting mechanics
-		[WE.ICE, WE.POND], // Vibes don't match (frozen vs lily-pads)
-		[WE.TIDES, WE.ICE], // Beach and frozen don't mix
-		[WE.TIDES, WE.POND], // Too much water mechanics confusion
-		[WE.TIDES, WE.RIVERS], // Too much water mechanics confusion
-		[WE.ACORN, WE.ICE], // Autumn doesn't mix with frozen
-		[WE.ACORN, WE.POND], // Autumn doesn't mix with night/lily-pads
-		[WE.ACORN, WE.TIDES], // Autumn doesn't mix with beach
-		[WE.STAR, WE.ICE], // Starlit doesn't mix with frozen
-		[WE.STAR, WE.POND], // Starlit doesn't mix with night/lily-pads
-		[WE.STAR, WE.TIDES], // Starlit doesn't mix with beach
-	];
 
-	for (const [a, b] of incompatiblePairs) {
+	for (const [a, b] of INCOMPATIBLE_ELEMENTS) {
 		if (result.includes(a) && result.includes(b)) {
 			// Remove one randomly (50/50 chance)
 			const removeFirst = Math.random() < 0.5;
@@ -690,7 +748,7 @@ const displayName = computed(() => {
 });
 
 function getNewLevel(): Level {
-	return levelQueue.getNextLevel();
+	return levelQueue.getNextLevel(currentLevelNumber.value);
 }
 
 function advanceLevel(): boolean {
@@ -724,6 +782,8 @@ const showWelcomeAfterDialogue = ref(false);
 function handleWin() {
 	// Clear hint state
 	clearHintState();
+	// Lock controls until the next level has faded in (stops skip/restart stacking)
+	isFading.value = true;
 
 	// Use tutorial-specific handler when in tutorial mode
 	if (isInTutorial.value) {
@@ -761,9 +821,7 @@ function handleWin() {
 				pendingWorldDialogue.value = worldDialogue;
 			} else if (adventureScenes.length > 0) {
 				// Play random adventure scenes (Dew is met at world 1 level 4)
-				const randomScene =
-					adventureScenes[Math.floor(Math.random() * adventureScenes.length)]!;
-				pendingWorldDialogue.value = randomScene;
+				pendingWorldDialogue.value = pickRandom(adventureScenes) ?? null;
 			}
 		}
 	}
@@ -771,8 +829,10 @@ function handleWin() {
 	// After showing the modal briefly, start the transition
 	setTimeout(() => {
 		pendingNewWorld.value = advanceLevel();
-		// Add captured mushroom count to total (using captured value, not ref)
+		// Move the level's mushrooms into the total (using captured value, not ref)
+		// so the counter doesn't show them twice until the next level loads
 		totalMushroomsPlanted.value += mushroomsToAdd;
+		levelMushroomsPlanted.value = 0;
 		// Save progress only if tutorial is complete
 		if (localStorage.getItem("mushroom-path-tutorial-complete")) {
 			saveProgress();
@@ -852,7 +912,8 @@ async function performFadeTransition() {
 					// Priority: mechanic dialogue > adventure scene > welcome sign
 					if (pendingMechanicDialogues.value.length > 0) {
 						// Show mechanic intro dialogue
-						currentDialogue.value = pendingMechanicDialogues.value.shift()!;
+						currentDialogue.value =
+							pendingMechanicDialogues.value.shift() ?? null;
 						showWelcomeAfterDialogue.value = true;
 						// Clear adventure scene since we're showing mechanic instead
 						pendingWorldDialogue.value = null;
@@ -912,6 +973,8 @@ function handleSkip() {
 
 function doSkip() {
 	isFading.value = true;
+	clearHintState();
+	isHelpModeBlocked.value = false;
 	skipModalText.value = "Level Skipped";
 	randomizeWinMushrooms();
 	showWinModal.value = true;
@@ -931,9 +994,7 @@ function doSkip() {
 			if (worldDialogue) {
 				pendingWorldDialogue.value = worldDialogue;
 			} else if (adventureScenes.length > 0) {
-				const randomScene =
-					adventureScenes[Math.floor(Math.random() * adventureScenes.length)]!;
-				pendingWorldDialogue.value = randomScene;
+				pendingWorldDialogue.value = pickRandom(adventureScenes) ?? null;
 			}
 		}
 	}
@@ -942,6 +1003,7 @@ function doSkip() {
 	setTimeout(() => {
 		pendingNewWorld.value = advanceLevel();
 		// Skipping forfeits the level's mushrooms - don't add to total
+		levelMushroomsPlanted.value = 0;
 		// Save progress only if tutorial is complete
 		if (localStorage.getItem("mushroom-path-tutorial-complete")) {
 			saveProgress();
@@ -979,6 +1041,8 @@ function doRestart() {
 function handleConfirmAction() {
 	const action = confirmAction.value;
 	confirmAction.value = null;
+	// The level may have been won or skipped while the modal was open
+	if (isFading.value) return;
 	if (action === "skip") {
 		doSkip();
 	} else if (action === "restart") {
@@ -1204,22 +1268,7 @@ async function handleContinue() {
 	}
 
 	// Restore all saved state
-	currentWorldIndex.value = saved.currentWorldIndex;
-	currentLevelNumber.value = saved.currentLevelNumber;
-	worldElementHistory.value = saved.worldElementHistory;
-	worldNameHistory.value = saved.worldNameHistory;
-	currentWorldElements.value = saved.currentWorldElements;
-	forestNameOffset.value = saved.forestNameOffset;
-	iceNameOffset.value = saved.iceNameOffset;
-	swampNameOffset.value = saved.swampNameOffset;
-	nightNameOffset.value = saved.nightNameOffset;
-	beachNameOffset.value = saved.beachNameOffset ?? 0;
-	autumnNameOffset.value = saved.autumnNameOffset ?? 0;
-	starlitNameOffset.value = saved.starlitNameOffset ?? 0;
-	totalMushroomsPlanted.value = saved.totalMushroomsPlanted ?? 0;
-
-	// Set the level queue to use the current world elements
-	levelQueue.setWorldElements(saved.currentWorldElements);
+	applySavedProgress(saved);
 
 	loadingMessage.value = "Generating level...";
 	await nextTick();
@@ -1280,8 +1329,7 @@ function closeWelcomeSign() {
 
 function showNextMechanicDialogue(): void {
 	if (pendingMechanicDialogues.value.length > 0) {
-		const nextDialogue = pendingMechanicDialogues.value.shift()!;
-		currentDialogue.value = nextDialogue;
+		currentDialogue.value = pendingMechanicDialogues.value.shift() ?? null;
 	}
 }
 
@@ -1353,7 +1401,8 @@ async function startCustomWorld(elements: WorldElement[]) {
 
 				// Priority: mechanic dialogue > welcome sign
 				if (pendingMechanicDialogues.value.length > 0) {
-					currentDialogue.value = pendingMechanicDialogues.value.shift()!;
+					currentDialogue.value =
+						pendingMechanicDialogues.value.shift() ?? null;
 					showWelcomeAfterDialogue.value = true;
 				} else {
 					showWelcomeSign.value = true;
@@ -1367,6 +1416,14 @@ async function startCustomWorld(elements: WorldElement[]) {
 async function handleDialogueComplete() {
 	const dialogueId = currentDialogue.value?.id;
 	currentDialogue.value = null;
+
+	// Only remember a mechanic intro once the player has actually seen it
+	const mechanicKey = Object.entries(mechanicDialogues).find(
+		([, dialogue]) => dialogue.id === dialogueId,
+	)?.[0];
+	if (mechanicKey) {
+		markMechanicSeen(mechanicKey);
+	}
 
 	if (dialogueId === "intro") {
 		localStorage.setItem("mushroom-path-intro-seen", "true");
@@ -1388,23 +1445,32 @@ async function handleDialogueComplete() {
 		localStorage.setItem("mushroom-path-tutorial-complete", "true");
 		isInTutorial.value = false;
 
-		// Fade transition to first world
+		// Replaying the tutorial from the start screen shouldn't wipe a real save
+		const saved = loadProgress();
+
+		// Fade transition to the saved world, or the first world
 		isFading.value = true;
 		isBlack.value = true;
 
-		// Change to a new random BGM for the first world (default/forest biome)
-		changeWorldBGM("default");
+		// Change to a new random BGM for the world we're heading to
+		changeWorldBGM(
+			saved ? getBiomeFromElements(saved.currentWorldElements) : "default",
+		);
 
 		setTimeout(async () => {
-			// Reset world state for fresh start
-			currentWorldIndex.value = 0;
-			currentLevelNumber.value = 1;
-			currentWorldElements.value = [];
-			levelQueue.setWorldElements([]);
+			if (saved) {
+				applySavedProgress(saved);
+			} else {
+				// Reset world state for fresh start
+				currentWorldIndex.value = 0;
+				currentLevelNumber.value = 1;
+				currentWorldElements.value = [];
+				levelQueue.setWorldElements([]);
 
-			// Record first world's elements and name in history for map screen
-			worldElementHistory.value[0] = [];
-			worldNameHistory.value[0] = currentWorldName.value;
+				// Record first world's elements and name in history for map screen
+				worldElementHistory.value[0] = [];
+				worldNameHistory.value[0] = currentWorldName.value;
+			}
 
 			// Generate first level
 			currentLevel.value = getNewLevel();
@@ -1421,13 +1487,13 @@ async function handleDialogueComplete() {
 		}, 500);
 	} else if (dialogueId?.startsWith("tutorial-stuck-")) {
 		// Stuck dialogue finished, let player continue
+	} else if (pendingMechanicDialogues.value.length > 0) {
+		// More mechanic dialogues in queue (shown before the welcome sign)
+		showNextMechanicDialogue();
 	} else if (showWelcomeAfterDialogue.value) {
 		// World-end dialogue finished, show welcome sign
 		showWelcomeAfterDialogue.value = false;
 		showWelcomeSign.value = true;
-	} else if (pendingMechanicDialogues.value.length > 0) {
-		// More mechanic dialogues in queue
-		showNextMechanicDialogue();
 	}
 	// Otherwise dialogue was skipped or no follow-up needed
 }
@@ -1534,13 +1600,8 @@ function handleTutorialWin() {
 
 // Computed to get isStuck value from GameBoard
 const isPlayerStuck = computed(() => {
-	const gameBoard = gameBoardRef.value;
-	if (!gameBoard) return false;
-	// Access isStuck - TypeScript thinks it's a boolean but it's actually a ComputedRef
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const isStuckRef = (gameBoard as any).isStuck;
-	if (typeof isStuckRef === "boolean") return isStuckRef;
-	return isStuckRef?.value ?? false;
+	// Exposed refs are unwrapped on the component instance, so this is a plain boolean
+	return gameBoardRef.value?.isStuck ?? false;
 });
 
 // Watch for stuck state in tutorial mode to show stuck dialogues
@@ -1674,6 +1735,7 @@ watch(isPlayerStuck, (isStuck) => {
         :hint-tiles="hintTiles"
         :stuck-tiles="stuckTiles"
         :disabled="!!currentDialogue || isHelpModeBlocked"
+        :input-locked="isInputLocked"
         @win="handleWin"
         @mushrooms-changed="handleMushroomsChanged"
         @move-completed="handleMoveCompleted"

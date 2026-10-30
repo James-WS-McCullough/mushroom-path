@@ -1,6 +1,49 @@
 import { describe, expect, it } from "vitest";
-import { type Level, TileType, WorldElement } from "../types/game";
-import { generateLevel } from "./levelGenerator";
+import { LEVEL_GEN, LEVELS_PER_WORLD } from "../constants/game";
+import {
+	applyMove,
+	createInitialState,
+	createLevelRules,
+	getDirectionToTarget,
+	isWin,
+} from "../game/rules";
+import {
+	isRequiredTile,
+	type Level,
+	TileType,
+	WorldElement,
+} from "../types/game";
+import { generateLevel, getTileBudget } from "./levelGenerator";
+
+/** Tiles to plant, counting dirt twice like the in-game counter */
+function countTilesToPlant(level: Level): number {
+	return level.grid
+		.flat()
+		.reduce(
+			(count, type) =>
+				count +
+				(isRequiredTile(type) ? 1 : 0) +
+				(type === TileType.DIRT ? 1 : 0),
+			0,
+		);
+}
+
+/** Tap through a level's stored solution with the real game rules; true if it wins */
+function solutionWins(level: Level): boolean {
+	const rules = createLevelRules(level);
+	let state = createInitialState(level);
+	const [start, ...targets] = level.solutionPath ?? [];
+	if (!start || start.x !== state.player.x || start.y !== state.player.y) {
+		return false;
+	}
+	for (const target of targets) {
+		const direction = getDirectionToTarget(rules, state, target);
+		const move = direction && applyMove(rules, state, direction);
+		if (!move) return false;
+		state = move.final;
+	}
+	return isWin(state);
+}
 
 // Helper to count tiles of a specific type
 function countTiles(level: Level, type: TileType): number {
@@ -246,9 +289,8 @@ describe("levelGenerator", () => {
 			expect(uniqueGrids.size).toBeGreaterThan(1);
 		}, 15000);
 
-		it("should respect minWidth and maxWidth config", () => {
+		it("should respect maxWidth config", () => {
 			const level = generateLevel({
-				minWidth: 6,
 				maxWidth: 8,
 			});
 			expect(level).not.toBeNull();
@@ -258,9 +300,8 @@ describe("levelGenerator", () => {
 			expect(level.width).toBeLessThanOrEqual(10); // Some buffer for edge cases
 		});
 
-		it("should respect minHeight and maxHeight config", () => {
+		it("should respect maxHeight config", () => {
 			const level = generateLevel({
-				minHeight: 6,
 				maxHeight: 8,
 			});
 			expect(level).not.toBeNull();
@@ -304,48 +345,9 @@ describe("levelGenerator", () => {
 
 	describe("level validity", () => {
 		it("should not have grass tiles completely surrounded by brambles", () => {
-			// This is implicitly tested by isGrassConnected, but let's be explicit
 			const level = generateLevel();
 			expect(level).not.toBeNull();
 			if (!level) return;
-
-			// Find all grass tiles
-			for (let y = 0; y < level.height; y++) {
-				for (let x = 0; x < level.width; x++) {
-					if (getTile(level, x, y) === TileType.GRASS) {
-						// Check if at least one direction is reachable
-						const adjacent = getAdjacent(x, y);
-						let hasPath = false;
-
-						for (const adj of adjacent) {
-							if (!isInBounds(level, adj.x, adj.y)) continue;
-							const adjTile = getTile(level, adj.x, adj.y);
-
-							// Direct grass neighbor
-							if (adjTile === TileType.GRASS) {
-								hasPath = true;
-								break;
-							}
-
-							// Can jump over bramble
-							if (adjTile === TileType.BRAMBLE) {
-								const jumpX = adj.x + (adj.x - x);
-								const jumpY = adj.y + (adj.y - y);
-								if (
-									isInBounds(level, jumpX, jumpY) &&
-									getTile(level, jumpX, jumpY) === TileType.GRASS
-								) {
-									hasPath = true;
-									break;
-								}
-							}
-						}
-
-						// Only check reachability for non-isolated tiles
-						// A single grass tile would fail this, which is fine if it's connected via the path
-					}
-				}
-			}
 
 			// The connectivity test is the real validation
 			expect(isGrassConnected(level)).toBe(true);
@@ -555,9 +557,7 @@ describe("levelGenerator", () => {
 	describe("edge cases", () => {
 		it("should handle small config values", () => {
 			const level = generateLevel({
-				minWidth: 5,
 				maxWidth: 6,
-				minHeight: 5,
 				maxHeight: 6,
 				minRectangles: 1,
 				maxRectangles: 2,
@@ -573,9 +573,7 @@ describe("levelGenerator", () => {
 
 		it("should handle larger config values", () => {
 			const level = generateLevel({
-				minWidth: 10,
 				maxWidth: 14,
-				minHeight: 10,
 				maxHeight: 14,
 				minRectangles: 3,
 				maxRectangles: 4,
@@ -610,9 +608,7 @@ describe("levelGenerator", () => {
 			const result = generateLevel({
 				minRectangles: 1,
 				maxRectangles: 1,
-				minWidth: 5,
 				maxWidth: 5,
-				minHeight: 5,
 				maxHeight: 5,
 			});
 
@@ -894,5 +890,95 @@ describe("levelGenerator", () => {
 			// Most levels should maintain at least 8 grass+dirt tiles
 			expect(validCount).toBeGreaterThanOrEqual(iterations * 0.7);
 		});
+	});
+
+	describe("solvability", () => {
+		const W = WorldElement;
+		const combos: WorldElement[][] = [
+			[],
+			[W.RIVERS],
+			[W.DIRT],
+			[W.ICE],
+			[W.POND],
+			[W.TIDES],
+			[W.BOUNCE],
+			[W.FAIRY],
+			[W.HONEY],
+			[W.ACORN],
+			[W.STAR],
+			[W.RIVERS, W.TIDES],
+			[W.ICE, W.BOUNCE],
+			[W.DIRT, W.ICE],
+			[W.ACORN, W.ICE],
+			[W.STAR, W.FAIRY],
+		];
+
+		it.each(
+			combos.map((elements) => [elements.join("+") || "plain", elements]),
+		)(
+			"every %s level's solution wins under the game rules",
+			(_name, elements) => {
+				for (let i = 0; i < 6; i++) {
+					const level = generateLevel({}, elements as WorldElement[]);
+					expect(level).not.toBeNull();
+					if (level) expect(solutionWins(level)).toBe(true);
+				}
+			},
+			60_000,
+		);
+	});
+
+	describe("level size", () => {
+		it("should start each world small and grow to the cap on its last level", () => {
+			const budgets = Array.from({ length: LEVELS_PER_WORLD }, (_, i) =>
+				getTileBudget(i + 1),
+			);
+
+			expect(budgets[0]?.maxTiles).toBe(LEVEL_GEN.FIRST_LEVEL_MAX_TILES);
+			expect(budgets[LEVELS_PER_WORLD - 1]?.maxTiles).toBe(
+				LEVEL_GEN.LAST_LEVEL_MAX_TILES,
+			);
+			for (let i = 1; i < budgets.length; i++) {
+				expect(budgets[i]?.maxTiles).toBeGreaterThan(
+					budgets[i - 1]?.maxTiles ?? 0,
+				);
+			}
+			for (const budget of budgets) {
+				expect(budget.minTiles).toBeLessThan(budget.maxTiles);
+			}
+		});
+
+		it("should never go past the cap, even for out-of-range level numbers", () => {
+			expect(getTileBudget(0)).toEqual(getTileBudget(1));
+			expect(getTileBudget(99)).toEqual(getTileBudget(LEVELS_PER_WORLD));
+		});
+
+		it.each([
+			1,
+			LEVELS_PER_WORLD,
+		])("should keep level %i within its tile budget", (levelNumber) => {
+			const budget = getTileBudget(levelNumber);
+			for (const elements of [[], [WorldElement.DIRT], [WorldElement.TIDES]]) {
+				for (let i = 0; i < 5; i++) {
+					const level = generateLevel(budget, elements);
+					expect(level).not.toBeNull();
+					if (level)
+						expect(countTilesToPlant(level)).toBeLessThanOrEqual(
+							budget.maxTiles,
+						);
+				}
+			}
+		}, 60_000);
+
+		it("should cap levels generated without a level number", () => {
+			for (let i = 0; i < 10; i++) {
+				const level = generateLevel();
+				if (level) {
+					expect(countTilesToPlant(level)).toBeLessThanOrEqual(
+						LEVEL_GEN.LAST_LEVEL_MAX_TILES,
+					);
+				}
+			}
+		}, 60_000);
 	});
 });

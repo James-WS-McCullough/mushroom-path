@@ -1,11 +1,15 @@
 import { type Ref, ref } from "vue";
 import { level1 } from "../data/levels";
 import type { Level, WorldElement } from "../types/game";
-import { generateLevel } from "../utils/levelGenerator";
+import { generateLevel, getTileBudget } from "../utils/levelGenerator";
 
 interface LevelQueue {
-	getNextLevel: () => Level;
-	setWorldElements: (elements: WorldElement[], startImmediately?: boolean) => void;
+	/** Generate a level, sized for its place in the world (1 = first level) */
+	getNextLevel: (levelNumber: number) => Level;
+	setWorldElements: (
+		elements: WorldElement[],
+		startImmediately?: boolean,
+	) => void;
 	startGenerating: () => void;
 	pauseGeneration: () => void;
 	resumeGeneration: () => void;
@@ -14,13 +18,19 @@ interface LevelQueue {
 export function useLevelQueue(): LevelQueue {
 	const currentElements: Ref<WorldElement[]> = ref([]);
 
-	function getNextLevel(): Level {
+	function getNextLevel(levelNumber: number): Level {
 		// Always generate synchronously - caller is responsible for showing loading state
-		const newLevel = generateLevel({}, currentElements.value);
+		const newLevel = generateLevel(
+			getTileBudget(levelNumber),
+			currentElements.value,
+		);
 		return newLevel ?? level1;
 	}
 
-	function setWorldElements(elements: WorldElement[], _startImmediately = true) {
+	function setWorldElements(
+		elements: WorldElement[],
+		_startImmediately = true,
+	) {
 		currentElements.value = elements;
 	}
 

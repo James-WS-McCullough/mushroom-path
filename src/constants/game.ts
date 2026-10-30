@@ -2,6 +2,8 @@
  * Game constants - centralized magic numbers and timing values
  */
 
+import { WorldElement as WE, type WorldElement } from "../types/game";
+
 // =============================================================================
 // ANIMATION TIMINGS (milliseconds)
 // =============================================================================
@@ -59,7 +61,16 @@ export const HINTS = {
 // LEVEL GENERATION
 // =============================================================================
 
+/** Levels in each world */
+export const LEVELS_PER_WORLD = 5;
+
 export const LEVEL_GEN = {
+	/** Most tiles to plant on a world's first level - worlds start small... */
+	FIRST_LEVEL_MAX_TILES: 22,
+	/** ...and build up to this on their last level (never bigger) */
+	LAST_LEVEL_MAX_TILES: 40,
+	/** Each level has between (max - this) and max tiles to plant */
+	TILE_RANGE: 12,
 	/** Maximum recursion depth for path finding */
 	MAX_RECURSION_DEPTH: 500,
 	/** Maximum attempts for various generation steps */
@@ -73,3 +84,25 @@ export const LEVEL_GEN = {
 	/** Minimum grid dimension for strip generation */
 	MIN_DIMENSION_FOR_STRIP: 5,
 } as const;
+
+// =============================================================================
+// WORLD ELEMENTS
+// =============================================================================
+
+/** World elements that never appear in the same world (clashing mechanics or vibes) */
+export const INCOMPATIBLE_ELEMENTS: readonly (readonly [
+	WorldElement,
+	WorldElement,
+])[] = [
+	[WE.RIVERS, WE.POND], // Both water-based, conflicting mechanics
+	[WE.ICE, WE.POND], // Vibes don't match (frozen vs lily-pads)
+	[WE.TIDES, WE.ICE], // Beach and frozen don't mix
+	[WE.TIDES, WE.POND], // Too much water mechanics confusion
+	[WE.TIDES, WE.RIVERS], // Too much water mechanics confusion
+	[WE.ACORN, WE.ICE], // Autumn doesn't mix with frozen
+	[WE.ACORN, WE.POND], // Autumn doesn't mix with night/lily-pads
+	[WE.ACORN, WE.TIDES], // Autumn doesn't mix with beach
+	[WE.STAR, WE.ICE], // Starlit doesn't mix with frozen
+	[WE.STAR, WE.POND], // Starlit doesn't mix with night/lily-pads
+	[WE.STAR, WE.TIDES], // Starlit doesn't mix with beach
+];

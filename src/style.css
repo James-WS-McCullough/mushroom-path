@@ -497,8 +497,8 @@ body.biome-night::after {
 
 /* Beach biome - warm sandy tones with ocean blues */
 body.biome-beach {
+	/* Ocean at top */
 	background:
-		/* Ocean at top */
 		radial-gradient(
 			ellipse 100% 40% at 50% 0%,
 			rgba(70, 150, 200, 0.3) 0%,
@@ -526,8 +526,8 @@ body.biome-beach {
 
 /* Ocean waves and sparkles */
 body.biome-beach::before {
+	/* Wave foam lines */
 	background-image:
-		/* Wave foam lines */
 		radial-gradient(
 			ellipse 200% 4px at 0% 25%,
 			rgba(255, 255, 255, 0.6) 0%,
@@ -596,8 +596,8 @@ body.biome-beach::before {
 
 /* Beach floor - sand dunes and shells */
 body.biome-beach::after {
+	/* Sand dunes at bottom */
 	background:
-		/* Sand dunes at bottom */
 		radial-gradient(ellipse 50px 25px at 10% 100%, #c4a060 0%, transparent 70%),
 		radial-gradient(ellipse 40px 20px at 20% 95%, #d4b070 0%, transparent 70%),
 		radial-gradient(ellipse 60px 30px at 85% 100%, #c4a060 0%, transparent 70%),
@@ -606,15 +606,27 @@ body.biome-beach::after {
 		radial-gradient(ellipse 35px 18px at 35% 98%, #d4b070 0%, transparent 70%),
 		radial-gradient(ellipse 38px 20px at 65% 96%, #d4b070 0%, transparent 70%),
 		/* Seashell hints */
-		radial-gradient(circle at 25% 85%, rgba(255, 245, 230, 0.5) 0%, transparent 4px),
-		radial-gradient(circle at 70% 90%, rgba(255, 240, 220, 0.4) 0%, transparent 3px),
-		radial-gradient(circle at 45% 88%, rgba(255, 245, 230, 0.3) 0%, transparent 3px);
+		radial-gradient(
+			circle at 25% 85%,
+			rgba(255, 245, 230, 0.5) 0%,
+			transparent 4px
+		),
+		radial-gradient(
+			circle at 70% 90%,
+			rgba(255, 240, 220, 0.4) 0%,
+			transparent 3px
+		),
+		radial-gradient(
+			circle at 45% 88%,
+			rgba(255, 245, 230, 0.3) 0%,
+			transparent 3px
+		);
 }
 
 /* Autumn biome - warm reds and burnt orange tones with falling leaves */
 body.biome-autumn {
+	/* Warm red-orange glow at top */
 	background:
-		/* Warm red-orange glow at top */
 		radial-gradient(
 			ellipse 80% 50% at 30% 20%,
 			rgba(180, 80, 50, 0.35) 0%,
@@ -640,9 +652,9 @@ body.biome-autumn {
 
 /* Falling autumn leaves - larger leaf shapes with slow drift */
 body.biome-autumn::before {
+	/* Leaf shapes - elongated ellipses to simulate leaves */
+	/* Large crimson leaf */
 	background-image:
-		/* Leaf shapes - elongated ellipses to simulate leaves */
-		/* Large crimson leaf */
 		radial-gradient(
 			ellipse 8px 5px at 12% 10%,
 			rgba(180, 50, 40, 0.85) 0%,
@@ -754,8 +766,8 @@ body.biome-autumn::before {
 
 /* Autumn floor - fallen leaves and earth */
 body.biome-autumn::after {
+	/* Piles of fallen leaves - warm reds and rusty tones */
 	background:
-		/* Piles of fallen leaves - warm reds and rusty tones */
 		radial-gradient(ellipse 40px 18px at 10% 100%, #8b3028 0%, transparent 70%),
 		radial-gradient(ellipse 30px 12px at 18% 95%, #9b4035 0%, transparent 70%),
 		radial-gradient(ellipse 45px 20px at 85% 100%, #7b2820 0%, transparent 70%),
@@ -764,9 +776,21 @@ body.biome-autumn::after {
 		radial-gradient(ellipse 25px 10px at 35% 98%, #9b4538 0%, transparent 70%),
 		radial-gradient(ellipse 28px 12px at 65% 96%, #7b3025 0%, transparent 70%),
 		/* Small acorn hints */
-		radial-gradient(circle at 25% 90%, rgba(100, 50, 35, 0.5) 0%, transparent 4px),
-		radial-gradient(circle at 72% 88%, rgba(100, 50, 35, 0.4) 0%, transparent 3px),
-		radial-gradient(circle at 48% 92%, rgba(100, 50, 35, 0.3) 0%, transparent 3px);
+		radial-gradient(
+			circle at 25% 90%,
+			rgba(100, 50, 35, 0.5) 0%,
+			transparent 4px
+		),
+		radial-gradient(
+			circle at 72% 88%,
+			rgba(100, 50, 35, 0.4) 0%,
+			transparent 3px
+		),
+		radial-gradient(
+			circle at 48% 92%,
+			rgba(100, 50, 35, 0.3) 0%,
+			transparent 3px
+		);
 }
 
 /* ============================================================================
@@ -774,8 +798,8 @@ body.biome-autumn::after {
    ============================================================================ */
 
 body.biome-starlit {
+	/* Soft starlight glow at top */
 	background:
-		/* Soft starlight glow at top */
 		radial-gradient(
 			ellipse 80% 50% at 30% 20%,
 			rgba(180, 200, 220, 0.4) 0%,
@@ -801,8 +825,8 @@ body.biome-starlit {
 
 /* Twinkling stars particles */
 body.biome-starlit::before {
+	/* Large bright stars */
 	background-image:
-		/* Large bright stars */
 		radial-gradient(
 			circle at 15% 15%,
 			rgba(255, 255, 200, 0.95) 0%,
@@ -882,7 +906,8 @@ body.biome-starlit::before {
 }
 
 @keyframes twinkle {
-	0%, 100% {
+	0%,
+	100% {
 		opacity: 0.7;
 		transform: scale(1);
 	}
@@ -902,8 +927,8 @@ body.biome-starlit::before {
 
 /* Starlit floor silhouettes */
 body.biome-starlit::after {
+	/* Soft grassy mounds */
 	background:
-		/* Soft grassy mounds */
 		radial-gradient(ellipse 35px 20px at 10% 100%, #3a6050 0%, transparent 70%),
 		radial-gradient(ellipse 28px 16px at 18% 95%, #4a7060 0%, transparent 70%),
 		radial-gradient(ellipse 40px 22px at 85% 100%, #3a6050 0%, transparent 70%),

@@ -116,7 +116,9 @@ export const RequiredTileTypes = [
 export type RequiredTileType = (typeof RequiredTileTypes)[number];
 
 // Helper to check if a tile type is required
-export function isRequiredTile(tileType: TileType): tileType is RequiredTileType {
+export function isRequiredTile(
+	tileType: TileType,
+): tileType is RequiredTileType {
 	return (RequiredTileTypes as readonly TileType[]).includes(tileType);
 }
 
@@ -139,6 +141,8 @@ export const WalkableTileTypes = [
 export type WalkableTileType = (typeof WalkableTileTypes)[number];
 
 // Helper to check if a tile type is walkable (core set, excludes conditional tiles)
-export function isWalkableTile(tileType: TileType): tileType is WalkableTileType {
+export function isWalkableTile(
+	tileType: TileType,
+): tileType is WalkableTileType {
 	return (WalkableTileTypes as readonly TileType[]).includes(tileType);
 }

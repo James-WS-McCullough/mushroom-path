@@ -2,7 +2,7 @@
  * Position and direction utilities - shared across game logic and level generation
  */
 
-import type { Position, Direction, FlowDirection } from "../types/game";
+import type { Direction, FlowDirection, Position } from "../types/game";
 
 // =============================================================================
 // DIRECTION UTILITIES
@@ -83,7 +83,7 @@ export function manhattanDistance(a: Position, b: Position): number {
 export function isInBounds(
 	pos: Position,
 	width: number,
-	height: number
+	height: number,
 ): boolean {
 	return pos.x >= 0 && pos.x < width && pos.y >= 0 && pos.y < height;
 }

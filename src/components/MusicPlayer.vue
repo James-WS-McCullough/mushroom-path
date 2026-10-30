@@ -19,8 +19,16 @@ const tracks: Track[] = [
 	{ name: "Fungi Frolic", path: "/music/BGM 04.mp3", category: "forest" },
 	{ name: "Whispering Caps", path: "/music/BGM 05.mp3", category: "forest" },
 	{ name: "Toadstool Twilight", path: "/music/BGM 06.mp3", category: "forest" },
-	{ name: "Mossy Meadow Dreams", path: "/music/BGM 07.mp3", category: "forest" },
-	{ name: "Enchanted Undergrowth", path: "/music/BGM 08.mp3", category: "forest" },
+	{
+		name: "Mossy Meadow Dreams",
+		path: "/music/BGM 07.mp3",
+		category: "forest",
+	},
+	{
+		name: "Enchanted Undergrowth",
+		path: "/music/BGM 08.mp3",
+		category: "forest",
+	},
 	{ name: "Starlit Spores", path: "/music/BGM 09.mp3", category: "forest" },
 	// Ice tracks
 	{ name: "Frozen Glade", path: "/music/BGM-Ice1.mp3", category: "ice" },
@@ -129,8 +137,8 @@ function scheduleNextShuffleTrack() {
 	const waitForDuration = () => {
 		if (!audio.value) return;
 
-		if (audio.value.duration && isFinite(audio.value.duration)) {
-			const totalWait = (audio.value.duration * 1000) + EXTRA_LOOP_TIME;
+		if (audio.value.duration && Number.isFinite(audio.value.duration)) {
+			const totalWait = audio.value.duration * 1000 + EXTRA_LOOP_TIME;
 			shuffleTimeout = setTimeout(async () => {
 				if (!isShuffleMode.value || !audio.value) return;
 				await transitionToNextTrack();
@@ -181,6 +189,16 @@ function updateProgress() {
 	}
 }
 
+/** Play the current track, showing it as paused if the browser blocks playback */
+function playCurrent() {
+	const el = audio.value;
+	if (!el) return;
+	isPlaying.value = true;
+	el.play().catch(() => {
+		if (audio.value === el) isPlaying.value = false;
+	});
+}
+
 function playTrack(index: number) {
 	// Exit shuffle mode when directly selecting a track
 	isShuffleMode.value = false;
@@ -192,8 +210,7 @@ function playTrack(index: number) {
 			audio.value.pause();
 			isPlaying.value = false;
 		} else {
-			audio.value.play();
-			isPlaying.value = true;
+			playCurrent();
 		}
 		return;
 	}
@@ -221,8 +238,7 @@ function playTrack(index: number) {
 		}
 	});
 
-	audio.value.play();
-	isPlaying.value = true;
+	playCurrent();
 }
 
 function startShuffle() {
@@ -253,8 +269,7 @@ function startShuffle() {
 		}
 	});
 
-	audio.value.play();
-	isPlaying.value = true;
+	playCurrent();
 
 	// Schedule transition to next track
 	scheduleNextShuffleTrack();
@@ -275,7 +290,7 @@ function stopPlayback() {
 }
 
 function formatTime(seconds: number): string {
-	if (!seconds || !isFinite(seconds)) return "0:00";
+	if (!seconds || !Number.isFinite(seconds)) return "0:00";
 	const mins = Math.floor(seconds / 60);
 	const secs = Math.floor(seconds % 60);
 	return `${mins}:${secs.toString().padStart(2, "0")}`;

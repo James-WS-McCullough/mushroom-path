@@ -3,6 +3,8 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useGame } from "../composables/useGame";
 import { playUndo } from "../composables/useSound";
 import type { Direction, Level, Position } from "../types/game";
+import { TileType } from "../types/game";
+import type { BrambleLinks } from "../utils/brambleArt";
 import GameCharacter from "./GameCharacter.vue";
 import GameTile from "./GameTile.vue";
 
@@ -20,6 +22,8 @@ const props = defineProps<{
 	hasAcornElement?: boolean;
 	hasStarElement?: boolean;
 	disabled?: boolean;
+	/** Blocks all input, including undo/restart/hint keys (modals, transitions) */
+	inputLocked?: boolean;
 	hintTiles?: Position[];
 	stuckTiles?: Position[];
 }>();
@@ -307,6 +311,18 @@ const unifiedRoomPath = computed(() => {
 	};
 });
 
+// Neighbouring brambles, so their canes join up into one tangle
+function getBrambleLinks(pos: Position): BrambleLinks {
+	const isBramble = (x: number, y: number) =>
+		game.tiles.value[y]?.[x]?.type === TileType.BRAMBLE;
+	return {
+		up: isBramble(pos.x, pos.y - 1),
+		down: isBramble(pos.x, pos.y + 1),
+		left: isBramble(pos.x - 1, pos.y),
+		right: isBramble(pos.x + 1, pos.y),
+	};
+}
+
 function isReachable(tilePos: Position): boolean {
 	// Don't show reachable tiles when board is disabled
 	if (props.disabled) return false;
@@ -366,7 +382,9 @@ function getMovesUntilFloodForTile(tilePos: Position): number | undefined {
 
 // Get the direction the star trail comes FROM for a given tile position
 // Get the direction the star trail comes FROM for a given tile position
-function getStarTrailFromDirection(tilePos: Position): "up" | "down" | "left" | "right" | null {
+function getStarTrailFromDirection(
+	tilePos: Position,
+): "up" | "down" | "left" | "right" | null {
 	if (!props.level.starTrailFrom) return null;
 	const key = `${tilePos.x},${tilePos.y}`;
 	const fromKey = props.level.starTrailFrom[key];
@@ -388,7 +406,9 @@ function getStarTrailFromDirection(tilePos: Position): "up" | "down" | "left" | 
 }
 
 // Get the direction the star trail goes TO for a given tile position
-function getStarTrailToDirection(tilePos: Position): "up" | "down" | "left" | "right" | null {
+function getStarTrailToDirection(
+	tilePos: Position,
+): "up" | "down" | "left" | "right" | null {
 	if (!props.level.starTrailTo) return null;
 	const key = `${tilePos.x},${tilePos.y}`;
 	const toKey = props.level.starTrailTo[key];
@@ -432,11 +452,14 @@ function getAcornPopupStyle() {
 }
 
 function handleTileClick(position: Position) {
-	if (props.disabled) return;
+	if (props.disabled || props.inputLocked) return;
 	game.moveToPosition(position);
 }
 
 function handleKeydown(event: KeyboardEvent) {
+	// Nothing reaches the board while a modal, dialogue or transition is up
+	if (props.inputLocked) return;
+
 	// Undo with Z - always allowed (even when disabled for help mode)
 	if (event.key === "z" || event.key === "Z") {
 		event.preventDefault();
@@ -444,14 +467,14 @@ function handleKeydown(event: KeyboardEvent) {
 		return;
 	}
 
-	// Reset with R - always allowed (shows confirmation modal)
+	// Reset with R - allowed while disabled (shows confirmation modal)
 	if (event.key === "r" || event.key === "R") {
 		event.preventDefault();
 		emit("requestRestart");
 		return;
 	}
 
-	// Hint with H - always allowed
+	// Hint with H - allowed while disabled
 	if (event.key === "h" || event.key === "H") {
 		event.preventDefault();
 		emit("requestHint");
@@ -565,6 +588,7 @@ defineExpose({
             :collected-acorns="game.collectedAcorns.value"
             :star-trail-from-direction="getStarTrailFromDirection(tile.position)"
             :star-trail-to-direction="getStarTrailToDirection(tile.position)"
+            :bramble-links="tile.type === TileType.BRAMBLE ? getBrambleLinks(tile.position) : undefined"
             :should-shimmer="shouldShimmer()"
             @click="handleTileClick(tile.position)"
           />

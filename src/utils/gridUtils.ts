@@ -11,7 +11,7 @@ import type { Position, Tile, TileType } from "../types/game";
 /** Iterate over every cell in a grid */
 export function forEachCell<T>(
 	grid: T[][],
-	callback: (value: T, x: number, y: number) => void
+	callback: (value: T, x: number, y: number) => void,
 ): void {
 	for (let y = 0; y < grid.length; y++) {
 		const row = grid[y];
@@ -28,7 +28,7 @@ export function forEachCell<T>(
 /** Find first cell matching a predicate */
 export function findInGrid<T>(
 	grid: T[][],
-	predicate: (value: T, x: number, y: number) => boolean
+	predicate: (value: T, x: number, y: number) => boolean,
 ): { value: T; x: number; y: number } | null {
 	for (let y = 0; y < grid.length; y++) {
 		const row = grid[y];
@@ -46,7 +46,7 @@ export function findInGrid<T>(
 /** Find all cells matching a predicate */
 export function filterGrid<T>(
 	grid: T[][],
-	predicate: (value: T, x: number, y: number) => boolean
+	predicate: (value: T, x: number, y: number) => boolean,
 ): Array<{ value: T; x: number; y: number }> {
 	const results: Array<{ value: T; x: number; y: number }> = [];
 	forEachCell(grid, (value, x, y) => {
@@ -60,7 +60,7 @@ export function filterGrid<T>(
 /** Count cells matching a predicate */
 export function countInGrid<T>(
 	grid: T[][],
-	predicate: (value: T, x: number, y: number) => boolean
+	predicate: (value: T, x: number, y: number) => boolean,
 ): number {
 	let count = 0;
 	forEachCell(grid, (value, x, y) => {
@@ -81,7 +81,7 @@ export function getTileAt(tiles: Tile[][], pos: Position): Tile | undefined {
 /** Get a tile type at a position, or undefined if out of bounds */
 export function getTileTypeAt(
 	grid: TileType[][],
-	pos: Position
+	pos: Position,
 ): TileType | undefined {
 	return grid[pos.y]?.[pos.x];
 }
@@ -90,7 +90,7 @@ export function getTileTypeAt(
 export function setTileTypeAt(
 	grid: TileType[][],
 	pos: Position,
-	type: TileType
+	type: TileType,
 ): void {
 	const row = grid[pos.y];
 	if (row && pos.x >= 0 && pos.x < row.length) {

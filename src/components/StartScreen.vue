@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 
 const props = defineProps<{
 	hasSavedGame?: boolean;
@@ -29,8 +29,9 @@ interface BeforeInstallPromptEvent extends Event {
 
 function checkInstallability() {
 	// Check if already installed as PWA
-	const isStandalone = window.matchMedia("(display-mode: standalone)").matches
-		|| (navigator as { standalone?: boolean }).standalone === true;
+	const isStandalone =
+		window.matchMedia("(display-mode: standalone)").matches ||
+		(navigator as { standalone?: boolean }).standalone === true;
 
 	if (isStandalone) {
 		showInstallButton.value = false;
@@ -38,8 +39,12 @@ function checkInstallability() {
 	}
 
 	// Check for iOS Safari
-	const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as { MSStream?: unknown }).MSStream;
-	const isSafari = /Safari/.test(navigator.userAgent) && !/Chrome|CriOS|FxiOS/.test(navigator.userAgent);
+	const isIOSDevice =
+		/iPad|iPhone|iPod/.test(navigator.userAgent) &&
+		!(window as { MSStream?: unknown }).MSStream;
+	const isSafari =
+		/Safari/.test(navigator.userAgent) &&
+		!/Chrome|CriOS|FxiOS/.test(navigator.userAgent);
 
 	if (isIOSDevice && isSafari) {
 		isIOS.value = true;

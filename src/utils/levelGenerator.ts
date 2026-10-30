@@ -1,5 +1,15 @@
+import { LEVEL_GEN, LEVELS_PER_WORLD } from "../constants/game";
 import {
+	createInitialState,
+	createLevelRules,
+	isWin,
+	replayMoves,
+	solve,
+} from "../game/rules";
+import {
+	type Direction,
 	type FlowDirection,
+	isRequiredTile,
 	type Level,
 	type PortalType,
 	PortalTypes,
@@ -9,13 +19,10 @@ import {
 	WorldElement as WE,
 	type WorldElement,
 } from "../types/game";
-import { MECHANICS } from "../constants/game";
-import { getDirectionDelta, posKey, parseKey } from "./positionUtils";
+import { getDirectionDelta, parseKey, posKey } from "./positionUtils";
 
 export interface GeneratorConfig {
-	minWidth: number;
 	maxWidth: number;
-	minHeight: number;
 	maxHeight: number;
 	minRectangles: number;
 	maxRectangles: number;
@@ -38,12 +45,14 @@ export interface GeneratorConfig {
 	starChance: number;
 	starPathMinLength: number;
 	starPathMaxLength: number;
+	/** Fewest tiles to plant (dirt counts twice, as it needs two visits) */
+	minTiles: number;
+	/** Most tiles to plant */
+	maxTiles: number;
 }
 
 const DEFAULT_CONFIG: GeneratorConfig = {
-	minWidth: 8,
 	maxWidth: 12,
-	minHeight: 8,
 	maxHeight: 12,
 	minRectangles: 2,
 	maxRectangles: 3,
@@ -66,7 +75,27 @@ const DEFAULT_CONFIG: GeneratorConfig = {
 	starChance: 0.1,
 	starPathMinLength: 2,
 	starPathMaxLength: 5,
+	minTiles: 8,
+	maxTiles: LEVEL_GEN.LAST_LEVEL_MAX_TILES,
 };
+
+/**
+ * How many tiles to plant on a level, based on its place in the world.
+ * Worlds open with small gardens and build up to the biggest on their last level.
+ */
+export function getTileBudget(
+	levelNumber: number,
+): Pick<GeneratorConfig, "minTiles" | "maxTiles"> {
+	const { FIRST_LEVEL_MAX_TILES, LAST_LEVEL_MAX_TILES, TILE_RANGE } = LEVEL_GEN;
+	const progress =
+		Math.min(Math.max(levelNumber - 1, 0), LEVELS_PER_WORLD - 1) /
+		(LEVELS_PER_WORLD - 1);
+	const maxTiles = Math.round(
+		FIRST_LEVEL_MAX_TILES +
+			(LAST_LEVEL_MAX_TILES - FIRST_LEVEL_MAX_TILES) * progress,
+	);
+	return { minTiles: Math.max(8, maxTiles - TILE_RANGE), maxTiles };
+}
 
 interface Rectangle {
 	x: number;
@@ -644,719 +673,8 @@ function generateRivers(
 	return { grass: remainingGrass, stones: newStones, water, waterFlow };
 }
 
-// Compute where a player would slide to if they step on a water tile
-function computeSlideDestination(
-	startPos: Position,
-	waterTiles: Set<string>,
-	waterFlow: Record<string, FlowDirection>,
-): Position {
-	let current = startPos;
-
-	while (true) {
-		const key = posKey(current.x, current.y);
-		const flow = waterFlow[key];
-		if (!flow) {
-			// Not a water tile or no flow, stop here
-			break;
-		}
-
-		const delta = getDirectionDelta(flow);
-		const next = { x: current.x + delta.x, y: current.y + delta.y };
-		const nextKey = posKey(next.x, next.y);
-
-		if (waterTiles.has(nextKey)) {
-			// Continue sliding through water
-			current = next;
-		} else {
-			// Reached the end (should be stone), return the stone position
-			return next;
-		}
-	}
-
-	return current;
-}
-
-// Find Hamiltonian path using DFS with backtracking
-// Includes iteration limit to prevent freezing on complex configurations
-// Stone tiles are walkable bridges that don't need to be in the path
-// Water tiles force sliding to their endpoint (stone)
-// Dirt tiles need to be visited TWICE (first visit: dirt->grass, second visit: grass->mushroom)
-// Ice tiles are slippery - entering from a direction causes sliding until leaving ice
-// Low sand tiles are walkable and need to be visited, but must avoid being on them during flood (pathLength % MECHANICS.TIDE_PERIOD === 0)
-// Star tiles: BASE_STAR acts like grass, and stepping on it "blooms" all connected STAR_PATH tiles (marks them as visited)
-function findHamiltonianPath(
-	grassTiles: Position[],
-	obstacleTiles: Set<string>,
-	stoneTiles: Set<string> = new Set(),
-	waterTiles: Set<string> = new Set(),
-	waterFlow: Record<string, FlowDirection> = {},
-	dirtTiles: Set<string> = new Set(),
-	iceTiles: Set<string> = new Set(),
-	allShapeTiles: Set<string> = new Set(),
-	pondTiles: Set<string> = new Set(),
-	lowSandTiles: Set<string> = new Set(),
-	bouncePadTiles: Set<string> = new Set(),
-	honeyTiles: Set<string> = new Set(),
-	baseStarTiles: Set<string> = new Set(),
-	starPathTiles: Set<string> = new Set(),
-	starConnections: Record<string, string> = {}, // STAR_PATH key -> BASE_STAR key
-): Position[] | null {
-	const grassSet = new Set(grassTiles.map((t) => posKey(t.x, t.y)));
-
-	// Build reverse mapping: BASE_STAR key -> array of STAR_PATH keys
-	const baseStarToStarPaths: Record<string, string[]> = {};
-	for (const [starPathKey, baseStarKey] of Object.entries(starConnections)) {
-		if (!baseStarToStarPaths[baseStarKey]) {
-			baseStarToStarPaths[baseStarKey] = [];
-		}
-		baseStarToStarPaths[baseStarKey].push(starPathKey);
-	}
-
-	// Total visits needed: each grass tile once, each dirt tile twice
-	// Star tiles count as grass tiles (BASE_STAR needs visiting, STAR_PATH tiles are auto-completed when their BASE_STAR is visited)
-	// grassTiles already includes low sand tiles, base stars, and star paths
-	// But we don't need to count STAR_PATH tiles separately since they're completed by visiting BASE_STAR
-	const starPathCount = starPathTiles.size;
-	const totalVisitsNeeded = grassTiles.length + dirtTiles.size - starPathCount;
-
-	// Limit iterations to prevent freezing
-	// With connectivity pruning, we need far fewer iterations
-	const maxIterations = Math.min(10000, totalVisitsNeeded * 1000);
-	let iterations = 0;
-	const maxDepth = 500; // Prevent call stack overflow
-
-	// State tracking:
-	// - visitedOnce: tiles visited at least once (grass becomes mushroom, dirt becomes grass)
-	// - visitedTwice: dirt tiles visited twice (now mushroom)
-	// A tile is "complete" when: grass visited once, OR dirt visited twice
-
-	const LILYPAD_COOLDOWN = 4;
-
-	function dfs(
-		current: Position,
-		visitedOnce: Set<string>,
-		visitedTwice: Set<string>,
-		depth: number = 0,
-		recentPath: string[] = [], // Track recent moves for lily-pad cooldown
-	): Position[] | null {
-		iterations++;
-		if (iterations > maxIterations || depth > maxDepth) {
-			return null;
-		}
-
-		const key = posKey(current.x, current.y);
-		const isDirt = dirtTiles.has(key);
-		const isBaseStar = baseStarTiles.has(key);
-		const wasVisitedOnce = visitedOnce.has(key);
-
-		// Build new recent path for lily-pad cooldown tracking
-		const newRecentPath = [...recentPath, key];
-
-		// Update visit tracking
-		if (isDirt && wasVisitedOnce) {
-			// Second visit to dirt tile
-			visitedTwice.add(key);
-		} else {
-			// First visit (grass or dirt or base star)
-			visitedOnce.add(key);
-
-			// If this is a BASE_STAR, bloom all connected STAR_PATH tiles
-			if (isBaseStar) {
-				const connectedStarPaths = baseStarToStarPaths[key] ?? [];
-				for (const starPathKey of connectedStarPaths) {
-					visitedOnce.add(starPathKey);
-				}
-			}
-		}
-
-		// Count completed tiles
-		// Grass tiles: completed after 1 visit
-		// Dirt tiles: completed after 2 visits
-		// STAR_PATH tiles are completed when their BASE_STAR is visited (already handled above)
-		// Only count actual grass tiles (not lilypads or other visited tiles)
-		// Don't count STAR_PATH tiles separately - they're completed via BASE_STAR
-		const completedGrass = [...visitedOnce].filter(
-			(k) => grassSet.has(k) && !dirtTiles.has(k) && !starPathTiles.has(k),
-		).length;
-		const completedDirt = visitedTwice.size;
-
-		// Check if path is complete
-		// grassOnlyCount excludes dirt tiles and STAR_PATH tiles (since STAR_PATHs are auto-completed)
-		const grassOnlyCount = grassTiles.length - dirtTiles.size - starPathTiles.size;
-		if (completedGrass === grassOnlyCount && completedDirt === dirtTiles.size) {
-			return [current];
-		}
-
-		// Determine walkable tiles
-		// - Unvisited grass/dirt tiles
-		// - Dirt tiles visited once (now grass, can be visited again)
-		// - Stone tiles (always walkable)
-		const walkableTiles = new Set<string>();
-
-		for (const k of grassSet) {
-			const isCurrentTile = k === key;
-			const isVisitedOnce = visitedOnce.has(k);
-			const isVisitedTwice = visitedTwice.has(k);
-			const isTileDirt = dirtTiles.has(k);
-
-			if (isCurrentTile) {
-				walkableTiles.add(k);
-			} else if (!isVisitedOnce) {
-				// Never visited - walkable
-				walkableTiles.add(k);
-			} else if (isTileDirt && !isVisitedTwice) {
-				// Dirt visited once (now grass), can visit again
-				walkableTiles.add(k);
-			}
-			// Otherwise: grass visited once = mushroom (obstacle), or dirt visited twice = mushroom (obstacle)
-		}
-
-		for (const k of stoneTiles) {
-			walkableTiles.add(k);
-		}
-
-		// Pond tiles (lily-pads) - walkable if not on cooldown (not in last N moves)
-		const recentMoves = new Set(newRecentPath.slice(-LILYPAD_COOLDOWN));
-		for (const k of pondTiles) {
-			if (!recentMoves.has(k)) {
-				walkableTiles.add(k);
-			}
-		}
-
-		// Obstacles: brambles + completed tiles (mushrooms) + lily-pads on cooldown
-		const currentObstacles = new Set<string>([...obstacleTiles]);
-		// Add lily-pads on cooldown as obstacles
-		for (const k of recentMoves) {
-			if (pondTiles.has(k) && k !== key) {
-				currentObstacles.add(k);
-			}
-		}
-		for (const k of visitedOnce) {
-			if (k === key) continue;
-			const isTileDirt = dirtTiles.has(k);
-			const isVisitedTwice = visitedTwice.has(k);
-
-			// Grass visited once = mushroom (obstacle)
-			// Dirt visited twice = mushroom (obstacle)
-			// Dirt visited once = grass (NOT obstacle, still walkable)
-			if (!isTileDirt || isVisitedTwice) {
-				currentObstacles.add(k);
-			}
-		}
-
-		// Get neighbors
-		// Calculate what the path length would be at the next position
-		const nextDepth = depth + 1;
-		// Check if landing on low sand at nextDepth would be during a flood
-		// Flood happens when (pathLength % MECHANICS.TIDE_PERIOD) === (MECHANICS.TIDE_PERIOD - 1)
-		// because tidePhase starts at 1 and advances after each move
-		const wouldBeFloodedAtNextDepth =
-			nextDepth % MECHANICS.TIDE_PERIOD === MECHANICS.TIDE_PERIOD - 1;
-
-		// Check if current tile is honey (no jumping allowed from honey)
-		const isOnHoney = honeyTiles.has(key);
-
-		const standardNeighbors = getReachableNeighbors(
-			current,
-			walkableTiles,
-			currentObstacles,
-		).filter((n) => {
-			const nKey = posKey(n.x, n.y);
-
-			// Check if this is a jump (distance of 2) - not allowed from honey
-			const dx = Math.abs(n.x - current.x);
-			const dy = Math.abs(n.y - current.y);
-			const isJump = dx === 2 || dy === 2;
-			if (isOnHoney && isJump) {
-				return false;
-			}
-
-			if (stoneTiles.has(nKey)) return true;
-			// Pond tiles (lily-pads) - walkable if not on cooldown
-			if (pondTiles.has(nKey)) return !recentMoves.has(nKey);
-
-			// Low sand tiles - can't step onto them if we'd be there during a flood
-			if (lowSandTiles.has(nKey) && wouldBeFloodedAtNextDepth) {
-				return false;
-			}
-
-			const nVisitedOnce = visitedOnce.has(nKey);
-			const nVisitedTwice = visitedTwice.has(nKey);
-			const nIsDirt = dirtTiles.has(nKey);
-
-			// Can visit if:
-			// - Not visited at all
-			// - Dirt visited once (needs second visit)
-			if (!nVisitedOnce) return true;
-			if (nIsDirt && !nVisitedTwice) return true;
-			return false;
-		});
-
-		// Water slide destinations
-		const waterSlideDestinations: {
-			waterEntry: Position;
-			destination: Position;
-		}[] = [];
-		const deltas = [
-			{ x: 1, y: 0 },
-			{ x: -1, y: 0 },
-			{ x: 0, y: 1 },
-			{ x: 0, y: -1 },
-		];
-		const directionNames: FlowDirection[] = ["right", "left", "down", "up"];
-		for (let i = 0; i < deltas.length; i++) {
-			const d = deltas[i];
-			if (!d) continue;
-			const adjacentPos = { x: current.x + d.x, y: current.y + d.y };
-			const adjacentKey = posKey(adjacentPos.x, adjacentPos.y);
-			if (waterTiles.has(adjacentKey)) {
-				const slideEnd = computeSlideDestination(
-					adjacentPos,
-					waterTiles,
-					waterFlow,
-				);
-				const slideEndKey = posKey(slideEnd.x, slideEnd.y);
-				if (stoneTiles.has(slideEndKey)) {
-					waterSlideDestinations.push({
-						waterEntry: adjacentPos,
-						destination: slideEnd,
-					});
-				}
-			}
-		}
-
-		// Ice slide destinations (with bounce pad chaining)
-		const iceSlideDestinations: {
-			iceEntry: Position;
-			destination: Position;
-			direction: FlowDirection;
-		}[] = [];
-		for (let i = 0; i < deltas.length; i++) {
-			const d = deltas[i];
-			const dir = directionNames[i];
-			if (!d || !dir) continue;
-			const adjacentPos = { x: current.x + d.x, y: current.y + d.y };
-			const adjacentKey = posKey(adjacentPos.x, adjacentPos.y);
-			if (iceTiles.has(adjacentKey)) {
-				// Compute where we'd slide to from this entry direction
-				let slideEnd = computeIceSlideDestination(
-					adjacentPos,
-					dir,
-					iceTiles,
-					currentObstacles,
-					allShapeTiles,
-				);
-				let slideEndKey = posKey(slideEnd.x, slideEnd.y);
-
-				// If ice slide ends on a bounce pad, follow the bounce chain
-				if (bouncePadTiles.has(slideEndKey)) {
-					const bounceResult = calculateBounceChainDestination(slideEnd, d);
-					if (bounceResult) {
-						slideEnd = bounceResult;
-						slideEndKey = posKey(slideEnd.x, slideEnd.y);
-					} else {
-						continue; // Bounce chain failed, skip this ice slide
-					}
-				}
-
-				// Check if the landing tile is valid (grass, dirt, or stone - not ice)
-				if (!iceTiles.has(slideEndKey)) {
-					const isValidLanding =
-						grassSet.has(slideEndKey) || stoneTiles.has(slideEndKey);
-					if (isValidLanding) {
-						// Check if it's a grass/dirt tile we can visit
-						const landVisitedOnce = visitedOnce.has(slideEndKey);
-						const landVisitedTwice = visitedTwice.has(slideEndKey);
-						const landIsDirt = dirtTiles.has(slideEndKey);
-						const landIsStone = stoneTiles.has(slideEndKey);
-
-						// Can land if: stone, unvisited grass/dirt, or dirt visited once
-						if (
-							landIsStone ||
-							!landVisitedOnce ||
-							(landIsDirt && !landVisitedTwice)
-						) {
-							iceSlideDestinations.push({
-								iceEntry: adjacentPos,
-								destination: slideEnd,
-								direction: dir,
-							});
-						}
-					}
-				}
-			}
-		}
-
-		// Bounce pad destinations (with chaining support)
-		const bouncePadDestinations: {
-			bouncePad: Position;
-			destination: Position;
-		}[] = [];
-
-		// Helper to calculate final bounce destination, following chains
-		function calculateBounceChainDestination(
-			startPadPos: Position,
-			direction: { x: number; y: number },
-			visitedPads: Set<string> = new Set(),
-		): Position | null {
-			const padKey = posKey(startPadPos.x, startPadPos.y);
-			if (visitedPads.has(padKey)) return null; // Infinite loop prevention
-			visitedPads.add(padKey);
-
-			// Try distances 3, 2, 1
-			for (let dist = 3; dist >= 1; dist--) {
-				const landPos = {
-					x: startPadPos.x + direction.x * dist,
-					y: startPadPos.y + direction.y * dist,
-				};
-				const landKey = posKey(landPos.x, landPos.y);
-
-				// Check if landing is valid
-				if (!allShapeTiles.has(landKey)) continue; // Out of bounds
-				if (currentObstacles.has(landKey)) continue; // Bramble or mushroom
-				if (waterTiles.has(landKey)) continue; // Water
-				if (pondTiles.has(landKey)) continue; // Pond
-				if (iceTiles.has(landKey)) continue; // Can't land on ice from bounce
-				if (lowSandTiles.has(landKey) && wouldBeFloodedAtNextDepth)
-					continue; // Flooded low sand
-
-				// If landing on another bounce pad, follow the chain
-				if (bouncePadTiles.has(landKey)) {
-					const chainResult = calculateBounceChainDestination(
-						landPos,
-						direction,
-						visitedPads,
-					);
-					if (chainResult) return chainResult;
-					continue; // Chain failed, try shorter distance
-				}
-
-				// Valid non-bounce landing found
-				return landPos;
-			}
-
-			return null; // No valid landing found
-		}
-
-		if (bouncePadTiles.size > 0) {
-			for (let i = 0; i < deltas.length; i++) {
-				const d = deltas[i];
-				if (!d) continue;
-				const adjacentPos = { x: current.x + d.x, y: current.y + d.y };
-				const adjacentKey = posKey(adjacentPos.x, adjacentPos.y);
-
-				if (bouncePadTiles.has(adjacentKey)) {
-					// Calculate final destination after any bounce chains
-					const finalDest = calculateBounceChainDestination(adjacentPos, d);
-					if (!finalDest) continue;
-
-					const landKey = posKey(finalDest.x, finalDest.y);
-					const landVisitedOnce = visitedOnce.has(landKey);
-					const landVisitedTwice = visitedTwice.has(landKey);
-					const landIsDirt = dirtTiles.has(landKey);
-					const landIsStone = stoneTiles.has(landKey);
-					const landIsGrass = grassSet.has(landKey);
-
-					// Valid landing: unvisited grass/dirt, dirt visited once, or stone
-					if (
-						landIsStone ||
-						(landIsGrass &&
-							(!landVisitedOnce || (landIsDirt && !landVisitedTwice)))
-					) {
-						bouncePadDestinations.push({
-							bouncePad: adjacentPos,
-							destination: finalDest,
-						});
-					}
-				}
-			}
-		}
-
-		// Shuffle options
-		const allNeighbors = shuffleArray([...standardNeighbors]);
-		const shuffledWaterSlides = shuffleArray(waterSlideDestinations);
-		const shuffledIceSlides = shuffleArray(iceSlideDestinations);
-		const shuffledBouncePads = shuffleArray(bouncePadDestinations);
-
-		// Connectivity pruning: check if remaining unvisited tiles are reachable from a position
-		// This prunes branches early that would strand tiles, dramatically reducing search space
-		function isRemainingConnected(fromPos: Position): boolean {
-			// Build set of tiles that still need to be visited
-			const remaining = new Set<string>();
-			for (const k of grassSet) {
-				const isVisited = visitedOnce.has(k);
-				const isVisitedTwice = visitedTwice.has(k);
-				const isTileDirt = dirtTiles.has(k);
-
-				// Tile needs visiting if:
-				// - Never visited (grass or dirt)
-				// - Dirt visited once (needs second visit)
-				if (!isVisited || (isTileDirt && !isVisitedTwice)) {
-					remaining.add(k);
-				}
-			}
-
-			if (remaining.size === 0) return true;
-
-			// BFS from fromPos to check all remaining tiles are reachable
-			const fromKey = posKey(fromPos.x, fromPos.y);
-			const visited = new Set<string>();
-			const queue = [fromPos];
-			visited.add(fromKey);
-
-			// Current obstacles include mushrooms (visited grass or dirt visited twice)
-			const simObstacles = new Set<string>([...currentObstacles]);
-			// Current position becomes mushroom if it's grass (not dirt visited once)
-			const isDirtVisitedOnce = dirtTiles.has(key) && visitedOnce.has(key) && !visitedTwice.has(key);
-			if (!isDirtVisitedOnce && grassSet.has(key)) {
-				simObstacles.add(key);
-			}
-
-			// Walkable includes: remaining grass/dirt, stones, pond (simplified)
-			const simWalkable = new Set<string>([...remaining, ...stoneTiles, ...pondTiles]);
-
-			while (queue.length > 0) {
-				const curr = queue.shift();
-				if (!curr) continue;
-
-				const neighbors = getReachableNeighbors(curr, simWalkable, simObstacles);
-				for (const n of neighbors) {
-					const nKey = posKey(n.x, n.y);
-					if (!visited.has(nKey)) {
-						visited.add(nKey);
-						queue.push(n);
-					}
-				}
-			}
-
-			// Check all remaining tiles were reached
-			for (const r of remaining) {
-				if (!visited.has(r)) return false;
-			}
-			return true;
-		}
-
-		// Try standard neighbors (filtered by connectivity)
-		for (const neighbor of allNeighbors) {
-			const neighborKey = posKey(neighbor.x, neighbor.y);
-
-			// Skip if this move would strand remaining tiles
-			if (!isRemainingConnected(neighbor)) continue;
-
-			if (stoneTiles.has(neighborKey)) {
-				// Stepping onto stone - explore from there
-				const stoneNeighbors = getReachableNeighbors(
-					neighbor,
-					walkableTiles,
-					currentObstacles,
-				).filter((n) => {
-					const snKey = posKey(n.x, n.y);
-					if (!grassSet.has(snKey)) return false;
-
-					const snVisitedOnce = visitedOnce.has(snKey);
-					const snVisitedTwice = visitedTwice.has(snKey);
-					const snIsDirt = dirtTiles.has(snKey);
-
-					if (!snVisitedOnce) return true;
-					if (snIsDirt && !snVisitedTwice) return true;
-					return false;
-				});
-
-				for (const stoneNeighbor of shuffleArray(stoneNeighbors)) {
-					const result = dfs(
-						stoneNeighbor,
-						visitedOnce,
-						visitedTwice,
-						depth + 1,
-						newRecentPath,
-					);
-					if (result) {
-						return [current, neighbor, ...result];
-					}
-				}
-			} else {
-				// Regular tile (grass or dirt needing revisit)
-				const result = dfs(
-					neighbor,
-					visitedOnce,
-					visitedTwice,
-					depth + 1,
-					newRecentPath,
-				);
-				if (result) {
-					return [current, ...result];
-				}
-			}
-		}
-
-		// Try water slides
-		for (const { destination } of shuffledWaterSlides) {
-			const stoneNeighbors = getReachableNeighbors(
-				destination,
-				walkableTiles,
-				currentObstacles,
-			).filter((n) => {
-				const snKey = posKey(n.x, n.y);
-				if (!grassSet.has(snKey)) return false;
-
-				const snVisitedOnce = visitedOnce.has(snKey);
-				const snVisitedTwice = visitedTwice.has(snKey);
-				const snIsDirt = dirtTiles.has(snKey);
-
-				if (!snVisitedOnce) return true;
-				if (snIsDirt && !snVisitedTwice) return true;
-				return false;
-			});
-
-			for (const stoneNeighbor of shuffleArray(stoneNeighbors)) {
-				// Skip if this move would strand remaining tiles
-				if (!isRemainingConnected(stoneNeighbor)) continue;
-
-				const result = dfs(
-					stoneNeighbor,
-					visitedOnce,
-					visitedTwice,
-					depth + 1,
-					newRecentPath,
-				);
-				if (result) {
-					return [current, destination, ...result];
-				}
-			}
-		}
-
-		// Try ice slides
-		for (const { destination } of shuffledIceSlides) {
-			const destKey = posKey(destination.x, destination.y);
-
-			// Skip if this move would strand remaining tiles
-			if (!isRemainingConnected(destination)) continue;
-
-			if (stoneTiles.has(destKey)) {
-				// Landed on stone - need to step off to grass/dirt
-				const stoneNeighbors = getReachableNeighbors(
-					destination,
-					walkableTiles,
-					currentObstacles,
-				).filter((n) => {
-					const snKey = posKey(n.x, n.y);
-					if (!grassSet.has(snKey)) return false;
-
-					const snVisitedOnce = visitedOnce.has(snKey);
-					const snVisitedTwice = visitedTwice.has(snKey);
-					const snIsDirt = dirtTiles.has(snKey);
-
-					if (!snVisitedOnce) return true;
-					if (snIsDirt && !snVisitedTwice) return true;
-					return false;
-				});
-
-				for (const stoneNeighbor of shuffleArray(stoneNeighbors)) {
-					const result = dfs(
-						stoneNeighbor,
-						visitedOnce,
-						visitedTwice,
-						depth + 1,
-						newRecentPath,
-					);
-					if (result) {
-						return [current, destination, ...result];
-					}
-				}
-			} else {
-				// Landed on grass/dirt - continue path from there
-				const result = dfs(
-					destination,
-					visitedOnce,
-					visitedTwice,
-					depth + 1,
-					newRecentPath,
-				);
-				if (result) {
-					return [current, ...result];
-				}
-			}
-		}
-
-		// Try bounce pads
-		for (const { destination } of shuffledBouncePads) {
-			const destKey = posKey(destination.x, destination.y);
-
-			// Skip if this move would strand remaining tiles
-			if (!isRemainingConnected(destination)) continue;
-
-			if (stoneTiles.has(destKey)) {
-				// Landed on stone - need to step off to grass/dirt
-				const stoneNeighbors = getReachableNeighbors(
-					destination,
-					walkableTiles,
-					currentObstacles,
-				).filter((n) => {
-					const snKey = posKey(n.x, n.y);
-					if (!grassSet.has(snKey)) return false;
-
-					const snVisitedOnce = visitedOnce.has(snKey);
-					const snVisitedTwice = visitedTwice.has(snKey);
-					const snIsDirt = dirtTiles.has(snKey);
-
-					if (!snVisitedOnce) return true;
-					if (snIsDirt && !snVisitedTwice) return true;
-					return false;
-				});
-
-				for (const stoneNeighbor of shuffleArray(stoneNeighbors)) {
-					const result = dfs(
-						stoneNeighbor,
-						visitedOnce,
-						visitedTwice,
-						depth + 1,
-						newRecentPath,
-					);
-					if (result) {
-						return [current, destination, ...result];
-					}
-				}
-			} else {
-				// Landed on grass/dirt - continue path from there
-				const result = dfs(
-					destination,
-					visitedOnce,
-					visitedTwice,
-					depth + 1,
-					newRecentPath,
-				);
-				if (result) {
-					return [current, ...result];
-				}
-			}
-		}
-
-		// Backtrack
-		if (isDirt && wasVisitedOnce) {
-			visitedTwice.delete(key);
-		} else {
-			visitedOnce.delete(key);
-		}
-		return null;
-	}
-
-	const startTiles = shuffleArray([...grassTiles]);
-
-	for (const startTile of startTiles) {
-		if (iterations > maxIterations) {
-			break;
-		}
-		const path = dfs(startTile, new Set(), new Set());
-		if (path) {
-			return path;
-		}
-	}
-
-	return null;
-}
-
-// Select dirt candidates BEFORE path finding
-// Dirt tiles can be anywhere - the path finder will ensure they can be visited twice
+// Select dirt candidates
+// Dirt tiles can be anywhere - the solver checks they can be visited twice
 function selectDirtCandidates(
 	grass: Set<string>,
 	_stones: Set<string>,
@@ -1536,7 +854,10 @@ function placeSquirrelsAndAcorns(
 	}
 
 	// Place all available acorns (up to 3 per squirrel max)
-	const maxAcorns = Math.min(acornCandidates.length, squirrelPositions.length * 3);
+	const maxAcorns = Math.min(
+		acornCandidates.length,
+		squirrelPositions.length * 3,
+	);
 	const shuffledAcornCandidates = shuffleArray([...acornCandidates]);
 
 	for (let i = 0; i < maxAcorns && i < shuffledAcornCandidates.length; i++) {
@@ -1552,7 +873,10 @@ function placeSquirrelsAndAcorns(
 	const actualAcornsPlaced = acorns.size;
 
 	// If we somehow have fewer acorns than squirrels, remove squirrels
-	while (squirrelPositions.length > actualAcornsPlaced && squirrelPositions.length > 0) {
+	while (
+		squirrelPositions.length > actualAcornsPlaced &&
+		squirrelPositions.length > 0
+	) {
 		squirrelPositions.pop();
 	}
 
@@ -1581,10 +905,17 @@ function placeSquirrelsAndAcorns(
 	}
 
 	// Final safety check: ensure total requirements <= total acorns
-	const totalRequirements = Object.values(squirrelRequirements).reduce((a, b) => a + b, 0);
+	const totalRequirements = Object.values(squirrelRequirements).reduce(
+		(a, b) => a + b,
+		0,
+	);
 	if (totalRequirements > actualAcornsPlaced) {
 		// This shouldn't happen, but if it does, return empty to avoid impossible level
-		return { squirrels: new Set(), acorns: new Set(), squirrelRequirements: {} };
+		return {
+			squirrels: new Set(),
+			acorns: new Set(),
+			squirrelRequirements: {},
+		};
 	}
 
 	return { squirrels, acorns, squirrelRequirements };
@@ -1617,7 +948,14 @@ function generateStarPaths(
 	const starTrailTo: Record<string, string> = {};
 
 	if (chance <= 0) {
-		return { grass: remainingGrass, baseStars, starPaths, starConnections, starTrailFrom, starTrailTo };
+		return {
+			grass: remainingGrass,
+			baseStars,
+			starPaths,
+			starConnections,
+			starTrailFrom,
+			starTrailTo,
+		};
 	}
 
 	// Target 1-3 star paths per level
@@ -1697,8 +1035,7 @@ function generateStarPaths(
 
 			// Record trail connections: each tile points to the previous and next tile in the chain
 			let prevTile = startKey;
-			for (let i = 0; i < pathTiles.length; i++) {
-				const tile = pathTiles[i]!;
+			for (const tile of pathTiles) {
 				remainingGrass.delete(tile);
 				starPaths.add(tile);
 				starConnections[tile] = startKey;
@@ -1715,7 +1052,14 @@ function generateStarPaths(
 		if (!pathCreated) break;
 	}
 
-	return { grass: remainingGrass, baseStars, starPaths, starConnections, starTrailFrom, starTrailTo };
+	return {
+		grass: remainingGrass,
+		baseStars,
+		starPaths,
+		starConnections,
+		starTrailFrom,
+		starTrailTo,
+	};
 }
 
 // Add ice tiles in clusters - ice acts as walkable bridge that causes sliding
@@ -1976,8 +1320,7 @@ function addPondStrip(
 			const numBridges = randomInt(1, Math.min(2, bridgeStarts.length));
 			const shuffledStarts = shuffleArray(bridgeStarts);
 
-			for (let b = 0; b < numBridges && b < shuffledStarts.length; b++) {
-				const start = shuffledStarts[b]!;
+			for (const start of shuffledStarts.slice(0, numBridges)) {
 				const startKey = posKey(start.x, start.y);
 				if (usedBridgeStarts.has(startKey)) continue;
 
@@ -2172,7 +1515,8 @@ function addPondStrip(
 
 			// Pick one tile as lily-pad, rest as water
 			const puddleArray = Array.from(puddleTiles);
-			const lilypadKey = puddleArray[0]!;
+			const lilypadKey = puddleArray[0];
+			if (!lilypadKey) continue;
 
 			// Add lily-pad to walkable bridges for connectivity check
 			walkableBridges.add(lilypadKey);
@@ -2262,7 +1606,13 @@ function addTidalZones(
 		];
 
 		// Check if any neighbor is "outside" the level (not grass, bramble, or stone)
-		const allTiles = new Set([...grass, ...brambles, ...stones, ...water, ...ice]);
+		const allTiles = new Set([
+			...grass,
+			...brambles,
+			...stones,
+			...water,
+			...ice,
+		]);
 		const hasExteriorEdge = neighbors.some((n) => !allTiles.has(n));
 		if (hasExteriorEdge) {
 			edgeTiles.push(key);
@@ -2322,7 +1672,12 @@ function addTidalZones(
 			if (testGrass.size < 8) continue;
 
 			// Low sand tiles act as walkable bridges (like grass) when not flooded
-			const walkableBridges = new Set([...stones, ...water, ...ice, ...cluster]);
+			const walkableBridges = new Set([
+				...stones,
+				...water,
+				...ice,
+				...cluster,
+			]);
 			if (isConnectedWithJumps(testGrass, brambles, walkableBridges)) {
 				// Valid cluster - add to low sand
 				for (const tile of cluster) {
@@ -2364,38 +1719,7 @@ function addTidalZones(
 	return { grass: remainingGrass, lowSand, sea };
 }
 
-// Compute where a player slides to when entering ice from a given direction
-// Returns the final position after sliding stops (hitting non-ice or obstacle)
-function computeIceSlideDestination(
-	startPos: Position,
-	direction: FlowDirection,
-	iceTiles: Set<string>,
-	obstacles: Set<string>, // brambles, mushrooms, etc.
-	allTiles: Set<string>, // all valid tiles in the level
-): Position {
-	const delta = getDirectionDelta(direction);
-	let current = startPos;
-
-	while (true) {
-		const next = { x: current.x + delta.x, y: current.y + delta.y };
-		const nextKey = posKey(next.x, next.y);
-
-		// Stop if we hit an obstacle or go out of bounds
-		if (obstacles.has(nextKey) || !allTiles.has(nextKey)) {
-			return current;
-		}
-
-		// Stop if we leave the ice
-		if (!iceTiles.has(nextKey)) {
-			return next; // Land on the non-ice tile
-		}
-
-		// Continue sliding on ice
-		current = next;
-	}
-}
-
-// Place bounce pads on grass tiles BEFORE pathfinding
+// Place bounce pads on grass tiles
 // Bounce pads need:
 // 1. At least one accessible adjacent grass tile (to step onto the pad)
 // 2. Room to bounce (at least 1 tile) in some direction
@@ -2633,8 +1957,8 @@ function placePortalPairs(
 }
 
 // Build level from path
-// The path parameter is the solution path from findHamiltonianPath
-// It will be stored in the Level with adjusted coordinates
+// The first tile of the path becomes the start position, and the path is
+// stored in the Level with adjusted coordinates
 function buildLevelFromPath(
 	path: Position[],
 	allShapeTiles: Set<string>,
@@ -2702,7 +2026,7 @@ function buildLevelFromPath(
 				row.push(TileType.SEA);
 			} else if (portals.has(key)) {
 				// Portal tiles replace grass tiles
-				row.push(portals.get(key)!);
+				row.push(portals.get(key) ?? TileType.GRASS);
 			} else if (bouncePads.has(key)) {
 				// Bounce pad tiles replace grass tiles
 				row.push(TileType.BOUNCE_PAD);
@@ -2766,11 +2090,19 @@ function buildLevelFromPath(
 
 	// Adjust star connections coordinates relative to grid
 	const adjustedStarConnections: Record<string, string> = {};
-	for (const [starPathKey, baseStarKey] of Object.entries(starConnectionsInput)) {
+	for (const [starPathKey, baseStarKey] of Object.entries(
+		starConnectionsInput,
+	)) {
 		const starPathPos = parseKey(starPathKey);
 		const baseStarPos = parseKey(baseStarKey);
-		const adjustedStarPathKey = posKey(starPathPos.x - minX, starPathPos.y - minY);
-		const adjustedBaseStarKey = posKey(baseStarPos.x - minX, baseStarPos.y - minY);
+		const adjustedStarPathKey = posKey(
+			starPathPos.x - minX,
+			starPathPos.y - minY,
+		);
+		const adjustedBaseStarKey = posKey(
+			baseStarPos.x - minX,
+			baseStarPos.y - minY,
+		);
 		adjustedStarConnections[adjustedStarPathKey] = adjustedBaseStarKey;
 	}
 
@@ -2821,6 +2153,132 @@ function buildLevelFromPath(
 				? adjustedStarTrailTo
 				: undefined,
 	};
+}
+
+/** Tiles to plant, as the player's counter shows it (dirt needs two visits) */
+function countTilesToPlant(level: Level): number {
+	let count = 0;
+	for (const row of level.grid) {
+		for (const type of row) {
+			if (isRequiredTile(type)) count++;
+			if (type === TileType.DIRT) count++;
+		}
+	}
+	return count;
+}
+
+// =============================================================================
+// SOLVING WITH THE GAME RULES
+// =============================================================================
+
+/** Search budget per solve attempt - most generated levels solve in a few hundred steps */
+const SOLVE_ITERATIONS = 3000;
+/** How many start tiles to try before giving up on a layout */
+const START_ATTEMPTS = 6;
+/** How many fairy ring layouts to try before giving up on a level */
+const PORTAL_ATTEMPTS = 4;
+
+interface Solution {
+	start: Position;
+	moves: { direction: Direction; target: Position; settled: Position }[];
+}
+
+function solveFrom(level: Level, start: Position): Solution | null {
+	const rules = createLevelRules(level);
+	const state = { ...createInitialState(level), player: { ...start } };
+	const { moves } = solve(rules, state, SOLVE_ITERATIONS);
+	return moves ? { start, moves } : null;
+}
+
+/** Try a few grass starting tiles and return the first that leads to a win */
+function solveFromSomeStart(level: Level): Solution | null {
+	const starts: Position[] = [];
+	level.grid.forEach((row, y) => {
+		row.forEach((type, x) => {
+			if (type === TileType.GRASS) starts.push({ x, y });
+		});
+	});
+
+	for (const start of shuffleArray(starts).slice(0, START_ATTEMPTS)) {
+		const solution = solveFrom(level, start);
+		if (solution) return solution;
+	}
+	return null;
+}
+
+/** Does replaying these moves from the level's start win? */
+function solutionWins(level: Level, moves: Solution["moves"]): boolean {
+	const rules = createLevelRules(level);
+	const end = replayMoves(
+		rules,
+		createInitialState(level),
+		moves.map((move) => move.direction),
+	);
+	return end !== null && isWin(end);
+}
+
+/** Grass tiles of a built level, as "x,y" keys */
+function grassKeys(level: Level): Set<string> {
+	const keys = new Set<string>();
+	level.grid.forEach((row, y) => {
+		row.forEach((type, x) => {
+			if (type === TileType.GRASS) keys.add(posKey(x, y));
+		});
+	});
+	return keys;
+}
+
+function setTiles(level: Level, keys: Iterable<string>, type: TileType): void {
+	for (const key of keys) {
+		const { x, y } = parseKey(key);
+		const row = level.grid[y];
+		if (row) row[x] = type;
+	}
+}
+
+/**
+ * Place fairy ring pairs on grass and re-solve. Tries a few layouts; if none
+ * can be won, the level keeps no portals.
+ */
+function addPortals(
+	level: Level,
+	start: Position,
+	numPairs: number,
+): Solution | null {
+	for (let attempt = 0; attempt < PORTAL_ATTEMPTS; attempt++) {
+		const portals = placePortalPairs(grassKeys(level), start, numPairs);
+		for (const [key, type] of portals) setTiles(level, [key], type);
+
+		const solution = solveFrom(level, start);
+		if (solution) return solution;
+
+		setTiles(level, portals.keys(), TileType.GRASS);
+	}
+	return solveFrom(level, start);
+}
+
+/** Put acorns and hungry squirrels on grass along the winning line */
+function addSquirrelsAndAcorns(
+	level: Level,
+	solution: Solution,
+	chance: number,
+): void {
+	// Tiles in the order the player stands on them
+	const visitOrder = [
+		solution.start,
+		...solution.moves.map((move) => move.settled),
+	];
+	const { squirrels, acorns, squirrelRequirements } = placeSquirrelsAndAcorns(
+		visitOrder,
+		grassKeys(level),
+		chance,
+		new Set(),
+	);
+	if (squirrels.size === 0) return;
+
+	setTiles(level, acorns, TileType.ACORN);
+	setTiles(level, squirrels, TileType.SQUIRREL);
+	level.squirrelRequirements = squirrelRequirements;
 }
 
 // Verify a level is valid and solvable
@@ -3052,8 +2510,7 @@ export function generateLevel(
 
 		const shape = new Set(baseShape);
 
-		// Include lowSand tiles and star tiles in grassTiles for pathfinding (they need to be visited)
-		// For star paths: BASE_STAR acts like grass (needs to be visited), STAR_PATH tiles bloom when BASE_STAR is stepped on
+		// Every tile that needs visiting (low sand and star tiles included)
 		const grassTiles = [
 			...Array.from(grass).map(parseKey),
 			...Array.from(lowSand).map(parseKey),
@@ -3063,7 +2520,7 @@ export function generateLevel(
 
 		if (grassTiles.length < 8) continue;
 
-		// Select dirt candidates BEFORE path finding
+		// Select dirt candidates
 		// Dirt tiles need to be adjacent to stones so the path can revisit them
 		const dirt = selectDirtCandidates(
 			grass,
@@ -3071,11 +2528,11 @@ export function generateLevel(
 			fullConfig.dirtChance,
 		);
 
-		// Select honey candidates BEFORE path finding
+		// Select honey candidates
 		// Honey tiles prevent jumping but allow walking
 		const honey = selectHoneyCandidates(grass, fullConfig.honeyChance);
 
-		// Place bounce pads BEFORE pathfinding
+		// Place bounce pads
 		// They need valid placement (accessible + room to bounce)
 		const startPos = grassTiles[0] ?? { x: 0, y: 0 };
 		const bouncePads = placeBouncePads(
@@ -3086,88 +2543,68 @@ export function generateLevel(
 			fullConfig.bounceChance,
 		);
 
-		// Find path - path finder will visit dirt tiles twice, handle ice sliding,
-		// avoid low sand during floods, handle bounce pad mechanics, respect honey no-jump restriction,
-		// and handle star bloom (BASE_STAR blooms connected STAR_PATH tiles when visited)
-		const path = findHamiltonianPath(
-			grassTiles,
+		// Build the level without fairy rings or acorns, then solve it with the
+		// game's own rules - that both picks a start and proves it's winnable
+		const level = buildLevelFromPath(
+			[startPos],
+			shape,
 			bramblesAfterPond,
 			stonesAfterPond,
 			water,
-			waterFlow,
 			dirt,
 			ice,
-			shape,
 			pond,
+			pondWater,
+			new Map(),
+			waterFlow,
+			rooms,
 			lowSand,
+			sea,
 			bouncePads,
 			honey,
+			new Set(),
+			new Set(),
+			{},
 			baseStars,
 			starPaths,
 			starConnections,
+			starTrailFrom,
+			starTrailTo,
 		);
 
-		if (path) {
-			// Place portal pairs AFTER pathfinding (portals don't affect the path - they're teleports)
-			const pathStartPos = path[0] ?? { x: 0, y: 0 };
-			const portals = placePortalPairs(grass, pathStartPos, fullConfig.portalPairs);
+		// Too big (daunting) or too small for this level's place in the world
+		const tilesToPlant = countTilesToPlant(level);
+		if (
+			tilesToPlant < fullConfig.minTiles ||
+			tilesToPlant > fullConfig.maxTiles
+		) {
+			continue;
+		}
 
-			// Build set of tiles that would overwrite acorns in createGridFromSets
-			// These are all checked BEFORE acorns in the grid creation logic
-			const excludedTiles = new Set<string>([
-				...bramblesAfterPond,
-				...stonesAfterPond,
-				...water,
-				...ice,
-				...pond,
-				...pondWater,
-				...lowSand,
-				...sea,
-				...bouncePads,
-				...dirt,
-				...honey,
-				...portals.keys(),
-				...baseStars,
-				...starPaths,
-			]);
+		let solution = solveFromSomeStart(level);
+		if (!solution) continue;
 
-			// Place squirrels and acorns along the solved path
-			const { squirrels, acorns, squirrelRequirements } = placeSquirrelsAndAcorns(
-				path,
-				grass,
-				fullConfig.acornChance,
-				excludedTiles,
-			);
+		// Fairy rings change how the level plays, so re-solve with them in place
+		if (fullConfig.portalPairs > 0) {
+			solution = addPortals(level, solution.start, fullConfig.portalPairs);
+			if (!solution) continue;
+		}
 
-			const level = buildLevelFromPath(
-				path,
-				shape,
-				bramblesAfterPond,
-				stonesAfterPond,
-				water,
-				dirt,
-				ice,
-				pond,
-				pondWater,
-				portals,
-				waterFlow,
-				rooms,
-				lowSand,
-				sea,
-				bouncePads,
-				honey,
-				squirrels,
-				acorns,
-				squirrelRequirements,
-				baseStars,
-				starPaths,
-				starConnections,
-				starTrailFrom,
-				starTrailTo,
-			);
-			if (verifyLevel(level)) {
-				return level;
-			}
+		// Acorns go before squirrels along the winning line, so it stays winnable
+		if (fullConfig.acornChance > 0) {
+			addSquirrelsAndAcorns(level, solution, fullConfig.acornChance);
+		}
+
+		// Final check: the stored solution must win under the game rules
+		level.startPosition = solution.start;
+		const targets = solutionWins(level, solution.moves)
+			? solution.moves.map((move) => move.target)
+			: solveFrom(level, solution.start)?.moves.map((move) => move.target);
+		if (!targets) continue;
+		level.solutionPath = [solution.start, ...targets];
+
+		if (verifyLevel(level)) {
+			return level;
 		}
 	}
 
