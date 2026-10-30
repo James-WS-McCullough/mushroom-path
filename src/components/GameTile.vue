@@ -2,6 +2,7 @@
 import { computed, ref, watch } from "vue";
 import type { FlowDirection, Tile } from "../types/game";
 import { TileType } from "../types/game";
+import { type BrambleLinks, createBrambleArt } from "../utils/brambleArt";
 
 interface LilypadState {
 	submerged: boolean;
@@ -33,6 +34,7 @@ const props = defineProps<{
 	collectedAcorns?: number;
 	starTrailFromDirection?: "up" | "down" | "left" | "right" | null; // Direction the trail comes FROM
 	starTrailToDirection?: "up" | "down" | "left" | "right" | null; // Direction the trail goes TO
+	brambleLinks?: BrambleLinks; // Neighbouring brambles, so canes join up across tiles
 }>();
 
 // Check if low sand tiles are currently flooded (tidePhase === 0)
@@ -288,11 +290,20 @@ const mushroomVariant = computed(() => {
 	return hash % 5;
 });
 
-// Deterministic bramble variant based on position (0-5)
-const brambleVariant = computed(() => {
-	const hash = props.tile.position.x * 11 + props.tile.position.y * 17;
-	return hash % 6;
-});
+// Thorny canes, joined up with any neighbouring brambles
+const brambleArt = computed(() =>
+	props.tile.type === TileType.BRAMBLE
+		? createBrambleArt(
+				props.tile.position,
+				props.brambleLinks ?? {
+					up: false,
+					down: false,
+					left: false,
+					right: false,
+				},
+			)
+		: null,
+);
 
 // Deterministic honey splatter variant based on position (0-3)
 const honeyVariant = computed(() => {
@@ -463,26 +474,31 @@ function handleClick() {
       </div>
     </div>
 
-    <!-- Bramble sprite - variants -->
-    <div v-if="tile.type === TileType.BRAMBLE" :class="['bramble', `bramble--variant-${brambleVariant}`]">
-      <div class="thorns">
-        <div class="thorn"></div>
-        <div class="thorn"></div>
-        <div class="thorn"></div>
-        <div class="thorn"></div>
-        <div class="thorn"></div>
-      </div>
-      <div class="vines">
-        <div class="vine"></div>
-        <div class="vine"></div>
-        <div class="vine"></div>
-      </div>
-      <div class="berries">
-        <div class="berry"></div>
-        <div class="berry"></div>
-        <div class="berry"></div>
-      </div>
-    </div>
+    <!-- Bramble: thorny canes snaking across the tile -->
+    <svg v-if="brambleArt" class="bramble" viewBox="0 0 64 64" aria-hidden="true">
+      <g class="bramble__shadow" transform="translate(0.8 1.6)">
+        <path v-for="(cane, i) in brambleArt.canes" :key="i" :d="cane.d" :stroke-width="cane.width + 2.4" />
+        <path class="bramble__thorn-shapes" :d="brambleArt.thorns" />
+      </g>
+      <g class="bramble__canes">
+        <path
+          v-for="(cane, i) in brambleArt.canes"
+          :key="i"
+          :class="`bramble__cane--${cane.layer}`"
+          :d="cane.d"
+          :stroke-width="cane.width"
+        />
+      </g>
+      <path class="bramble__thorns" :d="brambleArt.thorns" />
+      <g class="bramble__highlights" transform="translate(-0.5 -0.7)">
+        <template v-for="(cane, i) in brambleArt.canes" :key="i">
+          <path v-if="cane.layer === 'front'" :d="cane.d" :stroke-width="cane.width * 0.3" />
+        </template>
+      </g>
+      <g class="bramble__berries">
+        <circle v-for="(berry, i) in brambleArt.berries" :key="i" :cx="berry.x" :cy="berry.y" :r="berry.r" />
+      </g>
+    </svg>
 
     <!-- Stone tile details -->
     <div v-if="tile.type === TileType.STONE" class="stone-detail">
@@ -1216,502 +1232,64 @@ function handleClick() {
   pointer-events: none;
 }
 
-/* Bramble tile - purple thorny bushes */
+/* Bramble tile - a tangle of thorny canes */
 .tile--bramble {
   background:
-    radial-gradient(circle at 30% 40%, rgba(90, 60, 100, 0.4) 0%, transparent 40%),
-    radial-gradient(circle at 70% 60%, rgba(70, 45, 85, 0.3) 0%, transparent 35%),
-    linear-gradient(135deg, #5a4868 0%, #463858 50%, #3a2d48 100%);
+    radial-gradient(circle at 35% 40%, rgba(70, 40, 70, 0.5) 0%, transparent 55%),
+    radial-gradient(circle at 70% 70%, rgba(20, 12, 24, 0.45) 0%, transparent 50%),
+    linear-gradient(135deg, #3d2c45 0%, #30223a 55%, #251a2e 100%);
   cursor: not-allowed;
+  /* Let canes reach across the gap to neighbouring brambles */
+  overflow: visible;
 }
 
 .bramble {
-  position: relative;
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
+  overflow: visible;
+  pointer-events: none;
 }
 
-.thorns {
-  position: absolute;
-  inset: 0;
+.bramble path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.thorn {
-  position: absolute;
-  width: 0;
-  height: 0;
-  border-left: 4px solid transparent;
-  border-right: 4px solid transparent;
-  border-bottom: 10px solid #2d2038;
+.bramble__shadow path {
+  stroke: rgba(12, 6, 14, 0.55);
 }
 
-.thorn:nth-child(1) {
-  top: 8px;
-  left: 12px;
-  transform: rotate(-30deg);
+.bramble__shadow .bramble__thorn-shapes {
+  fill: rgba(12, 6, 14, 0.45);
+  stroke: none;
 }
 
-.thorn:nth-child(2) {
-  top: 12px;
-  right: 14px;
-  transform: rotate(25deg);
+.bramble__cane--front {
+  stroke: #7c3456;
 }
 
-.thorn:nth-child(3) {
-  bottom: 14px;
-  left: 18px;
-  transform: rotate(-15deg);
+.bramble__cane--back {
+  stroke: #4a2340;
 }
 
-.thorn:nth-child(4) {
-  bottom: 10px;
-  right: 16px;
-  transform: rotate(40deg);
+.bramble .bramble__thorns {
+  fill: #d6a9b6;
+  stroke: #8a4d66;
+  stroke-width: 0.4;
+  stroke-linejoin: round;
 }
 
-.thorn:nth-child(5) {
-  top: 28px;
-  left: 32px;
-  transform: rotate(10deg);
+.bramble__highlights path {
+  stroke: rgba(222, 140, 174, 0.45);
 }
 
-.vines {
-  position: absolute;
-  inset: 0;
-}
-
-.vine {
-  position: absolute;
-  width: 36px;
-  height: 36px;
-  border: 3px solid #6a5878;
-  border-radius: 50%;
-  border-color: #6a5878 transparent transparent transparent;
-}
-
-.vine:nth-child(1) {
-  top: -8px;
-  left: 6px;
-  transform: rotate(50deg);
-}
-
-.vine:nth-child(2) {
-  bottom: -12px;
-  right: 2px;
-  transform: rotate(-130deg);
-}
-
-.vine:nth-child(3) {
-  top: 10px;
-  right: -8px;
-  width: 28px;
-  height: 28px;
-  transform: rotate(-40deg);
-}
-
-/* Berries add visual interest */
-.berries {
-  position: absolute;
-  inset: 0;
-}
-
-.berry {
-  position: absolute;
-  width: 6px;
-  height: 6px;
-  background: radial-gradient(circle at 30% 30%, #9a6aaa 0%, #7a4a8a 100%);
-  border-radius: 50%;
-  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.2);
-}
-
-.berry:nth-child(1) {
-  top: 16px;
-  left: 24px;
-}
-
-.berry:nth-child(2) {
-  bottom: 20px;
-  right: 22px;
-  width: 5px;
-  height: 5px;
-}
-
-.berry:nth-child(3) {
-  top: 32px;
-  right: 28px;
-  width: 4px;
-  height: 4px;
-}
-
-/* Bramble variant 1 - vines sweep right, thorns cluster left */
-.bramble--variant-1 .thorn:nth-child(1) {
-  top: 6px;
-  left: 8px;
-  transform: rotate(-40deg);
-}
-
-.bramble--variant-1 .thorn:nth-child(2) {
-  top: 20px;
-  left: 6px;
-  transform: rotate(-20deg);
-}
-
-.bramble--variant-1 .thorn:nth-child(3) {
-  bottom: 12px;
-  left: 10px;
-  transform: rotate(-35deg);
-}
-
-.bramble--variant-1 .thorn:nth-child(4) {
-  top: 14px;
-  right: 20px;
-  transform: rotate(30deg);
-}
-
-.bramble--variant-1 .thorn:nth-child(5) {
-  bottom: 10px;
-  right: 10px;
-  transform: rotate(15deg);
-}
-
-.bramble--variant-1 .vine:nth-child(1) {
-  top: -4px;
-  right: 4px;
-  left: auto;
-  transform: rotate(-20deg);
-  width: 32px;
-  height: 32px;
-}
-
-.bramble--variant-1 .vine:nth-child(2) {
-  bottom: -6px;
-  right: 8px;
-  transform: rotate(-150deg);
-  width: 30px;
-  height: 30px;
-}
-
-.bramble--variant-1 .vine:nth-child(3) {
-  top: 16px;
-  left: 20px;
-  right: auto;
-  width: 24px;
-  height: 24px;
-  transform: rotate(80deg);
-}
-
-.bramble--variant-1 .berry:nth-child(1) {
-  top: 18px;
-  right: 12px;
-  width: 7px;
-  height: 7px;
-}
-
-.bramble--variant-1 .berry:nth-child(2) {
-  bottom: 14px;
-  right: 26px;
-}
-
-.bramble--variant-1 .berry:nth-child(3) {
-  top: 10px;
-  left: 26px;
-}
-
-/* Bramble variant 2 - horizontal spread, vines on top/bottom */
-.bramble--variant-2 .thorn:nth-child(1) {
-  top: 14px;
-  left: 4px;
-  transform: rotate(-45deg);
-}
-
-.bramble--variant-2 .thorn:nth-child(2) {
-  top: 14px;
-  right: 4px;
-  transform: rotate(45deg);
-}
-
-.bramble--variant-2 .thorn:nth-child(3) {
-  top: 30px;
-  left: 14px;
-  transform: rotate(-10deg);
-}
-
-.bramble--variant-2 .thorn:nth-child(4) {
-  top: 30px;
-  right: 14px;
-  transform: rotate(10deg);
-}
-
-.bramble--variant-2 .thorn:nth-child(5) {
-  top: 6px;
-  left: 50%;
-  transform: translateX(-50%) rotate(0deg);
-}
-
-.bramble--variant-2 .vine:nth-child(1) {
-  top: -10px;
-  left: 14px;
-  transform: rotate(30deg);
-  width: 40px;
-  height: 40px;
-}
-
-.bramble--variant-2 .vine:nth-child(2) {
-  bottom: -14px;
-  left: 10px;
-  transform: rotate(-110deg);
-  width: 38px;
-  height: 38px;
-}
-
-.bramble--variant-2 .vine:nth-child(3) {
-  display: none;
-}
-
-.bramble--variant-2 .berry:nth-child(1) {
-  top: 22px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 7px;
-  height: 7px;
-}
-
-.bramble--variant-2 .berry:nth-child(2) {
-  bottom: 18px;
-  left: 8px;
-}
-
-.bramble--variant-2 .berry:nth-child(3) {
-  bottom: 18px;
-  right: 8px;
-}
-
-/* Bramble variant 3 - spiral pattern with curling vines */
-.bramble--variant-3 .thorn:nth-child(1) {
-  top: 4px;
-  left: 20px;
-  transform: rotate(-15deg);
-}
-
-.bramble--variant-3 .thorn:nth-child(2) {
-  top: 16px;
-  right: 6px;
-  transform: rotate(35deg);
-}
-
-.bramble--variant-3 .thorn:nth-child(3) {
-  bottom: 6px;
-  right: 18px;
-  transform: rotate(50deg);
-}
-
-.bramble--variant-3 .thorn:nth-child(4) {
-  bottom: 14px;
-  left: 6px;
-  transform: rotate(-50deg);
-}
-
-.bramble--variant-3 .thorn:nth-child(5) {
-  top: 26px;
-  left: 18px;
-  transform: rotate(5deg);
-}
-
-.bramble--variant-3 .vine:nth-child(1) {
-  top: 2px;
-  left: -4px;
-  transform: rotate(70deg);
-  width: 44px;
-  height: 44px;
-}
-
-.bramble--variant-3 .vine:nth-child(2) {
-  bottom: 2px;
-  right: -4px;
-  transform: rotate(-110deg);
-  width: 44px;
-  height: 44px;
-}
-
-.bramble--variant-3 .vine:nth-child(3) {
-  top: 14px;
-  left: 14px;
-  width: 20px;
-  height: 20px;
-  transform: rotate(150deg);
-}
-
-.bramble--variant-3 .berry:nth-child(1) {
-  top: 10px;
-  left: 8px;
-  width: 5px;
-  height: 5px;
-}
-
-.bramble--variant-3 .berry:nth-child(2) {
-  top: 30px;
-  right: 10px;
-  width: 6px;
-  height: 6px;
-}
-
-.bramble--variant-3 .berry:nth-child(3) {
-  bottom: 8px;
-  left: 28px;
-}
-
-/* Bramble variant 4 - dense center with radiating thorns */
-.bramble--variant-4 .thorn:nth-child(1) {
-  top: 4px;
-  left: 50%;
-  transform: translateX(-50%) rotate(0deg);
-}
-
-.bramble--variant-4 .thorn:nth-child(2) {
-  top: 18px;
-  left: 4px;
-  transform: rotate(-55deg);
-}
-
-.bramble--variant-4 .thorn:nth-child(3) {
-  top: 18px;
-  right: 4px;
-  transform: rotate(55deg);
-}
-
-.bramble--variant-4 .thorn:nth-child(4) {
-  bottom: 6px;
-  left: 14px;
-  transform: rotate(-25deg);
-}
-
-.bramble--variant-4 .thorn:nth-child(5) {
-  bottom: 6px;
-  right: 14px;
-  transform: rotate(25deg);
-}
-
-.bramble--variant-4 .vine:nth-child(1) {
-  top: 6px;
-  left: 4px;
-  transform: rotate(55deg);
-  width: 30px;
-  height: 30px;
-}
-
-.bramble--variant-4 .vine:nth-child(2) {
-  top: 6px;
-  right: 4px;
-  left: auto;
-  transform: rotate(-55deg);
-  width: 30px;
-  height: 30px;
-}
-
-.bramble--variant-4 .vine:nth-child(3) {
-  bottom: -8px;
-  left: 50%;
-  transform: translateX(-50%) rotate(180deg);
-  width: 34px;
-  height: 34px;
-}
-
-.bramble--variant-4 .berry:nth-child(1) {
-  top: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 8px;
-  height: 8px;
-}
-
-.bramble--variant-4 .berry:nth-child(2) {
-  top: 12px;
-  left: 20px;
-  width: 4px;
-  height: 4px;
-}
-
-.bramble--variant-4 .berry:nth-child(3) {
-  top: 12px;
-  right: 20px;
-  width: 4px;
-  height: 4px;
-}
-
-/* Bramble variant 5 - wild overgrown with many vines */
-.bramble--variant-5 .thorn:nth-child(1) {
-  top: 8px;
-  left: 6px;
-  transform: rotate(-60deg);
-}
-
-.bramble--variant-5 .thorn:nth-child(2) {
-  top: 4px;
-  right: 16px;
-  transform: rotate(20deg);
-}
-
-.bramble--variant-5 .thorn:nth-child(3) {
-  bottom: 16px;
-  left: 22px;
-  transform: rotate(-5deg);
-}
-
-.bramble--variant-5 .thorn:nth-child(4) {
-  bottom: 4px;
-  right: 8px;
-  transform: rotate(60deg);
-}
-
-.bramble--variant-5 .thorn:nth-child(5) {
-  top: 28px;
-  right: 24px;
-  transform: rotate(35deg);
-}
-
-.bramble--variant-5 .vine:nth-child(1) {
-  top: -6px;
-  left: 16px;
-  transform: rotate(40deg);
-  width: 48px;
-  height: 48px;
-}
-
-.bramble--variant-5 .vine:nth-child(2) {
-  bottom: -10px;
-  left: -4px;
-  transform: rotate(-80deg);
-  width: 42px;
-  height: 42px;
-}
-
-.bramble--variant-5 .vine:nth-child(3) {
-  top: 10px;
-  right: -6px;
-  width: 36px;
-  height: 36px;
-  transform: rotate(-30deg);
-}
-
-.bramble--variant-5 .berry:nth-child(1) {
-  top: 14px;
-  left: 18px;
-  width: 5px;
-  height: 5px;
-}
-
-.bramble--variant-5 .berry:nth-child(2) {
-  bottom: 10px;
-  left: 10px;
-  width: 6px;
-  height: 6px;
-}
-
-.bramble--variant-5 .berry:nth-child(3) {
-  top: 20px;
-  right: 8px;
-  width: 7px;
-  height: 7px;
+.bramble__berries circle {
+  fill: #2a1830;
+  stroke: #4c2f55;
+  stroke-width: 0.6;
 }
 
 /* Stone tile */

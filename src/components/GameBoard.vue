@@ -3,6 +3,8 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useGame } from "../composables/useGame";
 import { playUndo } from "../composables/useSound";
 import type { Direction, Level, Position } from "../types/game";
+import { TileType } from "../types/game";
+import type { BrambleLinks } from "../utils/brambleArt";
 import GameCharacter from "./GameCharacter.vue";
 import GameTile from "./GameTile.vue";
 
@@ -309,6 +311,18 @@ const unifiedRoomPath = computed(() => {
 	};
 });
 
+// Neighbouring brambles, so their canes join up into one tangle
+function getBrambleLinks(pos: Position): BrambleLinks {
+	const isBramble = (x: number, y: number) =>
+		game.tiles.value[y]?.[x]?.type === TileType.BRAMBLE;
+	return {
+		up: isBramble(pos.x, pos.y - 1),
+		down: isBramble(pos.x, pos.y + 1),
+		left: isBramble(pos.x - 1, pos.y),
+		right: isBramble(pos.x + 1, pos.y),
+	};
+}
+
 function isReachable(tilePos: Position): boolean {
 	// Don't show reachable tiles when board is disabled
 	if (props.disabled) return false;
@@ -574,6 +588,7 @@ defineExpose({
             :collected-acorns="game.collectedAcorns.value"
             :star-trail-from-direction="getStarTrailFromDirection(tile.position)"
             :star-trail-to-direction="getStarTrailToDirection(tile.position)"
+            :bramble-links="tile.type === TileType.BRAMBLE ? getBrambleLinks(tile.position) : undefined"
             :should-shimmer="shouldShimmer()"
             @click="handleTileClick(tile.position)"
           />
