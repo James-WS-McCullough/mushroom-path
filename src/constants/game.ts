@@ -62,7 +62,7 @@ export const HINTS = {
 // =============================================================================
 
 /** Levels in each world */
-export const LEVELS_PER_WORLD = 8;
+export const LEVELS_PER_WORLD = 5;
 
 export const LEVEL_GEN = {
 	/** Most tiles to plant on a world's first level - worlds start small... */

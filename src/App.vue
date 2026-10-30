@@ -523,7 +523,11 @@ function loadProgress(): SavedProgress | null {
 // Restore saved world state (everything except starting the level itself)
 function applySavedProgress(saved: SavedProgress): void {
 	currentWorldIndex.value = saved.currentWorldIndex;
-	currentLevelNumber.value = saved.currentLevelNumber;
+	// Saves from when worlds were longer may be past the last level
+	currentLevelNumber.value = Math.min(
+		Math.max(saved.currentLevelNumber, 1),
+		LEVELS_PER_WORLD,
+	);
 	worldElementHistory.value = Array.isArray(saved.worldElementHistory)
 		? saved.worldElementHistory
 		: [];
