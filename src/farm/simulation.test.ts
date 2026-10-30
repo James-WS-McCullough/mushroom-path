@@ -175,10 +175,11 @@ describe("farm simulation", () => {
 			expect(spots).not.toContain("5,5");
 		});
 
-		it("buys a plot beside the farm and raises the next price", () => {
+		it("buys a plot beside the farm, without changing other plots' prices", () => {
 			const farm = createFarm();
 			farm.money = 100;
-			const firstCost = getPlotCost(farm);
+			const firstCost = getPlotCost({ x: 0, y: -1 });
+			expect(firstCost).toBe(FARM.PLOT_COST);
 
 			expect(buyPlot(farm, { x: 0, y: -1 })).toBe("plot");
 			expect(getTile(farm, { x: 0, y: -1 })).toEqual({
@@ -187,12 +188,22 @@ describe("farm simulation", () => {
 				watered: false,
 			});
 			expect(farm.money).toBe(100 - firstCost);
-			expect(getPlotCost(farm)).toBeGreaterThan(firstCost);
+			expect(getPlotCost({ x: 1, y: -1 })).toBe(firstCost);
+		});
+
+		it("charges more for plots further out", () => {
+			const near = getPlotCost({ x: 0, y: -1 });
+			const further = getPlotCost({ x: 0, y: -2 });
+			const far = getPlotCost({ x: 0, y: -6 });
+			expect(further).toBeGreaterThan(near);
+			expect(far).toBeGreaterThan(further);
+			// Rings are square, so corners cost the same as edges
+			expect(getPlotCost({ x: -2, y: -2 })).toBe(further);
 		});
 
 		it("won't buy without enough mushrooms, or away from the farm", () => {
 			const farm = createFarm();
-			farm.money = getPlotCost(farm) - 1;
+			farm.money = getPlotCost({ x: 0, y: -1 }) - 1;
 			expect(buyPlot(farm, { x: 0, y: -1 })).toBeNull();
 
 			farm.money = 1000;
@@ -205,15 +216,15 @@ describe("farm simulation", () => {
 	describe("sprinklers", () => {
 		const CENTRE = { x: 1, y: 1 };
 
-		it("builds on a plot and costs more each time", () => {
+		it("builds on a plot, and costs the same every time", () => {
 			const farm = createFarm();
 			farm.money = 1000;
-			const firstCost = getBuildingCost(farm, "sprinkler");
+			const firstCost = getBuildingCost("sprinkler");
 
 			expect(placeBuilding(farm, "sprinkler", CENTRE)).toBe(true);
 			expect(getTile(farm, CENTRE)?.kind).toBe("sprinkler");
 			expect(farm.money).toBe(1000 - firstCost);
-			expect(getBuildingCost(farm, "sprinkler")).toBeGreaterThan(firstCost);
+			expect(getBuildingCost("sprinkler")).toBe(firstCost);
 		});
 
 		it("can't be built on the log or without enough mushrooms", () => {

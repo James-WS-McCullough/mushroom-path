@@ -173,13 +173,8 @@ describe("more helpers", () => {
 	});
 
 	it("prices fancier helpers higher", () => {
-		const farm = makeFarm(["."]);
-		expect(getHelperCost(farm, "hopper")).toBeGreaterThan(
-			getHelperCost(farm, "sprout"),
-		);
-		expect(getHelperCost(farm, "fairy")).toBeGreaterThan(
-			getHelperCost(farm, "skater"),
-		);
+		expect(getHelperCost("hopper")).toBeGreaterThan(getHelperCost("sprout"));
+		expect(getHelperCost("fairy")).toBeGreaterThan(getHelperCost("skater"));
 	});
 });
 
@@ -254,10 +249,10 @@ describe("hollow logs", () => {
 		expect(getTile(farm, { x: -3, y: 1 })).toEqual({ kind: "log" });
 	});
 
-	it("can be built, the first extra one costing the base price", () => {
+	it("can be built, always for the same price", () => {
 		const farm = makeFarm(["L."]);
-		const first = getBuildingCost(farm, "log");
+		const first = getBuildingCost("log");
 		expect(placeBuilding(farm, "log", { x: 1, y: 0 })).toBe(true);
-		expect(getBuildingCost(farm, "log")).toBeGreaterThan(first);
+		expect(getBuildingCost("log")).toBe(first);
 	});
 });

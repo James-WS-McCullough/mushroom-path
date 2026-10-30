@@ -27,6 +27,7 @@ import {
 	type FarmEvent,
 	type FarmState,
 	getBuildingCost,
+	getCheapestPlotCost,
 	getExpansionSpots,
 	getHelperBasketCapacity,
 	getHelperCost,
@@ -310,8 +311,8 @@ const movingFrom = ref<Position | null>(null);
 /** A helper picked up with the move tool */
 const movingHelperId = ref<number | null>(null);
 
-const plotCost = computed(() => getPlotCost(farm));
-const helperCost = computed(() => getHelperCost(farm));
+const cheapestPlotCost = computed(() => getCheapestPlotCost(farm));
+const helperCost = computed(() => getHelperCost());
 const showUpgrades = ref(false);
 
 const UPGRADE_ICONS: Record<UpgradeKind, string> = {
@@ -371,7 +372,7 @@ const canSellBasket = computed(() =>
 );
 
 function toolCost(t: BuildingKind | HelperType): number {
-	return isHelperTool(t) ? getHelperCost(farm, t) : getBuildingCost(farm, t);
+	return isHelperTool(t) ? getHelperCost(t) : getBuildingCost(t);
 }
 
 /** Faded plots for sale around the farm, shown while building */
@@ -382,7 +383,7 @@ const ghostSpots = computed(() =>
 /** Nudge towards build mode when there's something to buy */
 const canAffordUpgrade = computed(
 	() =>
-		farm.money >= plotCost.value ||
+		farm.money >= (cheapestPlotCost.value ?? Infinity) ||
 		BUILD_TOOLS.some(({ tool: t }) => farm.money >= toolCost(t)),
 );
 
@@ -407,7 +408,7 @@ function isMovingFrom(position: Position): boolean {
 }
 
 function handleGhostTap(position: Position) {
-	const cost = plotCost.value;
+	const cost = getPlotCost(position);
 	const found = buyPlot(farm, position);
 	if (found === "log") {
 		playSuccess();
@@ -438,7 +439,7 @@ function handleBuildTap(position: Position) {
 	if (placeRing(position)) return;
 
 	if (isHelperTool(current)) {
-		const cost = getHelperCost(farm, current);
+		const cost = getHelperCost(current);
 		const hired = hireHelper(farm, current, position);
 		if (hired) {
 			playRandomPop();
@@ -461,7 +462,7 @@ function handleBuildTap(position: Position) {
 		current === "stewpot" ||
 		current === "log"
 	) {
-		const cost = getBuildingCost(farm, current);
+		const cost = getBuildingCost(current);
 		if (placeBuilding(farm, current, position)) {
 			if (current === "sprinkler") playWater();
 			else playStone();
@@ -672,7 +673,9 @@ const hint = computed(() => {
 		if (farm.helpers.length === 0 && farm.money >= helperCost.value) {
 			return "You can afford a helper! Tap 🔨 Build";
 		}
-		const isFirstPlot = farm.plotsBought === 0 && farm.money >= plotCost.value;
+		const isFirstPlot =
+			farm.plotsBought === 0 &&
+			farm.money >= (cheapestPlotCost.value ?? Infinity);
 		return isFirstPlot ? "You can afford a new plot! Tap 🔨 Build" : null;
 	}
 	const hasPlanted = Object.values(farm.tiles).some(
@@ -786,13 +789,13 @@ function formatDuration(ms: number): string {
           <button
             v-for="spot in ghostSpots"
             :key="`ghost-${posKey(spot.x, spot.y)}`"
-            :class="['ghost', { 'ghost--affordable': farm.money >= plotCost }]"
+            :class="['ghost', { 'ghost--affordable': farm.money >= getPlotCost(spot) }]"
             :style="tileStyle(spot)"
-            :aria-label="`Buy a plot for ${plotCost} mushrooms`"
+            :aria-label="`Buy a plot for ${getPlotCost(spot)} mushrooms`"
             @click="handleGhostTap(spot)"
           >
             <span class="ghost__plus">+</span>
-            <span class="ghost__price">{{ formatNumber(plotCost) }} 🍄</span>
+            <span class="ghost__price">{{ formatNumber(getPlotCost(spot)) }} 🍄</span>
           </button>
 
           <TransitionGroup name="popup">
