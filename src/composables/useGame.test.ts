@@ -2892,4 +2892,36 @@ describe("useGame", () => {
 			expect(game.tidePhase.value).toBe(2);
 		});
 	});
+
+	describe("hints", () => {
+		it("should offer a hint, not an undo, when the way on is a portal", () => {
+			const game = useGame(createTestLevel(["GPBBPG"], 0, 0));
+
+			expect(game.hasUnreachableTiles()).toBe(false);
+			expect(game.getHint()).toEqual({
+				hintTiles: [
+					{ x: 1, y: 0 },
+					{ x: 5, y: 0 },
+				],
+			});
+		});
+
+		it("should offer a hint, not an undo, when the way on is a bounce pad", () => {
+			const game = useGame(createTestLevel(["GTBBGG"], 0, 0));
+
+			expect(game.hasUnreachableTiles()).toBe(false);
+			expect(game.getHint().hintTiles).toBeDefined();
+		});
+
+		it("should ask for an undo once a tile is cut off", () => {
+			const game = useGame(createTestLevel(["GGGGG"], 2, 0));
+			// Walking left plants (2,0) and (1,0), stranding (3,0) and (4,0)
+			game.movePlayer("left");
+			game.movePlayer("left");
+
+			expect(game.hasUnreachableTiles()).toBe(true);
+			expect(game.getHint()).toMatchObject({ needsUndo: true });
+		});
+	});
 });
+
