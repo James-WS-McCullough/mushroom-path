@@ -3,7 +3,17 @@ import { computed } from "vue";
 import GameTile from "../components/GameTile.vue";
 import type { Position } from "../types/game";
 import { TileType } from "../types/game";
-import { FARM, type FarmTile } from "./simulation";
+import {
+	canCook,
+	countItems,
+	FARM,
+	type FarmTile,
+	type Inventory,
+	ITEMS,
+	type ItemKind,
+	isMachine,
+	RECIPES,
+} from "./simulation";
 
 const props = defineProps<{
 	tile: FarmTile;
@@ -39,6 +49,24 @@ const cropScale = computed(() => {
 	const t = (growth.value - SPROUT_UNTIL) / (1 - SPROUT_UNTIL);
 	return 0.4 + 0.5 * Math.max(0, t);
 });
+
+/** Item icons with counts, e.g. "🍄4 🍢1" */
+function describe(inventory: Inventory): string {
+	return (Object.entries(inventory) as [ItemKind, number][])
+		.filter(([, count]) => count > 0)
+		.map(([kind, count]) => `${ITEMS[kind].icon}${count}`)
+		.join(" ");
+}
+
+const machine = computed(() => (isMachine(props.tile) ? props.tile : null));
+const isCooking = computed(() =>
+	machine.value ? canCook(machine.value) : false,
+);
+const cookProgress = computed(() =>
+	machine.value
+		? machine.value.progress / RECIPES[machine.value.kind].timeMs
+		: 0,
+);
 
 // Progress ring around growing plots
 const RING_RADIUS = 7;
@@ -116,14 +144,71 @@ const mushroomTile = computed(() => ({
         <path class="barrel__hoop" d="M16.6 24 Q32 27 47.4 24 M16.6 44 Q32 47 47.4 44" />
         <ellipse class="barrel__top" cx="32" cy="16" rx="14" ry="5" />
         <ellipse class="barrel__inside" cx="32" cy="16.5" rx="11" ry="3.4" />
-        <g v-if="tile.items > 0" class="barrel__mushrooms">
+        <g v-if="countItems(tile.items) > 0" class="barrel__mushrooms">
           <path d="M25 16 Q28 10 31 16 Z" fill="#d9534f" />
           <path d="M31 16.5 Q34.5 9.5 38 16.5 Z" fill="#e0956a" />
           <path d="M35 17 Q37.5 12 40 17 Z" fill="#9b6bb0" />
         </g>
       </svg>
-      <span :class="['barrel__count', { 'barrel__count--full': tile.items >= FARM.BARREL_CAPACITY }]">
-        {{ tile.items }}/{{ FARM.BARREL_CAPACITY }}
+      <span
+        :class="['barrel__count', { 'barrel__count--full': countItems(tile.items) >= FARM.BARREL_CAPACITY }]"
+        :title="describe(tile.items)"
+      >
+        {{ countItems(tile.items) }}/{{ FARM.BARREL_CAPACITY }}
+      </span>
+    </template>
+
+    <!-- Cooking stations and the well -->
+    <template v-else-if="machine">
+      <svg
+        :class="['machine', `machine--${machine.kind}`, { 'machine--busy': isCooking }]"
+        viewBox="0 0 64 64"
+        aria-hidden="true"
+      >
+        <template v-if="machine.kind === 'campfire'">
+          <ellipse cx="32" cy="48" rx="20" ry="7" class="stones" />
+          <rect x="16" y="40" width="32" height="6" rx="3" class="wood" transform="rotate(-14 32 43)" />
+          <rect x="16" y="40" width="32" height="6" rx="3" class="wood" transform="rotate(14 32 43)" />
+          <path class="flame flame--outer" d="M32 14 C40 24 44 30 42 38 C40 44 24 44 22 38 C20 30 26 26 32 14 Z" />
+          <path class="flame flame--inner" d="M32 24 C36 30 38 33 37 38 C36 41 28 41 27 38 C26 33 29 30 32 24 Z" />
+        </template>
+        <template v-else-if="machine.kind === 'stewpot'">
+          <path class="flame flame--outer" d="M22 54 Q26 44 30 54 Q34 42 38 54 Q42 46 44 54 Z" />
+          <path class="pot" d="M14 26 L50 26 Q52 50 32 52 Q12 50 14 26 Z" />
+          <rect x="12" y="23" width="40" height="6" rx="3" class="pot-rim" />
+          <ellipse cx="32" cy="26" rx="17" ry="3.2" class="stew" />
+          <g class="steam">
+            <path d="M25 18 Q22 13 26 9" />
+            <path d="M33 17 Q30 11 34 6" />
+            <path d="M41 18 Q38 13 42 9" />
+          </g>
+        </template>
+        <template v-else>
+          <path class="roof" d="M10 22 L32 8 L54 22 Z" />
+          <rect x="16" y="21" width="3" height="16" class="post" />
+          <rect x="45" y="21" width="3" height="16" class="post" />
+          <rect x="12" y="34" width="40" height="18" rx="4" class="well-stone" />
+          <ellipse cx="32" cy="35" rx="18" ry="4.5" class="well-water" />
+          <path class="bucket" d="M28 24 L36 24 L35 31 L29 31 Z" />
+        </template>
+      </svg>
+
+      <svg v-if="isCooking" class="progress" viewBox="0 0 20 20">
+        <circle class="progress__track" cx="10" cy="10" :r="RING_RADIUS" />
+        <circle
+          class="progress__fill progress__fill--cooking"
+          cx="10"
+          cy="10"
+          :r="RING_RADIUS"
+          :stroke-dasharray="RING_LENGTH"
+          :stroke-dashoffset="RING_LENGTH * (1 - cookProgress)"
+        />
+      </svg>
+
+      <span v-if="describe(machine.input) || describe(machine.output)" class="machine__contents">
+        <span v-if="describe(machine.input)">{{ describe(machine.input) }}</span>
+        <span v-if="describe(machine.input) && describe(machine.output)">→</span>
+        <strong v-if="describe(machine.output)">{{ describe(machine.output) }}</strong>
       </span>
     </template>
 
@@ -439,6 +524,163 @@ const mushroomTile = computed(() => ({
   background: rgba(190, 80, 50, 0.85);
 }
 
+/* Cooking stations and the well */
+.farm-tile--campfire,
+.farm-tile--stewpot,
+.farm-tile--well {
+  background:
+    radial-gradient(circle at 25% 80%, rgba(120, 180, 100, 0.4) 0%, transparent 30%),
+    linear-gradient(135deg, #7cb668 0%, #5a9a4a 100%);
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.1);
+}
+
+.machine {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.stones {
+  fill: #8f887b;
+  stroke: #6e675b;
+  stroke-width: 1.5;
+}
+
+.wood {
+  fill: #7a5236;
+  stroke: #5a3a24;
+  stroke-width: 1;
+}
+
+.flame {
+  transform-origin: 32px 44px;
+  opacity: 0.35;
+  transition: opacity 0.4s ease;
+}
+
+.flame--outer {
+  fill: #f08a3c;
+}
+
+.flame--inner {
+  fill: #ffd25c;
+}
+
+.machine--busy .flame {
+  opacity: 1;
+  animation: flicker 0.6s ease-in-out infinite alternate;
+}
+
+@keyframes flicker {
+  from {
+    transform: scale(1, 1);
+  }
+  to {
+    transform: scale(0.94, 1.07);
+  }
+}
+
+.pot {
+  fill: #4b4b52;
+  stroke: #2f2f34;
+  stroke-width: 1.5;
+}
+
+.pot-rim {
+  fill: #5d5d66;
+}
+
+.stew {
+  fill: #b8763f;
+}
+
+.steam path {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.7);
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0;
+}
+
+.machine--busy .steam path {
+  animation: steam-rise 1.6s ease-in-out infinite;
+}
+
+.machine--busy .steam path:nth-child(2) {
+  animation-delay: 0.5s;
+}
+
+.machine--busy .steam path:nth-child(3) {
+  animation-delay: 1s;
+}
+
+@keyframes steam-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  50% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.roof {
+  fill: #a0573a;
+  stroke: #6e3a26;
+  stroke-width: 1.5;
+}
+
+.post {
+  fill: #7a5236;
+}
+
+.well-stone {
+  fill: #9a948a;
+  stroke: #6e675b;
+  stroke-width: 1.5;
+}
+
+.well-water {
+  fill: #4a9ad0;
+  stroke: #6e675b;
+  stroke-width: 1.2;
+}
+
+.bucket {
+  fill: #b8893c;
+  stroke: #6b4429;
+  stroke-width: 1;
+}
+
+.progress__fill--cooking {
+  stroke: #ffb35c;
+}
+
+.farm-tile--well .progress__fill--cooking {
+  stroke: #7cc4f0;
+}
+
+.machine__contents {
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 2px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(40, 24, 14, 0.72);
+  color: #fff6d6;
+  font-size: 10px;
+  line-height: 15px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 /* Path */
 .path ellipse {
   fill: #b9b2a4;
@@ -503,6 +745,8 @@ const mushroomTile = computed(() => ({
 
 @media (prefers-reduced-motion: reduce) {
   .sprinkler__spray,
+  .machine--busy .flame,
+  .machine--busy .steam path,
   .farm-tile--ripe .crop,
   .farm-tile--can-sell .log,
   .droplet {

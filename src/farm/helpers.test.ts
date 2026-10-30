@@ -39,7 +39,7 @@ function makeFarm(rows: string[]): FarmState {
 							: code === "L"
 								? { kind: "log" }
 								: code === "B"
-									? { kind: "barrel", items: 0 }
+									? { kind: "barrel", items: {} }
 									: code === "S"
 										? { kind: "sprinkler" }
 										: code === "P"
@@ -51,7 +51,7 @@ function makeFarm(rows: string[]): FarmState {
 	return {
 		tiles,
 		money: 10_000,
-		basket: 0,
+		basket: {},
 		basketCapacity: FARM.BASKET_CAPACITY,
 		totalSold: 0,
 		plotsBought: 0,
@@ -110,7 +110,7 @@ describe("helpers", () => {
 			const events = steps(farm, 1);
 			expect(growthAt(farm, 0, 0)).toBe(0); // planted behind her
 			expect(growthAt(farm, 1, 0)).toBeNull(); // picked
-			expect(sprout.basket).toBe(1);
+			expect(sprout.basket).toEqual({ mushroom: 1 });
 			expect(events).toContainEqual({
 				kind: "helperHarvested",
 				helperId: sprout.id,
@@ -149,7 +149,7 @@ describe("helpers", () => {
 		it("leaves ripe mushrooms when her basket is full", () => {
 			const farm = makeFarm(["Pr"]);
 			const sprout = hire(farm, "sprout", 0, 0);
-			sprout.basket = FARM.HELPER_BASKET;
+			sprout.basket = { mushroom: FARM.HELPER_BASKET };
 			steps(farm, 1);
 			expect(sprout.x).toBe(1);
 			expect(growthAt(farm, 1, 0)).toBe(1);
@@ -171,12 +171,12 @@ describe("helpers", () => {
 		it("sells at the log beside her route by default", () => {
 			const farm = makeFarm(["L", "P"]);
 			const helper = hire(farm, "sprout", 0, 1);
-			helper.basket = 3;
+			helper.basket = { mushroom: 3 };
 			const moneyBefore = farm.money;
 
 			const events = steps(farm, 1);
 			expect(farm.money).toBe(moneyBefore + 3);
-			expect(helper.basket).toBe(0);
+			expect(helper.basket).toEqual({});
 			expect(helper.stats.sold).toBe(3);
 			expect(events).toContainEqual(
 				expect.objectContaining({
@@ -190,9 +190,9 @@ describe("helpers", () => {
 		it("ignores barrels until told what to do", () => {
 			const farm = makeFarm(["B", "P"]);
 			const helper = hire(farm, "sprout", 0, 1);
-			helper.basket = 2;
+			helper.basket = { mushroom: 2 };
 			steps(farm, 1);
-			expect(helper.basket).toBe(2);
+			expect(helper.basket).toEqual({ mushroom: 2 });
 		});
 
 		it("hands mushrooms along a chain: Sprout fills a barrel, Dew carries them to the log", () => {
@@ -238,12 +238,15 @@ describe("helpers", () => {
 			const farm = makeFarm(["B", "P"]);
 			const helper = hire(farm, "sprout", 0, 1);
 			const barrel = farm.tiles[posKey(0, 0)];
-			if (barrel?.kind === "barrel") barrel.items = FARM.BARREL_CAPACITY - 1;
+			if (barrel?.kind === "barrel")
+				barrel.items = { mushroom: FARM.BARREL_CAPACITY - 1 };
 			cycleStationSetting(farm, helper.id, { x: 0, y: 0 });
-			helper.basket = 4;
+			helper.basket = { mushroom: 4 };
 			steps(farm, 1);
-			expect(helper.basket).toBe(3);
-			expect(barrel).toMatchObject({ items: FARM.BARREL_CAPACITY });
+			expect(helper.basket).toEqual({ mushroom: 3 });
+			expect(barrel).toMatchObject({
+				items: { mushroom: FARM.BARREL_CAPACITY },
+			});
 		});
 	});
 
@@ -290,7 +293,7 @@ describe("helpers", () => {
 			expect(placeBuilding(farm, "barrel", { x: 0, y: 0 })).toBe(false);
 			expect(placeBuilding(farm, "sprinkler", { x: 0, y: 0 })).toBe(false);
 			expect(placeBuilding(farm, "path", { x: 0, y: 0 })).toBe(true);
-			farm.tiles[posKey(1, 0)] = { kind: "barrel", items: 0 };
+			farm.tiles[posKey(1, 0)] = { kind: "barrel", items: {} };
 			farm.tiles[posKey(2, 0)] = { kind: "plot", growth: null, watered: false };
 			expect(moveBuilding(farm, { x: 1, y: 0 }, { x: 0, y: 0 })).toBe(false);
 		});

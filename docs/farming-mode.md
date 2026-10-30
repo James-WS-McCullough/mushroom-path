@@ -82,9 +82,9 @@ All stations share one item and recipe system:
 | 🪵 Hollow log | anything sellable | 🍄 currency |
 | 🛢️ Barrel | anything (~20) | the same items - hand-off between helpers |
 | 🪨 Path | - | grows nothing; helpers on paths never harvest (conveyor lanes) |
-| 🔥 Campfire | 3 raw mushrooms | 1 roasted skewer (~5× value) |
-| 🍲 Stew pot | mushrooms + water bucket | mushroom stew (high value) |
-| 🪣 Well | - | water buckets |
+| 🔥 Campfire | 3 mushrooms | 1 roasted skewer (sells for 5) every 5s |
+| 🍲 Stew pot | 4 mushrooms + 1 water bucket | mushroom stew (sells for 14) every 8s |
+| 🪣 Well | - | a water bucket every 4s (can't be sold) |
 
 Example chain:
 
@@ -114,6 +114,8 @@ Example chain:
 3. **Helpers** ✅ - Sprout and Dew, baskets, barrels and paths, per-station
    pick up/drop off settings, route previews and stats, and a "while you
    were away" summary.
-4. **Cooking** - campfire and the recipe system, then the stew pot and well.
+4. **Cooking** ✅ - items (mushrooms, skewers, water, stew), the campfire,
+   well and stew pot, a "both" station setting (the default at cooking
+   stations), and cooking by hand by tapping stations.
 5. **More helpers and progression** - Hopper, Skater, Fairy; upgrades,
    golden mushrooms, extra logs, sounds and balancing.

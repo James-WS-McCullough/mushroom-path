@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import type { Helper } from "./simulation";
+import { countItems, type Helper, ITEMS, type ItemKind } from "./simulation";
 
 const props = defineProps<{
 	helper: Helper;
@@ -21,6 +21,16 @@ const sprite = computed(() =>
 		: "/art/MushroomGirl.webp",
 );
 
+const carried = computed(() => countItems(props.helper.basket));
+
+/** What she's carrying, e.g. "🍄2🍢1" */
+const basketLabel = computed(() =>
+	(Object.entries(props.helper.basket) as [ItemKind, number][])
+		.filter(([, count]) => count > 0)
+		.map(([kind, count]) => `${ITEMS[kind].icon}${count}`)
+		.join(""),
+);
+
 // The sprite faces left; Sprout faces the way she walks, Dew looks along her column
 const facingRight = computed(() => props.helper.dir === 1);
 </script>
@@ -31,7 +41,7 @@ const facingRight = computed(() => props.helper.dir === 1);
       'helper',
       `helper--${helper.type}`,
       `helper--${helper.lastMove}`,
-      { 'helper--selected': selected, 'helper--full': helper.basket >= basketCapacity },
+      { 'helper--selected': selected, 'helper--full': carried >= basketCapacity },
     ]"
     :style="{ transform: `translate(${left}px, ${top}px)` }"
     :aria-label="helper.type === 'sprout' ? 'Sprout' : 'Dew'"
@@ -46,7 +56,7 @@ const facingRight = computed(() => props.helper.dir === 1);
         :class="['helper__sprite', { 'helper__sprite--right': facingRight }]"
       />
     </span>
-    <span v-if="helper.basket > 0" class="helper__basket">🧺{{ helper.basket }}</span>
+    <span v-if="carried > 0" class="helper__basket">{{ basketLabel }}</span>
   </button>
 </template>
 

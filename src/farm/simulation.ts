@@ -20,10 +20,8 @@ export const FARM = {
 	GROW_MS: 10_000,
 	/** Watered mushrooms grow this many times faster */
 	WATERED_SPEEDUP: 2,
-	/** Mushrooms you can carry at once */
+	/** Items you can carry at once */
 	BASKET_CAPACITY: 10,
-	/** 🍄 earned per mushroom sold */
-	MUSHROOM_VALUE: 1,
 	/** Most time away that counts towards offline progress */
 	OFFLINE_CAP_MS: 8 * 60 * 60 * 1000,
 	/** The first extra plot costs this, and each one after costs more */
@@ -31,26 +29,161 @@ export const FARM = {
 	PLOT_COST_GROWTH: 1.15,
 	/** How long a helper takes to walk one tile */
 	HELPER_STEP_MS: 1000,
-	/** Mushrooms a helper can carry */
+	/** Items a helper can carry */
 	HELPER_BASKET: 5,
 	HELPER_BASE_COST: 100,
 	HELPER_COST_GROWTH: 1.4,
-	/** Mushrooms a barrel holds */
+	/** Items a barrel holds */
 	BARREL_CAPACITY: 20,
 } as const;
+
+// =============================================================================
+// ITEMS & RECIPES
+// =============================================================================
+
+export type ItemKind = "mushroom" | "skewer" | "water" | "stew";
+
+/** Counts of each item, e.g. a basket or a barrel */
+export type Inventory = Partial<Record<ItemKind, number>>;
+
+/** What each item sells for at the log (0 = can't be sold) */
+export const ITEMS: Record<
+	ItemKind,
+	{ name: string; icon: string; value: number }
+> = {
+	mushroom: { name: "Mushroom", icon: "🍄", value: 1 },
+	skewer: { name: "Roasted skewer", icon: "🍢", value: 5 },
+	water: { name: "Water bucket", icon: "💧", value: 0 },
+	stew: { name: "Mushroom stew", icon: "🍲", value: 14 },
+};
+
+/** Most valuable first, so helpers grab the good stuff */
+const ITEM_ORDER: ItemKind[] = ["stew", "skewer", "mushroom", "water"];
+
+export type MachineKind = "campfire" | "stewpot" | "well";
+
+export interface Recipe {
+	/** Items used up for each batch (none for the well) */
+	inputs: Inventory;
+	output: ItemKind;
+	timeMs: number;
+	/** How many batches' worth of inputs it can hold */
+	maxBatches: number;
+	/** How many finished items it holds before it stops */
+	outputCap: number;
+}
+
+export const RECIPES: Record<MachineKind, Recipe> = {
+	campfire: {
+		inputs: { mushroom: 3 },
+		output: "skewer",
+		timeMs: 5000,
+		maxBatches: 2,
+		outputCap: 3,
+	},
+	stewpot: {
+		inputs: { mushroom: 4, water: 1 },
+		output: "stew",
+		timeMs: 8000,
+		maxBatches: 2,
+		outputCap: 2,
+	},
+	well: {
+		inputs: {},
+		output: "water",
+		timeMs: 4000,
+		maxBatches: 0,
+		outputCap: 3,
+	},
+};
+
+export function countItems(inventory: Inventory): number {
+	let total = 0;
+	for (const kind of ITEM_ORDER) total += inventory[kind] ?? 0;
+	return total;
+}
+
+function addItems(inventory: Inventory, kind: ItemKind, count: number): void {
+	if (count <= 0) return;
+	inventory[kind] = (inventory[kind] ?? 0) + count;
+}
+
+function removeItems(
+	inventory: Inventory,
+	kind: ItemKind,
+	count: number,
+): void {
+	const left = (inventory[kind] ?? 0) - count;
+	if (left > 0) inventory[kind] = left;
+	else delete inventory[kind];
+}
+
+/** Move as much as fits from one inventory to another; returns how many moved */
+function transfer(
+	from: Inventory,
+	to: Inventory,
+	space: (kind: ItemKind) => number,
+	kinds: ItemKind[] = ITEM_ORDER,
+): number {
+	let moved = 0;
+	for (const kind of kinds) {
+		const count = Math.min(from[kind] ?? 0, Math.max(0, space(kind)));
+		if (count <= 0) continue;
+		removeItems(from, kind, count);
+		addItems(to, kind, count);
+		moved += count;
+	}
+	return moved;
+}
+
+/** Room left in a basket or barrel holding up to `capacity` items in total */
+function roomIn(
+	inventory: Inventory,
+	capacity: number,
+): (kind: ItemKind) => number {
+	return () => capacity - countItems(inventory);
+}
+
+/** Room left for one ingredient in a machine */
+function machineRoom(machine: MachineTile): (kind: ItemKind) => number {
+	const recipe = RECIPES[machine.kind];
+	return (kind) => {
+		const perBatch = recipe.inputs[kind];
+		if (!perBatch) return 0;
+		return perBatch * recipe.maxBatches - (machine.input[kind] ?? 0);
+	};
+}
+
+/** Sell everything sellable; returns the count sold and 🍄 earned */
+function sell(inventory: Inventory): { count: number; earned: number } {
+	let count = 0;
+	let earned = 0;
+	for (const kind of ITEM_ORDER) {
+		const value = ITEMS[kind].value;
+		const amount = inventory[kind] ?? 0;
+		if (value <= 0 || amount === 0) continue;
+		count += amount;
+		earned += amount * value;
+		delete inventory[kind];
+	}
+	return { count, earned };
+}
+
+// =============================================================================
+// BUILDINGS & STATE
+// =============================================================================
 
 /** What each kind of building costs, and how much more each extra one costs */
 export const BUILDING_COSTS = {
 	sprinkler: { base: 40, growth: 1.3 },
 	barrel: { base: 25, growth: 1.2 },
 	path: { base: 2, growth: 1.02 },
+	campfire: { base: 60, growth: 1.3 },
+	well: { base: 120, growth: 1.3 },
+	stewpot: { base: 250, growth: 1.35 },
 } as const;
 
 export type BuildingKind = keyof typeof BUILDING_COSTS;
-
-// =============================================================================
-// TYPES
-// =============================================================================
 
 /** A patch of soil. `growth` is null when empty, then 0 → 1 while growing; 1 is ripe */
 export interface PlotTile {
@@ -59,7 +192,7 @@ export interface PlotTile {
 	watered: boolean;
 }
 
-/** Where mushrooms are sold */
+/** Where everything is sold */
 export interface LogTile {
 	kind: "log";
 }
@@ -69,10 +202,10 @@ export interface SprinklerTile {
 	kind: "sprinkler";
 }
 
-/** Holds mushrooms so one helper can hand them to another */
+/** Holds items so one helper can hand them to another */
 export interface BarrelTile {
 	kind: "barrel";
-	items: number;
+	items: Inventory;
 }
 
 /** Stepping stones: helpers walk them but nothing grows */
@@ -80,17 +213,27 @@ export interface PathTile {
 	kind: "path";
 }
 
+/** Cooks (or draws water) following its recipe */
+export interface MachineTile {
+	kind: MachineKind;
+	input: Inventory;
+	output: Inventory;
+	/** Time spent on the current batch */
+	progress: number;
+}
+
 export type FarmTile =
 	| PlotTile
 	| LogTile
 	| SprinklerTile
 	| BarrelTile
-	| PathTile;
+	| PathTile
+	| MachineTile;
 
 export type HelperType = "sprout" | "dew";
 
 /** What a helper does at a station beside her route */
-export type StationSetting = "dropOff" | "pickUp" | "ignore";
+export type StationSetting = "both" | "dropOff" | "pickUp" | "ignore";
 
 export interface Helper {
 	id: number;
@@ -99,7 +242,7 @@ export interface Helper {
 	y: number;
 	/** Which way along her line she's walking */
 	dir: 1 | -1;
-	basket: number;
+	basket: Inventory;
 	/** Time built up towards her next step */
 	stepMs: number;
 	/** Her setting for each station, keyed by the station's "x,y" */
@@ -119,10 +262,10 @@ export interface FarmState {
 	tiles: Record<string, FarmTile>;
 	/** 🍄 to spend */
 	money: number;
-	/** Mushrooms in the player's basket */
-	basket: number;
+	/** What the player is carrying */
+	basket: Inventory;
 	basketCapacity: number;
-	/** Lifetime mushrooms sold, for stats */
+	/** Lifetime items sold, for stats */
 	totalSold: number;
 	/** Extra plots bought so far, which sets the price of the next */
 	plotsBought: number;
@@ -136,6 +279,7 @@ export type TapResult =
 	| { kind: "harvested" }
 	| { kind: "basketFull" }
 	| { kind: "sold"; count: number; earned: number }
+	| { kind: "transferred"; gave: number; took: number }
 	| { kind: "nothing" };
 
 /** Things helpers did during a tick, for sounds and popups */
@@ -147,6 +291,19 @@ export type FarmEvent =
 			position: Position;
 			earned: number;
 	  };
+
+export function isMachine(tile: FarmTile | undefined): tile is MachineTile {
+	return (
+		tile?.kind === "campfire" ||
+		tile?.kind === "stewpot" ||
+		tile?.kind === "well"
+	);
+}
+
+/** Stations are where helpers drop off or pick up items */
+export function isStation(tile: FarmTile | undefined): boolean {
+	return tile?.kind === "log" || tile?.kind === "barrel" || isMachine(tile);
+}
 
 // =============================================================================
 // SETUP & QUERIES
@@ -167,7 +324,7 @@ export function createFarm(): FarmState {
 	return {
 		tiles,
 		money: 0,
-		basket: 0,
+		basket: {},
 		basketCapacity: FARM.BASKET_CAPACITY,
 		totalSold: 0,
 		plotsBought: 0,
@@ -192,11 +349,6 @@ export function isGrowing(tile: FarmTile | undefined): boolean {
 	return tile?.kind === "plot" && tile.growth !== null && tile.growth < 1;
 }
 
-/** Stations are where helpers drop off or pick up mushrooms */
-export function isStation(tile: FarmTile | undefined): boolean {
-	return tile?.kind === "log" || tile?.kind === "barrel";
-}
-
 function helperAt(state: FarmState, pos: Position): Helper | undefined {
 	return state.helpers.find((h) => h.x === pos.x && h.y === pos.y);
 }
@@ -214,6 +366,15 @@ export function getSprinkledKeys(state: FarmState): Set<string> {
 		}
 	}
 	return sprinkled;
+}
+
+/** Does a machine have everything it needs for its next batch? */
+export function canCook(machine: MachineTile): boolean {
+	const recipe = RECIPES[machine.kind];
+	if ((machine.output[recipe.output] ?? 0) >= recipe.outputCap) return false;
+	return Object.entries(recipe.inputs).every(
+		([kind, needed]) => (machine.input[kind as ItemKind] ?? 0) >= (needed ?? 0),
+	);
 }
 
 // =============================================================================
@@ -234,9 +395,29 @@ function grow(state: FarmState, ms: number): void {
 	}
 }
 
+function cook(state: FarmState, ms: number): void {
+	for (const tile of Object.values(state.tiles)) {
+		if (!isMachine(tile)) continue;
+		if (!canCook(tile)) {
+			tile.progress = 0;
+			continue;
+		}
+		const recipe = RECIPES[tile.kind];
+		tile.progress += ms;
+		if (tile.progress >= recipe.timeMs) {
+			tile.progress = 0;
+			for (const [kind, needed] of Object.entries(recipe.inputs)) {
+				removeItems(tile.input, kind as ItemKind, needed ?? 0);
+			}
+			addItems(tile.output, recipe.output, 1);
+		}
+	}
+}
+
 /**
  * Advance the farm by `ms` milliseconds. Long stretches are played out in
- * small steps so helpers and crops stay in sync. Returns what helpers did.
+ * small steps so helpers, crops and cooking stay in sync. Returns what
+ * helpers did.
  */
 export function tick(state: FarmState, ms: number): FarmEvent[] {
 	const events: FarmEvent[] = [];
@@ -244,6 +425,7 @@ export function tick(state: FarmState, ms: number): FarmEvent[] {
 	while (remaining > 0) {
 		const chunk = Math.min(remaining, FARM.HELPER_STEP_MS);
 		grow(state, chunk);
+		cook(state, chunk);
 		for (const helper of state.helpers) {
 			helper.stepMs += chunk;
 			helper.stats.activeMs += chunk;
@@ -263,20 +445,41 @@ export function tick(state: FarmState, ms: number): FarmEvent[] {
 
 /**
  * The player taps a tile: plant an empty plot, water a growing one, pick a
- * ripe one, or sell the basket at the log.
+ * ripe one, sell at the log, or swap items with a barrel or machine.
  */
 export function tapTile(state: FarmState, pos: Position): TapResult {
 	const tile = getTile(state, pos);
 	if (!tile) return { kind: "nothing" };
+	const basketRoom = roomIn(state.basket, state.basketCapacity);
 
 	if (tile.kind === "log") {
-		if (state.basket === 0) return { kind: "nothing" };
-		const count = state.basket;
-		const earned = count * FARM.MUSHROOM_VALUE;
-		state.basket = 0;
+		const { count, earned } = sell(state.basket);
+		if (count === 0) return { kind: "nothing" };
 		state.money += earned;
 		state.totalSold += count;
 		return { kind: "sold", count, earned };
+	}
+
+	if (tile.kind === "barrel") {
+		// Stash what you're carrying, or grab from the barrel with empty hands
+		const gave = transfer(
+			state.basket,
+			tile.items,
+			roomIn(tile.items, FARM.BARREL_CAPACITY),
+		);
+		const took = gave > 0 ? 0 : transfer(tile.items, state.basket, basketRoom);
+		return gave + took > 0
+			? { kind: "transferred", gave, took }
+			: { kind: "nothing" };
+	}
+
+	if (isMachine(tile)) {
+		// Collect what's ready, then load in what it needs
+		const took = transfer(tile.output, state.basket, basketRoom);
+		const gave = transfer(state.basket, tile.input, machineRoom(tile));
+		return gave + took > 0
+			? { kind: "transferred", gave, took }
+			: { kind: "nothing" };
 	}
 
 	if (tile.kind !== "plot") return { kind: "nothing" };
@@ -294,10 +497,10 @@ export function tapTile(state: FarmState, pos: Position): TapResult {
 		return { kind: "watered" };
 	}
 
-	if (state.basket >= state.basketCapacity) {
+	if (countItems(state.basket) >= state.basketCapacity) {
 		return { kind: "basketFull" };
 	}
-	state.basket += 1;
+	addItems(state.basket, "mushroom", 1);
 	tile.growth = null;
 	tile.watered = false;
 	return { kind: "harvested" };
@@ -325,6 +528,14 @@ function isOnRoute(tile: FarmTile | undefined): boolean {
 	return tile?.kind === "plot" || tile?.kind === "path";
 }
 
+/** The settings a station can be given, in the order tapping cycles them */
+export function getStationSettings(tile: FarmTile): StationSetting[] {
+	if (tile.kind === "log") return ["dropOff", "ignore"];
+	if (tile.kind === "barrel") return ["dropOff", "pickUp", "ignore"];
+	if (tile.kind === "well") return ["pickUp", "ignore"];
+	return ["both", "dropOff", "pickUp", "ignore"];
+}
+
 export function getStationSetting(
 	helper: Helper,
 	key: string,
@@ -332,8 +543,9 @@ export function getStationSetting(
 ): StationSetting {
 	const setting = helper.stations[key];
 	if (setting) return setting;
-	// The log is where mushrooms go by default; barrels wait to be set up
-	return tile.kind === "log" ? "dropOff" : "ignore";
+	// The log sells and machines cook by default; barrels wait to be set up
+	if (tile.kind === "barrel") return "ignore";
+	return getStationSettings(tile)[0] ?? "ignore";
 }
 
 /** Walk, jump, wait or turn, then deal with the stations beside her */
@@ -388,9 +600,9 @@ function moveHelperTo(
 	if (
 		arrived?.kind === "plot" &&
 		arrived.growth === 1 &&
-		helper.basket < FARM.HELPER_BASKET
+		countItems(helper.basket) < FARM.HELPER_BASKET
 	) {
-		helper.basket += 1;
+		addItems(helper.basket, "mushroom", 1);
 		helper.stats.harvested += 1;
 		arrived.growth = null;
 		arrived.watered = false;
@@ -415,37 +627,43 @@ function useStations(
 		return { pos, key, tile: state.tiles[key] };
 	}).filter((s) => isStation(s.tile));
 
+	const basketRoom = roomIn(helper.basket, FARM.HELPER_BASKET);
+
 	for (const phase of ["pickUp", "dropOff"] as const) {
 		for (const { pos, key, tile } of beside) {
-			if (!tile || getStationSetting(helper, key, tile) !== phase) continue;
+			if (!tile) continue;
+			const setting = getStationSetting(helper, key, tile);
+			if (setting !== phase && setting !== "both") continue;
 
-			if (phase === "pickUp" && tile.kind === "barrel") {
-				const taken = Math.min(tile.items, FARM.HELPER_BASKET - helper.basket);
-				tile.items -= taken;
-				helper.basket += taken;
-			} else if (phase === "dropOff" && tile.kind === "barrel") {
-				const given = Math.min(
+			if (phase === "pickUp") {
+				if (tile.kind === "barrel")
+					transfer(tile.items, helper.basket, basketRoom);
+				else if (isMachine(tile))
+					transfer(tile.output, helper.basket, basketRoom);
+				continue;
+			}
+
+			if (tile.kind === "barrel") {
+				transfer(
 					helper.basket,
-					FARM.BARREL_CAPACITY - tile.items,
+					tile.items,
+					roomIn(tile.items, FARM.BARREL_CAPACITY),
 				);
-				tile.items += given;
-				helper.basket -= given;
-			} else if (
-				phase === "dropOff" &&
-				tile.kind === "log" &&
-				helper.basket > 0
-			) {
-				const earned = helper.basket * FARM.MUSHROOM_VALUE;
-				state.money += earned;
-				state.totalSold += helper.basket;
-				helper.stats.sold += helper.basket;
-				helper.basket = 0;
-				events.push({
-					kind: "helperSold",
-					helperId: helper.id,
-					position: pos,
-					earned,
-				});
+			} else if (isMachine(tile)) {
+				transfer(helper.basket, tile.input, machineRoom(tile));
+			} else if (tile.kind === "log") {
+				const { count, earned } = sell(helper.basket);
+				if (count > 0) {
+					state.money += earned;
+					state.totalSold += count;
+					helper.stats.sold += count;
+					events.push({
+						kind: "helperSold",
+						helperId: helper.id,
+						position: pos,
+						earned,
+					});
+				}
 			}
 		}
 	}
@@ -481,7 +699,7 @@ export function getRouteStations(state: FarmState, helper: Helper): string[] {
 	return [...stations];
 }
 
-/** Cycle a helper's setting for a station: drop off → pick up → ignore */
+/** Cycle a helper's setting for a station to the next one it allows */
 export function cycleStationSetting(
 	state: FarmState,
 	helperId: number,
@@ -492,10 +710,7 @@ export function cycleStationSetting(
 	const tile = state.tiles[key];
 	if (!helper || !tile || !isStation(tile)) return null;
 
-	const order: StationSetting[] =
-		tile.kind === "log"
-			? ["dropOff", "ignore"]
-			: ["dropOff", "pickUp", "ignore"];
+	const order = getStationSettings(tile);
 	const current = getStationSetting(helper, key, tile);
 	const next = order[(order.indexOf(current) + 1) % order.length] ?? "ignore";
 	helper.stations[key] = next;
@@ -525,7 +740,7 @@ export function hireHelper(
 		x: pos.x,
 		y: pos.y,
 		dir: 1,
-		basket: 0,
+		basket: {},
 		stepMs: 0,
 		stations: {},
 		lastMove: "none",
@@ -609,7 +824,11 @@ export function buyPlot(state: FarmState, pos: Position): boolean {
 }
 
 function newBuilding(kind: BuildingKind): FarmTile {
-	return kind === "barrel" ? { kind, items: 0 } : { kind };
+	if (kind === "barrel") return { kind, items: {} };
+	if (kind === "campfire" || kind === "stewpot" || kind === "well") {
+		return { kind, input: {}, output: {}, progress: 0 };
+	}
+	return { kind };
 }
 
 /** Helpers can stand on paths, but not on other buildings */
@@ -677,9 +896,15 @@ export function serializeFarm(state: FarmState, now: number): string {
 export interface LoadedFarm {
 	state: FarmState;
 	awayMs: number;
-	/** Mushrooms helpers sold, and 🍄 earned, while the player was away */
+	/** Items helpers sold, and 🍄 earned, while the player was away */
 	soldWhileAway: number;
 	earnedWhileAway: number;
+}
+
+/** Saves from before items held a plain count of mushrooms */
+function toInventory(value: unknown): Inventory {
+	if (typeof value === "number") return value > 0 ? { mushroom: value } : {};
+	return value && typeof value === "object" ? (value as Inventory) : {};
 }
 
 /**
@@ -700,20 +925,25 @@ export function deserializeFarm(json: string, now: number): LoadedFarm | null {
 		typeof save.savedAt !== "number" ||
 		!state ||
 		typeof state.tiles !== "object" ||
-		typeof state.money !== "number" ||
-		typeof state.basket !== "number"
+		typeof state.money !== "number"
 	) {
 		return null;
 	}
 
+	for (const tile of Object.values(state.tiles)) {
+		if (tile.kind === "barrel") tile.items = toInventory(tile.items);
+	}
+	const helpers = Array.isArray(state.helpers) ? state.helpers : [];
+	for (const helper of helpers) helper.basket = toInventory(helper.basket);
+
 	const restored: FarmState = {
 		tiles: state.tiles,
 		money: state.money,
-		basket: state.basket,
+		basket: toInventory(state.basket),
 		basketCapacity: state.basketCapacity ?? FARM.BASKET_CAPACITY,
 		totalSold: state.totalSold ?? 0,
 		plotsBought: state.plotsBought ?? 0,
-		helpers: Array.isArray(state.helpers) ? state.helpers : [],
+		helpers,
 		nextHelperId: state.nextHelperId ?? 1,
 	};
 	const awayMs = Math.min(Math.max(now - save.savedAt, 0), FARM.OFFLINE_CAP_MS);

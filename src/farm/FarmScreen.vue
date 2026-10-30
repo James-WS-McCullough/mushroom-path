@@ -16,6 +16,7 @@ import FarmTile from "./FarmTile.vue";
 import {
 	type BuildingKind,
 	buyPlot,
+	countItems,
 	createFarm,
 	cycleStationSetting,
 	deserializeFarm,
@@ -34,6 +35,9 @@ import {
 	type Helper,
 	type HelperType,
 	hireHelper,
+	type Inventory,
+	ITEMS,
+	type ItemKind,
 	type LoadedFarm,
 	moveBuilding,
 	moveHelper,
@@ -197,12 +201,14 @@ const routeStations = computed(() => {
 });
 
 const SETTING_ICONS: Record<StationSetting, string> = {
+	both: "⇅",
 	dropOff: "⬇️",
 	pickUp: "⬆️",
 	ignore: "⏸️",
 };
 
 const SETTING_LABELS: Record<StationSetting, string> = {
+	both: "Both",
 	dropOff: "Drop off",
 	pickUp: "Pick up",
 	ignore: "Ignore",
@@ -283,7 +289,25 @@ const BUILD_TOOLS: {
 	{ tool: "barrel", icon: "🫙", label: "Barrel" },
 	{ tool: "path", icon: "🪨", label: "Path" },
 	{ tool: "sprinkler", icon: "💦", label: "Sprinkler" },
+	{ tool: "campfire", icon: "🔥", label: "Campfire" },
+	{ tool: "well", icon: "🪣", label: "Well" },
+	{ tool: "stewpot", icon: "🍲", label: "Stew pot" },
 ];
+
+/** Item icons with counts, e.g. "🍄4 🍢1" */
+function describeItems(inventory: Inventory): string {
+	return (Object.entries(inventory) as [ItemKind, number][])
+		.filter(([, count]) => count > 0)
+		.map(([kind, count]) => `${ITEMS[kind].icon}${count}`)
+		.join(" ");
+}
+
+const basketCount = computed(() => countItems(farm.basket));
+const canSellBasket = computed(() =>
+	(Object.keys(farm.basket) as ItemKind[]).some(
+		(kind) => ITEMS[kind].value > 0,
+	),
+);
 
 function toolCost(t: BuildingKind | HelperType): number {
 	return t === "sprout" || t === "dew"
@@ -359,7 +383,14 @@ function handleBuildTap(position: Position) {
 		return;
 	}
 
-	if (current === "sprinkler" || current === "barrel" || current === "path") {
+	if (
+		current === "sprinkler" ||
+		current === "barrel" ||
+		current === "path" ||
+		current === "campfire" ||
+		current === "well" ||
+		current === "stewpot"
+	) {
 		const cost = getBuildingCost(farm, current);
 		if (placeBuilding(farm, current, position)) {
 			if (current === "sprinkler") playWater();
@@ -511,10 +542,15 @@ function handleTap(position: Position) {
 			showPopup(position, `+${result.earned} 🍄`, "good");
 			saveFarm();
 			break;
+		case "transferred":
+			playStone();
+			if (result.took > 0) showPopup(position, `+${result.took} 🧺`, "good");
+			else showPopup(position, `-${result.gave} 🧺`, "info");
+			break;
 	}
 }
 
-const isBasketFull = computed(() => farm.basket >= farm.basketCapacity);
+const isBasketFull = computed(() => basketCount.value >= farm.basketCapacity);
 
 /** A gentle nudge for brand new farms, and what each build tool does */
 const hint = computed(() => {
@@ -530,6 +566,12 @@ const hint = computed(() => {
 			return "Tap a plot to lay stepping stones - helpers walk them, nothing grows";
 		if (current === "sprinkler")
 			return "Tap a plot to build a sprinkler - it waters the 8 plots around it";
+		if (current === "campfire")
+			return "Tap a plot to build a campfire - it roasts 3 mushrooms into a skewer worth 5";
+		if (current === "well")
+			return "Tap a plot to dig a well - it fills a bucket of water every few seconds";
+		if (current === "stewpot")
+			return "Tap a plot to build a stew pot - 4 mushrooms and a bucket of water make stew worth 14";
 		if (current === "move") {
 			return movingFrom.value || movingHelperId.value !== null
 				? "Now tap where it should go"
@@ -549,7 +591,7 @@ const hint = computed(() => {
 	const hasPlanted = Object.values(farm.tiles).some(
 		(tile) => tile.kind === "plot" && tile.growth !== null,
 	);
-	if (farm.basket > 0) return "Tap the hollow log to sell your mushrooms!";
+	if (canSellBasket.value) return "Tap the hollow log to sell your mushrooms!";
 	if (hasPlanted)
 		return "Tap a growing mushroom to water it - it grows twice as fast!";
 	return "Tap a plot to plant a mushroom!";
@@ -589,7 +631,8 @@ function formatDuration(ms: number): string {
           title="Your basket"
         >
           <span class="stat__icon">🧺</span>
-          <span class="stat__value">{{ farm.basket }}/{{ farm.basketCapacity }}</span>
+          <span class="stat__value">{{ basketCount }}/{{ farm.basketCapacity }}</span>
+          <span v-if="basketCount > 0" class="stat__items">{{ describeItems(farm.basket) }}</span>
         </div>
       </div>
     </header>
@@ -614,7 +657,7 @@ function formatDuration(ms: number): string {
             :style="tileStyle(t.position)"
             :tile="t.tile"
             :position="t.position"
-            :can-sell="farm.basket > 0"
+            :can-sell="canSellBasket"
             :sprinkled="sprinkledKeys.has(t.key)"
             :selected="isMovingFrom(t.position)"
             :data-pos="t.key"
@@ -690,7 +733,10 @@ function formatDuration(ms: number): string {
         <strong class="helper-panel__name">
           {{ selectedHelper.type === "sprout" ? "🌱" : "💧" }} {{ helperName(selectedHelper) }}
         </strong>
-        <span>🧺 {{ selectedHelper.basket }}/{{ FARM.HELPER_BASKET }}</span>
+        <span>
+          🧺 {{ countItems(selectedHelper.basket) }}/{{ FARM.HELPER_BASKET }}
+          {{ describeItems(selectedHelper.basket) }}
+        </span>
         <span v-if="helperStats(selectedHelper).perMinute !== null">
           {{ helperStats(selectedHelper).perMinute }} picked/min
         </span>
@@ -814,6 +860,12 @@ function formatDuration(ms: number): string {
   font-size: 18px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+.stat__items {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.9;
 }
 
 .stat--full {

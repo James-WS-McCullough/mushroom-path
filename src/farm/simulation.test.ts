@@ -33,7 +33,7 @@ describe("farm simulation", () => {
 		expect(kinds.filter((kind) => kind === "plot")).toHaveLength(9);
 		expect(getTile(farm, LOG)?.kind).toBe("log");
 		expect(farm.money).toBe(0);
-		expect(farm.basket).toBe(0);
+		expect(farm.basket).toEqual({});
 	});
 
 	it("plants an empty plot when tapped", () => {
@@ -81,7 +81,7 @@ describe("farm simulation", () => {
 		tick(farm, FARM.GROW_MS);
 
 		expect(tapTile(farm, PLOT)).toEqual({ kind: "harvested" });
-		expect(farm.basket).toBe(1);
+		expect(farm.basket).toEqual({ mushroom: 1 });
 		expect(getTile(farm, PLOT)).toEqual({
 			kind: "plot",
 			growth: null,
@@ -91,7 +91,7 @@ describe("farm simulation", () => {
 
 	it("won't pick when the basket is full", () => {
 		const farm = createFarm();
-		farm.basket = farm.basketCapacity;
+		farm.basket = { mushroom: farm.basketCapacity };
 		tapTile(farm, PLOT);
 		tick(farm, FARM.GROW_MS);
 
@@ -101,10 +101,10 @@ describe("farm simulation", () => {
 
 	it("sells the basket at the log", () => {
 		const farm = createFarm();
-		farm.basket = 4;
+		farm.basket = { mushroom: 4 };
 
 		expect(tapTile(farm, LOG)).toEqual({ kind: "sold", count: 4, earned: 4 });
-		expect(farm.basket).toBe(0);
+		expect(farm.basket).toEqual({});
 		expect(farm.money).toBe(4);
 		expect(farm.totalSold).toBe(4);
 	});
