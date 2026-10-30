@@ -368,7 +368,9 @@ function getMovesUntilFloodForTile(tilePos: Position): number | undefined {
 
 // Get the direction the star trail comes FROM for a given tile position
 // Get the direction the star trail comes FROM for a given tile position
-function getStarTrailFromDirection(tilePos: Position): "up" | "down" | "left" | "right" | null {
+function getStarTrailFromDirection(
+	tilePos: Position,
+): "up" | "down" | "left" | "right" | null {
 	if (!props.level.starTrailFrom) return null;
 	const key = `${tilePos.x},${tilePos.y}`;
 	const fromKey = props.level.starTrailFrom[key];
@@ -390,7 +392,9 @@ function getStarTrailFromDirection(tilePos: Position): "up" | "down" | "left" | 
 }
 
 // Get the direction the star trail goes TO for a given tile position
-function getStarTrailToDirection(tilePos: Position): "up" | "down" | "left" | "right" | null {
+function getStarTrailToDirection(
+	tilePos: Position,
+): "up" | "down" | "left" | "right" | null {
 	if (!props.level.starTrailTo) return null;
 	const key = `${tilePos.x},${tilePos.y}`;
 	const toKey = props.level.starTrailTo[key];

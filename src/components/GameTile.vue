@@ -84,13 +84,23 @@ const tileClass = computed(() => {
 	const isNightBiome = props.hasPondElement && !props.hasIceElement;
 
 	// Beach biome (tides element)
-	const isBeachBiome = props.hasTidesElement && !props.hasIceElement && !isNightBiome;
+	const isBeachBiome =
+		props.hasTidesElement && !props.hasIceElement && !isNightBiome;
 
 	// Starlit biome (star element) - between beach and autumn
-	const isStarlitBiome = props.hasStarElement && !props.hasIceElement && !isNightBiome && !isBeachBiome;
+	const isStarlitBiome =
+		props.hasStarElement &&
+		!props.hasIceElement &&
+		!isNightBiome &&
+		!isBeachBiome;
 
 	// Autumn biome (acorn element) - higher priority than swamp
-	const isAutumnBiome = props.hasAcornElement && !props.hasIceElement && !isNightBiome && !isBeachBiome && !isStarlitBiome;
+	const isAutumnBiome =
+		props.hasAcornElement &&
+		!props.hasIceElement &&
+		!isNightBiome &&
+		!isBeachBiome &&
+		!isStarlitBiome;
 
 	return {
 		tile: true,
@@ -115,8 +125,10 @@ const tileClass = computed(() => {
 		"tile--low-sand-warning":
 			props.tile.type === TileType.LOW_SAND && props.movesUntilFlood === 1,
 		"tile--sea": props.tile.type === TileType.SEA,
-		"tile--sea-high-tide": props.tile.type === TileType.SEA && isLowSandFlooded.value,
-		"tile--sea-receding": props.tile.type === TileType.SEA && isTideReceding.value,
+		"tile--sea-high-tide":
+			props.tile.type === TileType.SEA && isLowSandFlooded.value,
+		"tile--sea-receding":
+			props.tile.type === TileType.SEA && isTideReceding.value,
 		// Bounce pad
 		"tile--bounce-pad": props.tile.type === TileType.BOUNCE_PAD,
 		// Honey
@@ -125,10 +137,8 @@ const tileClass = computed(() => {
 		// Honey biome variants (grass background for HONEY tiles)
 		"tile--honey-frosty":
 			props.hasIceElement && props.tile.type === TileType.HONEY,
-		"tile--honey-night":
-			isNightBiome && props.tile.type === TileType.HONEY,
-		"tile--honey-beach":
-			isBeachBiome && props.tile.type === TileType.HONEY,
+		"tile--honey-night": isNightBiome && props.tile.type === TileType.HONEY,
+		"tile--honey-beach": isBeachBiome && props.tile.type === TileType.HONEY,
 		"tile--honey-swamp":
 			!props.hasIceElement &&
 			!isNightBiome &&
@@ -136,8 +146,7 @@ const tileClass = computed(() => {
 			!isAutumnBiome &&
 			props.hasDirtElement &&
 			props.tile.type === TileType.HONEY,
-		"tile--honey-autumn":
-			isAutumnBiome && props.tile.type === TileType.HONEY,
+		"tile--honey-autumn": isAutumnBiome && props.tile.type === TileType.HONEY,
 		// Honey mushroom biome variants (mushroom background for HONEY_MUSHROOM tiles)
 		"tile--honey-mushroom-frosty":
 			props.hasIceElement && props.tile.type === TileType.HONEY_MUSHROOM,
@@ -190,13 +199,16 @@ const tileClass = computed(() => {
 		"tile--frosty-mushroom":
 			props.hasIceElement && props.tile.type === TileType.MUSHROOM,
 		"tile--frosty-dirt":
-			props.hasIceElement && (props.tile.type === TileType.DIRT || props.isJustCleaned),
+			props.hasIceElement &&
+			(props.tile.type === TileType.DIRT || props.isJustCleaned),
 		// Night biome (pond element) - dark blues
 		"tile--night":
 			isNightBiome && (props.tile.type === TileType.GRASS || isPortal.value),
 		"tile--night-mushroom":
 			isNightBiome && props.tile.type === TileType.MUSHROOM,
-		"tile--night-dirt": isNightBiome && (props.tile.type === TileType.DIRT || props.isJustCleaned),
+		"tile--night-dirt":
+			isNightBiome &&
+			(props.tile.type === TileType.DIRT || props.isJustCleaned),
 		// Beach biome (tides element) - sandy warm tones
 		"tile--beach":
 			isBeachBiome && (props.tile.type === TileType.GRASS || isPortal.value),
@@ -205,19 +217,27 @@ const tileClass = computed(() => {
 		// Autumn biome (acorn element) - warm orange/red tones
 		"tile--autumn":
 			isAutumnBiome &&
-			(props.tile.type === TileType.GRASS || props.tile.type === TileType.ACORN || props.tile.type === TileType.SQUIRREL || isPortal.value),
+			(props.tile.type === TileType.GRASS ||
+				props.tile.type === TileType.ACORN ||
+				props.tile.type === TileType.SQUIRREL ||
+				isPortal.value),
 		"tile--autumn-mushroom":
 			isAutumnBiome && props.tile.type === TileType.MUSHROOM,
 		"tile--autumn-dirt":
-			isAutumnBiome && (props.tile.type === TileType.DIRT || props.isJustCleaned),
+			isAutumnBiome &&
+			(props.tile.type === TileType.DIRT || props.isJustCleaned),
 		// Starlit biome (star element) - pale green/blue pastels
 		"tile--starlit":
 			isStarlitBiome &&
-			(props.tile.type === TileType.GRASS || props.tile.type === TileType.BASE_STAR || props.tile.type === TileType.STAR_PATH || isPortal.value),
+			(props.tile.type === TileType.GRASS ||
+				props.tile.type === TileType.BASE_STAR ||
+				props.tile.type === TileType.STAR_PATH ||
+				isPortal.value),
 		"tile--starlit-mushroom":
 			isStarlitBiome && props.tile.type === TileType.MUSHROOM,
 		"tile--starlit-dirt":
-			isStarlitBiome && (props.tile.type === TileType.DIRT || props.isJustCleaned),
+			isStarlitBiome &&
+			(props.tile.type === TileType.DIRT || props.isJustCleaned),
 		// Swamp biome (fallback when no ice, night, beach, starlit, or autumn)
 		"tile--swamp":
 			!props.hasIceElement &&

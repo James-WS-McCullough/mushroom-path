@@ -1,3 +1,4 @@
+import { LEVEL_GEN, LEVELS_PER_WORLD } from "../constants/game";
 import {
 	createInitialState,
 	createLevelRules,
@@ -8,18 +9,17 @@ import {
 import {
 	type Direction,
 	type FlowDirection,
+	isRequiredTile,
 	type Level,
 	type PortalType,
 	PortalTypes,
 	type Position,
 	type Room,
-	isRequiredTile,
 	TileType,
 	WorldElement as WE,
 	type WorldElement,
 } from "../types/game";
-import { LEVEL_GEN, LEVELS_PER_WORLD } from "../constants/game";
-import { getDirectionDelta, posKey, parseKey } from "./positionUtils";
+import { getDirectionDelta, parseKey, posKey } from "./positionUtils";
 
 export interface GeneratorConfig {
 	maxWidth: number;
@@ -854,7 +854,10 @@ function placeSquirrelsAndAcorns(
 	}
 
 	// Place all available acorns (up to 3 per squirrel max)
-	const maxAcorns = Math.min(acornCandidates.length, squirrelPositions.length * 3);
+	const maxAcorns = Math.min(
+		acornCandidates.length,
+		squirrelPositions.length * 3,
+	);
 	const shuffledAcornCandidates = shuffleArray([...acornCandidates]);
 
 	for (let i = 0; i < maxAcorns && i < shuffledAcornCandidates.length; i++) {
@@ -870,7 +873,10 @@ function placeSquirrelsAndAcorns(
 	const actualAcornsPlaced = acorns.size;
 
 	// If we somehow have fewer acorns than squirrels, remove squirrels
-	while (squirrelPositions.length > actualAcornsPlaced && squirrelPositions.length > 0) {
+	while (
+		squirrelPositions.length > actualAcornsPlaced &&
+		squirrelPositions.length > 0
+	) {
 		squirrelPositions.pop();
 	}
 
@@ -899,10 +905,17 @@ function placeSquirrelsAndAcorns(
 	}
 
 	// Final safety check: ensure total requirements <= total acorns
-	const totalRequirements = Object.values(squirrelRequirements).reduce((a, b) => a + b, 0);
+	const totalRequirements = Object.values(squirrelRequirements).reduce(
+		(a, b) => a + b,
+		0,
+	);
 	if (totalRequirements > actualAcornsPlaced) {
 		// This shouldn't happen, but if it does, return empty to avoid impossible level
-		return { squirrels: new Set(), acorns: new Set(), squirrelRequirements: {} };
+		return {
+			squirrels: new Set(),
+			acorns: new Set(),
+			squirrelRequirements: {},
+		};
 	}
 
 	return { squirrels, acorns, squirrelRequirements };
@@ -935,7 +948,14 @@ function generateStarPaths(
 	const starTrailTo: Record<string, string> = {};
 
 	if (chance <= 0) {
-		return { grass: remainingGrass, baseStars, starPaths, starConnections, starTrailFrom, starTrailTo };
+		return {
+			grass: remainingGrass,
+			baseStars,
+			starPaths,
+			starConnections,
+			starTrailFrom,
+			starTrailTo,
+		};
 	}
 
 	// Target 1-3 star paths per level
@@ -1015,8 +1035,7 @@ function generateStarPaths(
 
 			// Record trail connections: each tile points to the previous and next tile in the chain
 			let prevTile = startKey;
-			for (let i = 0; i < pathTiles.length; i++) {
-				const tile = pathTiles[i]!;
+			for (const tile of pathTiles) {
 				remainingGrass.delete(tile);
 				starPaths.add(tile);
 				starConnections[tile] = startKey;
@@ -1033,7 +1052,14 @@ function generateStarPaths(
 		if (!pathCreated) break;
 	}
 
-	return { grass: remainingGrass, baseStars, starPaths, starConnections, starTrailFrom, starTrailTo };
+	return {
+		grass: remainingGrass,
+		baseStars,
+		starPaths,
+		starConnections,
+		starTrailFrom,
+		starTrailTo,
+	};
 }
 
 // Add ice tiles in clusters - ice acts as walkable bridge that causes sliding
@@ -1294,8 +1320,7 @@ function addPondStrip(
 			const numBridges = randomInt(1, Math.min(2, bridgeStarts.length));
 			const shuffledStarts = shuffleArray(bridgeStarts);
 
-			for (let b = 0; b < numBridges && b < shuffledStarts.length; b++) {
-				const start = shuffledStarts[b]!;
+			for (const start of shuffledStarts.slice(0, numBridges)) {
 				const startKey = posKey(start.x, start.y);
 				if (usedBridgeStarts.has(startKey)) continue;
 
@@ -1490,7 +1515,8 @@ function addPondStrip(
 
 			// Pick one tile as lily-pad, rest as water
 			const puddleArray = Array.from(puddleTiles);
-			const lilypadKey = puddleArray[0]!;
+			const lilypadKey = puddleArray[0];
+			if (!lilypadKey) continue;
 
 			// Add lily-pad to walkable bridges for connectivity check
 			walkableBridges.add(lilypadKey);
@@ -1580,7 +1606,13 @@ function addTidalZones(
 		];
 
 		// Check if any neighbor is "outside" the level (not grass, bramble, or stone)
-		const allTiles = new Set([...grass, ...brambles, ...stones, ...water, ...ice]);
+		const allTiles = new Set([
+			...grass,
+			...brambles,
+			...stones,
+			...water,
+			...ice,
+		]);
 		const hasExteriorEdge = neighbors.some((n) => !allTiles.has(n));
 		if (hasExteriorEdge) {
 			edgeTiles.push(key);
@@ -1640,7 +1672,12 @@ function addTidalZones(
 			if (testGrass.size < 8) continue;
 
 			// Low sand tiles act as walkable bridges (like grass) when not flooded
-			const walkableBridges = new Set([...stones, ...water, ...ice, ...cluster]);
+			const walkableBridges = new Set([
+				...stones,
+				...water,
+				...ice,
+				...cluster,
+			]);
 			if (isConnectedWithJumps(testGrass, brambles, walkableBridges)) {
 				// Valid cluster - add to low sand
 				for (const tile of cluster) {
@@ -1989,7 +2026,7 @@ function buildLevelFromPath(
 				row.push(TileType.SEA);
 			} else if (portals.has(key)) {
 				// Portal tiles replace grass tiles
-				row.push(portals.get(key)!);
+				row.push(portals.get(key) ?? TileType.GRASS);
 			} else if (bouncePads.has(key)) {
 				// Bounce pad tiles replace grass tiles
 				row.push(TileType.BOUNCE_PAD);
@@ -2053,11 +2090,19 @@ function buildLevelFromPath(
 
 	// Adjust star connections coordinates relative to grid
 	const adjustedStarConnections: Record<string, string> = {};
-	for (const [starPathKey, baseStarKey] of Object.entries(starConnectionsInput)) {
+	for (const [starPathKey, baseStarKey] of Object.entries(
+		starConnectionsInput,
+	)) {
 		const starPathPos = parseKey(starPathKey);
 		const baseStarPos = parseKey(baseStarKey);
-		const adjustedStarPathKey = posKey(starPathPos.x - minX, starPathPos.y - minY);
-		const adjustedBaseStarKey = posKey(baseStarPos.x - minX, baseStarPos.y - minY);
+		const adjustedStarPathKey = posKey(
+			starPathPos.x - minX,
+			starPathPos.y - minY,
+		);
+		const adjustedBaseStarKey = posKey(
+			baseStarPos.x - minX,
+			baseStarPos.y - minY,
+		);
 		adjustedStarConnections[adjustedStarPathKey] = adjustedBaseStarKey;
 	}
 
@@ -2219,7 +2264,10 @@ function addSquirrelsAndAcorns(
 	chance: number,
 ): void {
 	// Tiles in the order the player stands on them
-	const visitOrder = [solution.start, ...solution.moves.map((move) => move.settled)];
+	const visitOrder = [
+		solution.start,
+		...solution.moves.map((move) => move.settled),
+	];
 	const { squirrels, acorns, squirrelRequirements } = placeSquirrelsAndAcorns(
 		visitOrder,
 		grassKeys(level),
@@ -2526,7 +2574,10 @@ export function generateLevel(
 
 		// Too big (daunting) or too small for this level's place in the world
 		const tilesToPlant = countTilesToPlant(level);
-		if (tilesToPlant < fullConfig.minTiles || tilesToPlant > fullConfig.maxTiles) {
+		if (
+			tilesToPlant < fullConfig.minTiles ||
+			tilesToPlant > fullConfig.maxTiles
+		) {
 			continue;
 		}
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { LEVEL_GEN, LEVELS_PER_WORLD } from "../constants/game";
 import {
 	applyMove,
 	createInitialState,
@@ -6,8 +7,12 @@ import {
 	getDirectionToTarget,
 	isWin,
 } from "../game/rules";
-import { LEVEL_GEN, LEVELS_PER_WORLD } from "../constants/game";
-import { isRequiredTile, type Level, TileType, WorldElement } from "../types/game";
+import {
+	isRequiredTile,
+	type Level,
+	TileType,
+	WorldElement,
+} from "../types/game";
 import { generateLevel, getTileBudget } from "./levelGenerator";
 
 /** Tiles to plant, counting dirt twice like the in-game counter */
@@ -16,7 +21,9 @@ function countTilesToPlant(level: Level): number {
 		.flat()
 		.reduce(
 			(count, type) =>
-				count + (isRequiredTile(type) ? 1 : 0) + (type === TileType.DIRT ? 1 : 0),
+				count +
+				(isRequiredTile(type) ? 1 : 0) +
+				(type === TileType.DIRT ? 1 : 0),
 			0,
 		);
 }
@@ -338,48 +345,9 @@ describe("levelGenerator", () => {
 
 	describe("level validity", () => {
 		it("should not have grass tiles completely surrounded by brambles", () => {
-			// This is implicitly tested by isGrassConnected, but let's be explicit
 			const level = generateLevel();
 			expect(level).not.toBeNull();
 			if (!level) return;
-
-			// Find all grass tiles
-			for (let y = 0; y < level.height; y++) {
-				for (let x = 0; x < level.width; x++) {
-					if (getTile(level, x, y) === TileType.GRASS) {
-						// Check if at least one direction is reachable
-						const adjacent = getAdjacent(x, y);
-						let hasPath = false;
-
-						for (const adj of adjacent) {
-							if (!isInBounds(level, adj.x, adj.y)) continue;
-							const adjTile = getTile(level, adj.x, adj.y);
-
-							// Direct grass neighbor
-							if (adjTile === TileType.GRASS) {
-								hasPath = true;
-								break;
-							}
-
-							// Can jump over bramble
-							if (adjTile === TileType.BRAMBLE) {
-								const jumpX = adj.x + (adj.x - x);
-								const jumpY = adj.y + (adj.y - y);
-								if (
-									isInBounds(level, jumpX, jumpY) &&
-									getTile(level, jumpX, jumpY) === TileType.GRASS
-								) {
-									hasPath = true;
-									break;
-								}
-							}
-						}
-
-						// Only check reachability for non-isolated tiles
-						// A single grass tile would fail this, which is fine if it's connected via the path
-					}
-				}
-			}
 
 			// The connectivity test is the real validation
 			expect(isGrassConnected(level)).toBe(true);
@@ -945,7 +913,9 @@ describe("levelGenerator", () => {
 			[W.STAR, W.FAIRY],
 		];
 
-		it.each(combos.map((elements) => [elements.join("+") || "plain", elements]))(
+		it.each(
+			combos.map((elements) => [elements.join("+") || "plain", elements]),
+		)(
 			"every %s level's solution wins under the game rules",
 			(_name, elements) => {
 				for (let i = 0; i < 6; i++) {
@@ -969,7 +939,9 @@ describe("levelGenerator", () => {
 				LEVEL_GEN.LAST_LEVEL_MAX_TILES,
 			);
 			for (let i = 1; i < budgets.length; i++) {
-				expect(budgets[i]?.maxTiles).toBeGreaterThan(budgets[i - 1]?.maxTiles ?? 0);
+				expect(budgets[i]?.maxTiles).toBeGreaterThan(
+					budgets[i - 1]?.maxTiles ?? 0,
+				);
 			}
 			for (const budget of budgets) {
 				expect(budget.minTiles).toBeLessThan(budget.maxTiles);
@@ -981,13 +953,19 @@ describe("levelGenerator", () => {
 			expect(getTileBudget(99)).toEqual(getTileBudget(LEVELS_PER_WORLD));
 		});
 
-		it.each([1, LEVELS_PER_WORLD])("should keep level %i within its tile budget", (levelNumber) => {
+		it.each([
+			1,
+			LEVELS_PER_WORLD,
+		])("should keep level %i within its tile budget", (levelNumber) => {
 			const budget = getTileBudget(levelNumber);
 			for (const elements of [[], [WorldElement.DIRT], [WorldElement.TIDES]]) {
 				for (let i = 0; i < 5; i++) {
 					const level = generateLevel(budget, elements);
 					expect(level).not.toBeNull();
-					if (level) expect(countTilesToPlant(level)).toBeLessThanOrEqual(budget.maxTiles);
+					if (level)
+						expect(countTilesToPlant(level)).toBeLessThanOrEqual(
+							budget.maxTiles,
+						);
 				}
 			}
 		}, 60_000);
@@ -1004,4 +982,3 @@ describe("levelGenerator", () => {
 		}, 60_000);
 	});
 });
-

@@ -2,7 +2,7 @@
  * Game constants - centralized magic numbers and timing values
  */
 
-import { type WorldElement, WorldElement as WE } from "../types/game";
+import { WorldElement as WE, type WorldElement } from "../types/game";
 
 // =============================================================================
 // ANIMATION TIMINGS (milliseconds)
@@ -90,7 +90,10 @@ export const LEVEL_GEN = {
 // =============================================================================
 
 /** World elements that never appear in the same world (clashing mechanics or vibes) */
-export const INCOMPATIBLE_ELEMENTS: readonly (readonly [WorldElement, WorldElement])[] = [
+export const INCOMPATIBLE_ELEMENTS: readonly (readonly [
+	WorldElement,
+	WorldElement,
+])[] = [
 	[WE.RIVERS, WE.POND], // Both water-based, conflicting mechanics
 	[WE.ICE, WE.POND], // Vibes don't match (frozen vs lily-pads)
 	[WE.TIDES, WE.ICE], // Beach and frozen don't mix

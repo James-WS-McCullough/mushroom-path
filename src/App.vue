@@ -3,17 +3,16 @@ import { computed, nextTick, ref, watch } from "vue";
 import BottomBar from "./components/BottomBar.vue";
 import ConfirmModal from "./components/ConfirmModal.vue";
 import CustomWorldModal from "./components/CustomWorldModal.vue";
-import HelpModeModal from "./components/HelpModeModal.vue";
 import DialogueScene from "./components/DialogueScene.vue";
 import FirstTimeModal from "./components/FirstTimeModal.vue";
 import GameBoard from "./components/GameBoard.vue";
+import HelpModeModal from "./components/HelpModeModal.vue";
 import MapScreen from "./components/MapScreen.vue";
 import MusicPlayer from "./components/MusicPlayer.vue";
 import StartScreen from "./components/StartScreen.vue";
 import TopBar from "./components/TopBar.vue";
 import TutorialModal from "./components/TutorialModal.vue";
 import WelcomeSign from "./components/WelcomeSign.vue";
-import { INCOMPATIBLE_ELEMENTS, LEVELS_PER_WORLD } from "./constants/game";
 import { getLevelQueue } from "./composables/useLevelQueue";
 import {
 	changeWorldBGM,
@@ -26,6 +25,7 @@ import {
 	startTutorialMusic,
 	switchToTutorialMusic,
 } from "./composables/useSound";
+import { INCOMPATIBLE_ELEMENTS, LEVELS_PER_WORLD } from "./constants/game";
 import type { DialogueScene as DialogueSceneType } from "./data/dialogues";
 import {
 	adventureScenes,
@@ -447,9 +447,15 @@ const iceNameOffset = ref(Math.floor(Math.random() * iceWorldNames.length));
 const swampNameOffset = ref(Math.floor(Math.random() * swampWorldNames.length));
 const nightNameOffset = ref(Math.floor(Math.random() * nightWorldNames.length));
 const beachNameOffset = ref(Math.floor(Math.random() * beachWorldNames.length));
-const bounceNameOffset = ref(Math.floor(Math.random() * bounceWorldNames.length));
-const autumnNameOffset = ref(Math.floor(Math.random() * autumnWorldNames.length));
-const starlitNameOffset = ref(Math.floor(Math.random() * starlitWorldNames.length));
+const bounceNameOffset = ref(
+	Math.floor(Math.random() * bounceWorldNames.length),
+);
+const autumnNameOffset = ref(
+	Math.floor(Math.random() * autumnWorldNames.length),
+);
+const starlitNameOffset = ref(
+	Math.floor(Math.random() * starlitWorldNames.length),
+);
 
 // Save game progress to localStorage
 const SAVE_KEY = "mushroom-path-progress";
@@ -563,7 +569,14 @@ const allElements: WorldElement[] = [
 watch(
 	currentWorldElements,
 	(elements) => {
-		document.body.classList.remove("biome-ice", "biome-swamp", "biome-night", "biome-beach", "biome-autumn", "biome-starlit");
+		document.body.classList.remove(
+			"biome-ice",
+			"biome-swamp",
+			"biome-night",
+			"biome-beach",
+			"biome-autumn",
+			"biome-starlit",
+		);
 		if (elements.includes(WE.ICE)) {
 			document.body.classList.add("biome-ice");
 		} else if (elements.includes(WE.TIDES)) {
@@ -580,6 +593,10 @@ watch(
 	},
 	{ immediate: true },
 );
+
+function pickRandom<T>(items: readonly T[]): T | undefined {
+	return items[Math.floor(Math.random() * items.length)];
+}
 
 function generateWorldElements(): WorldElement[] {
 	// Get previous world's elements to avoid repetition
@@ -631,18 +648,16 @@ function generateWorldElementsInner(): WorldElement[] {
 	if (shouldIntroduceNew) {
 		// INTRODUCTION WORLD: Only the new element, no mixing
 		// This lets players learn one mechanic at a time
-		const randomUnseen =
-			unseenElements[Math.floor(Math.random() * unseenElements.length)]!;
-		return [randomUnseen];
+		const randomUnseen = pickRandom(unseenElements);
+		return randomUnseen ? [randomUnseen] : [];
 	}
 
 	// REMIX WORLD: Combine previously seen elements
 	// If no seen elements but we need at least 1, pick a random unseen element
 	if (seenElements.length === 0) {
 		if (minElements > 0 && unseenElements.length > 0) {
-			const randomUnseen =
-				unseenElements[Math.floor(Math.random() * unseenElements.length)]!;
-			return [randomUnseen];
+			const randomUnseen = pickRandom(unseenElements);
+			return randomUnseen ? [randomUnseen] : [];
 		}
 		return [];
 	}
@@ -802,9 +817,7 @@ function handleWin() {
 				pendingWorldDialogue.value = worldDialogue;
 			} else if (adventureScenes.length > 0) {
 				// Play random adventure scenes (Dew is met at world 1 level 4)
-				const randomScene =
-					adventureScenes[Math.floor(Math.random() * adventureScenes.length)]!;
-				pendingWorldDialogue.value = randomScene;
+				pendingWorldDialogue.value = pickRandom(adventureScenes) ?? null;
 			}
 		}
 	}
@@ -895,7 +908,8 @@ async function performFadeTransition() {
 					// Priority: mechanic dialogue > adventure scene > welcome sign
 					if (pendingMechanicDialogues.value.length > 0) {
 						// Show mechanic intro dialogue
-						currentDialogue.value = pendingMechanicDialogues.value.shift()!;
+						currentDialogue.value =
+							pendingMechanicDialogues.value.shift() ?? null;
 						showWelcomeAfterDialogue.value = true;
 						// Clear adventure scene since we're showing mechanic instead
 						pendingWorldDialogue.value = null;
@@ -976,9 +990,7 @@ function doSkip() {
 			if (worldDialogue) {
 				pendingWorldDialogue.value = worldDialogue;
 			} else if (adventureScenes.length > 0) {
-				const randomScene =
-					adventureScenes[Math.floor(Math.random() * adventureScenes.length)]!;
-				pendingWorldDialogue.value = randomScene;
+				pendingWorldDialogue.value = pickRandom(adventureScenes) ?? null;
 			}
 		}
 	}
@@ -1313,8 +1325,7 @@ function closeWelcomeSign() {
 
 function showNextMechanicDialogue(): void {
 	if (pendingMechanicDialogues.value.length > 0) {
-		const nextDialogue = pendingMechanicDialogues.value.shift()!;
-		currentDialogue.value = nextDialogue;
+		currentDialogue.value = pendingMechanicDialogues.value.shift() ?? null;
 	}
 }
 
@@ -1386,7 +1397,8 @@ async function startCustomWorld(elements: WorldElement[]) {
 
 				// Priority: mechanic dialogue > welcome sign
 				if (pendingMechanicDialogues.value.length > 0) {
-					currentDialogue.value = pendingMechanicDialogues.value.shift()!;
+					currentDialogue.value =
+						pendingMechanicDialogues.value.shift() ?? null;
 					showWelcomeAfterDialogue.value = true;
 				} else {
 					showWelcomeSign.value = true;
@@ -1584,13 +1596,8 @@ function handleTutorialWin() {
 
 // Computed to get isStuck value from GameBoard
 const isPlayerStuck = computed(() => {
-	const gameBoard = gameBoardRef.value;
-	if (!gameBoard) return false;
-	// Access isStuck - TypeScript thinks it's a boolean but it's actually a ComputedRef
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const isStuckRef = (gameBoard as any).isStuck;
-	if (typeof isStuckRef === "boolean") return isStuckRef;
-	return isStuckRef?.value ?? false;
+	// Exposed refs are unwrapped on the component instance, so this is a plain boolean
+	return gameBoardRef.value?.isStuck ?? false;
 });
 
 // Watch for stuck state in tutorial mode to show stuck dialogues

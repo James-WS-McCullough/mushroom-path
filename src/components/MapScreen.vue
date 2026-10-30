@@ -136,14 +136,16 @@ const pathData = computed(() => {
 
 	let d = "";
 	for (let i = 0; i < worlds.length; i++) {
-		const world = worlds[i]!;
+		const world = worlds[i];
+		if (!world) continue;
 		const x = world.x;
 		const y = world.y;
 
 		if (i === 0) {
 			d = `M ${x} ${y}`;
 		} else {
-			const prevWorld = worlds[i - 1]!;
+			const prevWorld = worlds[i - 1];
+			if (!prevWorld) continue;
 			// Create a curved path between nodes
 			const midX = (prevWorld.x + x) / 2;
 			const midY = (prevWorld.y + y) / 2;

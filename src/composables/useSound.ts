@@ -87,7 +87,13 @@ document.addEventListener("visibilitychange", () => {
 		ensureAudioContextResumed();
 
 		// On mobile, try to resume if music was playing before
-		if (isMobileDevice() && wasPlayingBeforeHidden && currentBgm && musicStarted && !isMusicMuted.value) {
+		if (
+			isMobileDevice() &&
+			wasPlayingBeforeHidden &&
+			currentBgm &&
+			musicStarted &&
+			!isMusicMuted.value
+		) {
 			wasPlayingBeforeHidden = false;
 			// Try to resume - if it fails due to autoplay policy, the next user interaction will resume it
 			currentBgm.play().catch(() => {
@@ -103,7 +109,12 @@ let needsResumeOnInteraction = false;
 
 // Resume music on user interaction if needed
 function tryResumeMusic(): void {
-	if (needsResumeOnInteraction && currentBgm && musicStarted && !isMusicMuted.value) {
+	if (
+		needsResumeOnInteraction &&
+		currentBgm &&
+		musicStarted &&
+		!isMusicMuted.value
+	) {
 		needsResumeOnInteraction = false;
 		currentBgm.play().catch(() => {
 			needsResumeOnInteraction = true;
@@ -320,7 +331,12 @@ export function getBiomeFromElements(elements: string[]): BiomeType {
 	// Beach/tides
 	if (elements.includes("tides")) return "beach";
 	// Dark for pond (night), dirt (swamp), or star (starlit plains)
-	if (elements.includes("pond") || elements.includes("dirt") || elements.includes("star")) return "dark";
+	if (
+		elements.includes("pond") ||
+		elements.includes("dirt") ||
+		elements.includes("star")
+	)
+		return "dark";
 	// Default for everything else
 	return "default";
 }
@@ -346,9 +362,10 @@ function shufflePlaylist(tracks: string[] = BGM_TRACKS_DEFAULT): void {
 	bgmPlaylist = [...tracks];
 	for (let i = bgmPlaylist.length - 1; i > 0; i--) {
 		const j = Math.floor(Math.random() * (i + 1));
-		const temp = bgmPlaylist[i]!;
-		bgmPlaylist[i] = bgmPlaylist[j]!;
-		bgmPlaylist[j] = temp;
+		[bgmPlaylist[i], bgmPlaylist[j]] = [
+			bgmPlaylist[j] as string,
+			bgmPlaylist[i] as string,
+		];
 	}
 	currentPlaylistIndex = 0;
 }
@@ -357,7 +374,8 @@ function getNextBgmTrack(): string {
 	if (bgmPlaylist.length === 0 || currentPlaylistIndex >= bgmPlaylist.length) {
 		shufflePlaylist(getTracksForBiome(currentBiome));
 	}
-	const track = bgmPlaylist[currentPlaylistIndex]!;
+	// The playlist was just refilled above if it had run out
+	const track = bgmPlaylist[currentPlaylistIndex] as string;
 	currentPlaylistIndex++;
 	return track;
 }
@@ -468,7 +486,9 @@ export function startTutorialMusic(): void {
 	shufflePlaylist();
 }
 
-export async function changeWorldBGM(biome: BiomeType = "default"): Promise<void> {
+export async function changeWorldBGM(
+	biome: BiomeType = "default",
+): Promise<void> {
 	if (!musicStarted) return;
 
 	// If biome changed, reshuffle with new biome's tracks

@@ -19,8 +19,16 @@ const tracks: Track[] = [
 	{ name: "Fungi Frolic", path: "/music/BGM 04.mp3", category: "forest" },
 	{ name: "Whispering Caps", path: "/music/BGM 05.mp3", category: "forest" },
 	{ name: "Toadstool Twilight", path: "/music/BGM 06.mp3", category: "forest" },
-	{ name: "Mossy Meadow Dreams", path: "/music/BGM 07.mp3", category: "forest" },
-	{ name: "Enchanted Undergrowth", path: "/music/BGM 08.mp3", category: "forest" },
+	{
+		name: "Mossy Meadow Dreams",
+		path: "/music/BGM 07.mp3",
+		category: "forest",
+	},
+	{
+		name: "Enchanted Undergrowth",
+		path: "/music/BGM 08.mp3",
+		category: "forest",
+	},
 	{ name: "Starlit Spores", path: "/music/BGM 09.mp3", category: "forest" },
 	// Ice tracks
 	{ name: "Frozen Glade", path: "/music/BGM-Ice1.mp3", category: "ice" },
@@ -129,8 +137,8 @@ function scheduleNextShuffleTrack() {
 	const waitForDuration = () => {
 		if (!audio.value) return;
 
-		if (audio.value.duration && isFinite(audio.value.duration)) {
-			const totalWait = (audio.value.duration * 1000) + EXTRA_LOOP_TIME;
+		if (audio.value.duration && Number.isFinite(audio.value.duration)) {
+			const totalWait = audio.value.duration * 1000 + EXTRA_LOOP_TIME;
 			shuffleTimeout = setTimeout(async () => {
 				if (!isShuffleMode.value || !audio.value) return;
 				await transitionToNextTrack();
@@ -282,7 +290,7 @@ function stopPlayback() {
 }
 
 function formatTime(seconds: number): string {
-	if (!seconds || !isFinite(seconds)) return "0:00";
+	if (!seconds || !Number.isFinite(seconds)) return "0:00";
 	const mins = Math.floor(seconds / 60);
 	const secs = Math.floor(seconds % 60);
 	return `${mins}:${secs.toString().padStart(2, "0")}`;

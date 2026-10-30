@@ -1859,11 +1859,7 @@ describe("useGame", () => {
 			// Now at (2,0), lilypad at (1,0) is submerged
 			// We need to get back to (0,0) somehow to test jumping
 			// Let's use a different test setup
-			const level2 = createTestLevel(
-				["GGG", "GOG", "GGG"],
-				0,
-				1,
-			);
+			const level2 = createTestLevel(["GGG", "GOG", "GGG"], 0, 1);
 			const game2 = useGame(level2);
 
 			// Move right onto lilypad
@@ -1961,30 +1957,15 @@ describe("useGame", () => {
 			expect(lilypad2?.cooldown).toBe(3); // Just sank and decremented once
 		});
 
-		it("should detect stuck when surrounded by submerged lilypads", () => {
-			// Create a level where player can get surrounded by submerged lilypads
-			// This is a complex scenario - player in center surrounded by lilypads
+		it("should not be stuck at the start of a lily-pad level", () => {
 			const level = createTestLevel(
-				["VOV", "OGO", "VOV"],
-				1,
-				1, // Start in center
-			);
-			const game = useGame(level);
-
-			// Submerge all lilypads by visiting and leaving each
-			// But wait - we can't leave if surrounded... let's use a different setup
-
-			// Simpler test: manually check stuck condition
-			// Actually, let's test with a path where we end up stuck
-			const level2 = createTestLevel(
 				["GOGOG", "GGGGG"],
 				0,
 				1, // Start at bottom-left
 			);
-			const game2 = useGame(level2);
+			const game = useGame(level);
 
-			// Initial state - not stuck
-			expect(game2.isStuck.value).toBe(false);
+			expect(game.isStuck.value).toBe(false);
 		});
 
 		it("should NOT allow movement onto POND_WATER tiles (always impassable)", () => {
@@ -2727,7 +2708,11 @@ describe("useGame", () => {
 		});
 
 		// Row of grass, a base star at `baseX` and star paths trailing off to the right
-		function createStarLevel(row: TileType[], baseX: number, pathXs: number[]): Level {
+		function createStarLevel(
+			row: TileType[],
+			baseX: number,
+			pathXs: number[],
+		): Level {
 			const starConnections: Record<string, string> = {};
 			const starTrailTo: Record<string, string> = {};
 			let prev = `${baseX},0`;
@@ -2960,4 +2945,3 @@ describe("useGame", () => {
 		}, 60_000);
 	});
 });
-
