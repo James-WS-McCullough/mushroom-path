@@ -6,8 +6,20 @@ import {
 	getDirectionToTarget,
 	isWin,
 } from "../game/rules";
-import { type Level, TileType, WorldElement } from "../types/game";
-import { generateLevel } from "./levelGenerator";
+import { LEVEL_GEN, LEVELS_PER_WORLD } from "../constants/game";
+import { isRequiredTile, type Level, TileType, WorldElement } from "../types/game";
+import { generateLevel, getTileBudget } from "./levelGenerator";
+
+/** Tiles to plant, counting dirt twice like the in-game counter */
+function countTilesToPlant(level: Level): number {
+	return level.grid
+		.flat()
+		.reduce(
+			(count, type) =>
+				count + (isRequiredTile(type) ? 1 : 0) + (type === TileType.DIRT ? 1 : 0),
+			0,
+		);
+}
 
 /** Tap through a level's stored solution with the real game rules; true if it wins */
 function solutionWins(level: Level): boolean {
@@ -952,6 +964,52 @@ describe("levelGenerator", () => {
 			},
 			60_000,
 		);
+	});
+
+	describe("level size", () => {
+		it("should start each world small and grow to the cap on its last level", () => {
+			const budgets = Array.from({ length: LEVELS_PER_WORLD }, (_, i) =>
+				getTileBudget(i + 1),
+			);
+
+			expect(budgets[0]?.maxTiles).toBe(LEVEL_GEN.FIRST_LEVEL_MAX_TILES);
+			expect(budgets[LEVELS_PER_WORLD - 1]?.maxTiles).toBe(
+				LEVEL_GEN.LAST_LEVEL_MAX_TILES,
+			);
+			for (let i = 1; i < budgets.length; i++) {
+				expect(budgets[i]?.maxTiles).toBeGreaterThan(budgets[i - 1]?.maxTiles ?? 0);
+			}
+			for (const budget of budgets) {
+				expect(budget.minTiles).toBeLessThan(budget.maxTiles);
+			}
+		});
+
+		it("should never go past the cap, even for out-of-range level numbers", () => {
+			expect(getTileBudget(0)).toEqual(getTileBudget(1));
+			expect(getTileBudget(99)).toEqual(getTileBudget(LEVELS_PER_WORLD));
+		});
+
+		it.each([1, LEVELS_PER_WORLD])("should keep level %i within its tile budget", (levelNumber) => {
+			const budget = getTileBudget(levelNumber);
+			for (const elements of [[], [WorldElement.DIRT], [WorldElement.TIDES]]) {
+				for (let i = 0; i < 5; i++) {
+					const level = generateLevel(budget, elements);
+					expect(level).not.toBeNull();
+					if (level) expect(countTilesToPlant(level)).toBeLessThanOrEqual(budget.maxTiles);
+				}
+			}
+		}, 60_000);
+
+		it("should cap levels generated without a level number", () => {
+			for (let i = 0; i < 10; i++) {
+				const level = generateLevel();
+				if (level) {
+					expect(countTilesToPlant(level)).toBeLessThanOrEqual(
+						LEVEL_GEN.LAST_LEVEL_MAX_TILES,
+					);
+				}
+			}
+		}, 60_000);
 	});
 });
 

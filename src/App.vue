@@ -13,6 +13,7 @@ import StartScreen from "./components/StartScreen.vue";
 import TopBar from "./components/TopBar.vue";
 import TutorialModal from "./components/TutorialModal.vue";
 import WelcomeSign from "./components/WelcomeSign.vue";
+import { LEVELS_PER_WORLD } from "./constants/game";
 import { getLevelQueue } from "./composables/useLevelQueue";
 import {
 	changeWorldBGM,
@@ -63,8 +64,6 @@ function preloadSprites() {
 
 // Start preloading immediately
 preloadSprites();
-
-const LEVELS_PER_WORLD = 8;
 
 const forestWorldNames = [
 	"Mossy Meadow",
@@ -742,7 +741,7 @@ const displayName = computed(() => {
 });
 
 function getNewLevel(): Level {
-	return levelQueue.getNextLevel();
+	return levelQueue.getNextLevel(currentLevelNumber.value);
 }
 
 function advanceLevel(): boolean {

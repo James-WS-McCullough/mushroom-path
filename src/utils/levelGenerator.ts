@@ -13,10 +13,12 @@ import {
 	PortalTypes,
 	type Position,
 	type Room,
+	isRequiredTile,
 	TileType,
 	WorldElement as WE,
 	type WorldElement,
 } from "../types/game";
+import { LEVEL_GEN, LEVELS_PER_WORLD } from "../constants/game";
 import { getDirectionDelta, posKey, parseKey } from "./positionUtils";
 
 export interface GeneratorConfig {
@@ -45,6 +47,10 @@ export interface GeneratorConfig {
 	starChance: number;
 	starPathMinLength: number;
 	starPathMaxLength: number;
+	/** Fewest tiles to plant (dirt counts twice, as it needs two visits) */
+	minTiles: number;
+	/** Most tiles to plant */
+	maxTiles: number;
 }
 
 const DEFAULT_CONFIG: GeneratorConfig = {
@@ -73,7 +79,27 @@ const DEFAULT_CONFIG: GeneratorConfig = {
 	starChance: 0.1,
 	starPathMinLength: 2,
 	starPathMaxLength: 5,
+	minTiles: 8,
+	maxTiles: LEVEL_GEN.LAST_LEVEL_MAX_TILES,
 };
+
+/**
+ * How many tiles to plant on a level, based on its place in the world.
+ * Worlds open with small gardens and build up to the biggest on their last level.
+ */
+export function getTileBudget(
+	levelNumber: number,
+): Pick<GeneratorConfig, "minTiles" | "maxTiles"> {
+	const { FIRST_LEVEL_MAX_TILES, LAST_LEVEL_MAX_TILES, TILE_RANGE } = LEVEL_GEN;
+	const progress =
+		Math.min(Math.max(levelNumber - 1, 0), LEVELS_PER_WORLD - 1) /
+		(LEVELS_PER_WORLD - 1);
+	const maxTiles = Math.round(
+		FIRST_LEVEL_MAX_TILES +
+			(LAST_LEVEL_MAX_TILES - FIRST_LEVEL_MAX_TILES) * progress,
+	);
+	return { minTiles: Math.max(8, maxTiles - TILE_RANGE), maxTiles };
+}
 
 interface Rectangle {
 	x: number;
@@ -2088,6 +2114,18 @@ function buildLevelFromPath(
 	};
 }
 
+/** Tiles to plant, as the player's counter shows it (dirt needs two visits) */
+function countTilesToPlant(level: Level): number {
+	let count = 0;
+	for (const row of level.grid) {
+		for (const type of row) {
+			if (isRequiredTile(type)) count++;
+			if (type === TileType.DIRT) count++;
+		}
+	}
+	return count;
+}
+
 // =============================================================================
 // SOLVING WITH THE GAME RULES
 // =============================================================================
@@ -2489,6 +2527,12 @@ export function generateLevel(
 			starTrailFrom,
 			starTrailTo,
 		);
+
+		// Too big (daunting) or too small for this level's place in the world
+		const tilesToPlant = countTilesToPlant(level);
+		if (tilesToPlant < fullConfig.minTiles || tilesToPlant > fullConfig.maxTiles) {
+			continue;
+		}
 
 		let solution = solveFromSomeStart(level);
 		if (!solution) continue;

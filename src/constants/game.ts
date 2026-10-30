@@ -59,7 +59,16 @@ export const HINTS = {
 // LEVEL GENERATION
 // =============================================================================
 
+/** Levels in each world */
+export const LEVELS_PER_WORLD = 8;
+
 export const LEVEL_GEN = {
+	/** Most tiles to plant on a world's first level - worlds start small... */
+	FIRST_LEVEL_MAX_TILES: 22,
+	/** ...and build up to this on their last level (never bigger) */
+	LAST_LEVEL_MAX_TILES: 40,
+	/** Each level has between (max - this) and max tiles to plant */
+	TILE_RANGE: 12,
 	/** Maximum recursion depth for path finding */
 	MAX_RECURSION_DEPTH: 500,
 	/** Maximum attempts for various generation steps */
