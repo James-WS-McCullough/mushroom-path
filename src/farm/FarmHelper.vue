@@ -15,11 +15,27 @@ const emit = defineEmits<{
 	select: [];
 }>();
 
-const sprite = computed(() =>
-	props.helper.lastMove === "walk" || props.helper.lastMove === "jump"
-		? "/art/MushroomGirl-Jump.webp"
-		: "/art/MushroomGirl.webp",
-);
+/** Each helper's art: standing, hopping, and waiting for something to ripen */
+const SPRITES = {
+	sprout: {
+		idle: "/art/MushroomGirl.webp",
+		hop: "/art/MushroomGirl-Jump.webp",
+		wait: "/art/MushroomGirl-Stuck.webp",
+	},
+	dew: {
+		idle: "/art/DialogueSprites/BlueGirl-Normal.webp",
+		hop: "/art/DialogueSprites/BlueGirl-Laughing.webp",
+		wait: "/art/DialogueSprites/BlueGirl-Thinking.webp",
+	},
+};
+
+const sprite = computed(() => {
+	const art = SPRITES[props.helper.type];
+	const move = props.helper.lastMove;
+	if (move === "walk" || move === "jump") return art.hop;
+	if (move === "wait") return art.wait;
+	return art.idle;
+});
 
 const carried = computed(() => countItems(props.helper.basket));
 
@@ -136,9 +152,14 @@ const facingRight = computed(() => props.helper.dir === 1);
   transform: scaleX(-1);
 }
 
-/* Dew is Sprout's blue-capped friend */
-.helper--dew .helper__sprite {
-  filter: hue-rotate(185deg) saturate(0.9) drop-shadow(0 3px 3px rgba(0, 0, 0, 0.25));
+/* Dew's art is a taller portrait, so she gets a narrower box */
+.helper--dew .helper__body {
+  width: 52px;
+  height: 78px;
+}
+
+.helper__sprite {
+  object-position: bottom;
 }
 
 .helper--selected .helper__shadow {
