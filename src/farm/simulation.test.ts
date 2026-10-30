@@ -5,13 +5,13 @@ import {
 	deserializeFarm,
 	FARM,
 	type FarmState,
+	getBuildingCost,
 	getExpansionSpots,
 	getPlotCost,
-	getSprinklerCost,
 	getTile,
 	isRipe,
 	moveBuilding,
-	placeSprinkler,
+	placeBuilding,
 	removeBuilding,
 	serializeFarm,
 	tapTile,
@@ -205,26 +205,26 @@ describe("farm simulation", () => {
 		it("builds on a plot and costs more each time", () => {
 			const farm = createFarm();
 			farm.money = 1000;
-			const firstCost = getSprinklerCost(farm);
+			const firstCost = getBuildingCost(farm, "sprinkler");
 
-			expect(placeSprinkler(farm, CENTRE)).toBe(true);
+			expect(placeBuilding(farm, "sprinkler", CENTRE)).toBe(true);
 			expect(getTile(farm, CENTRE)?.kind).toBe("sprinkler");
 			expect(farm.money).toBe(1000 - firstCost);
-			expect(getSprinklerCost(farm)).toBeGreaterThan(firstCost);
+			expect(getBuildingCost(farm, "sprinkler")).toBeGreaterThan(firstCost);
 		});
 
 		it("can't be built on the log or without enough mushrooms", () => {
 			const farm = createFarm();
 			farm.money = 1000;
-			expect(placeSprinkler(farm, LOG)).toBe(false);
+			expect(placeBuilding(farm, "sprinkler", LOG)).toBe(false);
 			farm.money = 0;
-			expect(placeSprinkler(farm, CENTRE)).toBe(false);
+			expect(placeBuilding(farm, "sprinkler", CENTRE)).toBe(false);
 		});
 
 		it("waters all 8 surrounding plots so they grow twice as fast", () => {
 			const farm = createFarm();
 			farm.money = 1000;
-			placeSprinkler(farm, CENTRE);
+			placeBuilding(farm, "sprinkler", CENTRE);
 			for (const pos of [PLOT, { x: 2, y: 2 }, { x: 1, y: 0 }])
 				tapTile(farm, pos);
 
@@ -237,7 +237,7 @@ describe("farm simulation", () => {
 		it("doesn't water plots further away", () => {
 			const farm = createFarm();
 			farm.money = 1000;
-			placeSprinkler(farm, PLOT);
+			placeBuilding(farm, "sprinkler", PLOT);
 			tapTile(farm, { x: 2, y: 2 });
 
 			tick(farm, FARM.GROW_MS / 2);
@@ -247,7 +247,7 @@ describe("farm simulation", () => {
 		it("means there's nothing to water by hand", () => {
 			const farm = createFarm();
 			farm.money = 1000;
-			placeSprinkler(farm, CENTRE);
+			placeBuilding(farm, "sprinkler", CENTRE);
 			tapTile(farm, PLOT);
 			expect(tapTile(farm, PLOT)).toEqual({ kind: "nothing" });
 			expect(tapTile(farm, CENTRE)).toEqual({ kind: "nothing" });
@@ -271,14 +271,14 @@ describe("farm simulation", () => {
 			expect(moveBuilding(farm, PLOT, { x: 1, y: 0 })).toBe(false);
 			expect(moveBuilding(farm, LOG, { x: 9, y: 9 })).toBe(false);
 			farm.money = 1000;
-			placeSprinkler(farm, PLOT);
+			placeBuilding(farm, "sprinkler", PLOT);
 			expect(moveBuilding(farm, LOG, PLOT)).toBe(false);
 		});
 
 		it("removes a sprinkler but never the log", () => {
 			const farm = createFarm();
 			farm.money = 1000;
-			placeSprinkler(farm, PLOT);
+			placeBuilding(farm, "sprinkler", PLOT);
 			expect(removeBuilding(farm, PLOT)).toBe(true);
 			expect(getTile(farm, PLOT)?.kind).toBe("plot");
 			expect(removeBuilding(farm, LOG)).toBe(false);

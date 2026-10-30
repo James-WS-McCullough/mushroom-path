@@ -11,24 +11,41 @@ import {
 } from "../composables/useSound";
 import type { Position } from "../types/game";
 import { parseKey, posKey } from "../utils/positionUtils";
+import FarmHelper from "./FarmHelper.vue";
 import FarmTile from "./FarmTile.vue";
 import {
+	type BuildingKind,
 	buyPlot,
 	createFarm,
+	cycleStationSetting,
 	deserializeFarm,
+	FARM,
+	type FarmEvent,
 	type FarmState,
+	getBuildingCost,
 	getExpansionSpots,
+	getHelperCost,
+	getHelperRoute,
 	getPlotCost,
+	getRouteStations,
 	getSprinkledKeys,
-	getSprinklerCost,
+	getStationSetting,
 	getTile,
+	type Helper,
+	type HelperType,
+	hireHelper,
+	type LoadedFarm,
 	moveBuilding,
-	placeSprinkler,
+	moveHelper,
+	placeBuilding,
 	removeBuilding,
+	removeHelper,
+	type StationSetting,
 	serializeFarm,
 	type TapResult,
 	tapTile,
 	tick,
+	turnHelper,
 } from "./simulation";
 
 const emit = defineEmits<{
@@ -40,19 +57,28 @@ const AUTOSAVE_MS = 5000;
 const TILE = 64;
 const GAP = 3;
 const CELL = TILE + GAP;
+/** Only mention time away that's long enough to notice */
+const AWAY_SUMMARY_MIN_MS = 60_000;
 
-function loadFarm(): FarmState {
+function loadFarm(): LoadedFarm | null {
 	try {
 		const saved = localStorage.getItem(SAVE_KEY);
-		const loaded = saved ? deserializeFarm(saved, Date.now()) : null;
-		if (loaded) return loaded.state;
+		return saved ? deserializeFarm(saved, Date.now()) : null;
 	} catch {
 		// Storage unavailable - start fresh
+		return null;
 	}
-	return createFarm();
 }
 
-const farm = reactive<FarmState>(loadFarm());
+const loaded = loadFarm();
+const farm = reactive<FarmState>(loaded?.state ?? createFarm());
+
+/** "While you were away" summary, shown once on arrival */
+const awaySummary = ref(
+	loaded && loaded.soldWhileAway > 0 && loaded.awayMs >= AWAY_SUMMARY_MIN_MS
+		? loaded
+		: null,
+);
 
 function saveFarm() {
 	try {
@@ -72,13 +98,26 @@ let lastSave = 0;
 
 function frame(now: number) {
 	// A long gap (tab in the background) catches up in one go
-	if (lastFrame) tick(farm, now - lastFrame);
+	if (lastFrame) {
+		const events = tick(farm, now - lastFrame);
+		// Skip the fanfare for a big catch-up
+		if (events.length < 30) events.forEach(showHelperEvent);
+	}
 	lastFrame = now;
 	if (now - lastSave > AUTOSAVE_MS) {
 		saveFarm();
 		lastSave = now;
 	}
 	frameId = requestAnimationFrame(frame);
+}
+
+function showHelperEvent(event: FarmEvent) {
+	if (event.kind === "helperSold") {
+		playAcorn(0.15);
+		showPopup(event.position, `+${formatNumber(event.earned)} 🍄`, "good");
+	} else {
+		playRandomPop(0.08);
+	}
 }
 
 function handleVisibility() {
@@ -123,20 +162,134 @@ const tiles = computed(() =>
 );
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const selectedHelperId = ref<number | null>(null);
+
+const selectedHelper = computed(
+	() => farm.helpers.find((h) => h.id === selectedHelperId.value) ?? null,
+);
+
+/** Dots along the selected helper's route */
+const routeKeys = computed(() => {
+	const helper = selectedHelper.value;
+	if (!helper) return new Set<string>();
+	return new Set(getHelperRoute(farm, helper).map((p) => posKey(p.x, p.y)));
+});
+
+/** Stations beside the selected helper's route, with her setting for each */
+const routeStations = computed(() => {
+	const helper = selectedHelper.value;
+	if (!helper) return [];
+	return getRouteStations(farm, helper).flatMap((key) => {
+		const tile = farm.tiles[key];
+		return tile
+			? [
+					{
+						key,
+						position: parseKey(key),
+						setting: getStationSetting(helper, key, tile),
+					},
+				]
+			: [];
+	});
+});
+
+const SETTING_ICONS: Record<StationSetting, string> = {
+	dropOff: "⬇️",
+	pickUp: "⬆️",
+	ignore: "⏸️",
+};
+
+const SETTING_LABELS: Record<StationSetting, string> = {
+	dropOff: "Drop off",
+	pickUp: "Pick up",
+	ignore: "Ignore",
+};
+
+function cycleSetting(position: Position) {
+	if (selectedHelperId.value === null) return;
+	const setting = cycleStationSetting(farm, selectedHelperId.value, position);
+	if (setting) {
+		playStone();
+		saveFarm();
+	}
+}
+
+function helperName(helper: Helper): string {
+	return helper.type === "sprout" ? "Sprout" : "Dew";
+}
+
+function helperStats(helper: Helper) {
+	const minutes = helper.stats.activeMs / 60_000;
+	return {
+		perMinute:
+			minutes > 0.1 ? Math.round(helper.stats.harvested / minutes) : null,
+		waiting:
+			helper.stats.activeMs > 0
+				? Math.round((helper.stats.waitingMs / helper.stats.activeMs) * 100)
+				: 0,
+	};
+}
+
+function handleHelperClick(helper: Helper) {
+	if (mode.value === "build") {
+		handleBuildTap({ x: helper.x, y: helper.y });
+		return;
+	}
+	selectedHelperId.value =
+		selectedHelperId.value === helper.id ? null : helper.id;
+}
+
+function turnSelected() {
+	if (selectedHelperId.value === null) return;
+	turnHelper(farm, selectedHelperId.value);
+	saveFarm();
+}
+
+function helperOffset(helper: Helper) {
+	return {
+		left: (helper.x - bounds.value.minX) * CELL,
+		top: (helper.y - bounds.value.minY) * CELL,
+	};
+}
+
+// ---------------------------------------------------------------------------
 // Build mode
 // ---------------------------------------------------------------------------
 
 type Mode = "farm" | "build";
-type Tool = "sprinkler" | "move" | "remove" | null;
+type Tool = BuildingKind | HelperType | "move" | "remove" | null;
 
 const mode = ref<Mode>("farm");
 const tool = ref<Tool>(null);
 /** A building picked up with the move tool, waiting to be put down */
 const movingFrom = ref<Position | null>(null);
+/** A helper picked up with the move tool */
+const movingHelperId = ref<number | null>(null);
 
 const plotCost = computed(() => getPlotCost(farm));
-const sprinklerCost = computed(() => getSprinklerCost(farm));
+const helperCost = computed(() => getHelperCost(farm));
 const sprinkledKeys = computed(() => getSprinkledKeys(farm));
+
+const BUILD_TOOLS: {
+	tool: BuildingKind | HelperType;
+	icon: string;
+	label: string;
+}[] = [
+	{ tool: "sprout", icon: "🌱", label: "Sprout" },
+	{ tool: "dew", icon: "💧", label: "Dew" },
+	{ tool: "barrel", icon: "🫙", label: "Barrel" },
+	{ tool: "path", icon: "🪨", label: "Path" },
+	{ tool: "sprinkler", icon: "💦", label: "Sprinkler" },
+];
+
+function toolCost(t: BuildingKind | HelperType): number {
+	return t === "sprout" || t === "dew"
+		? helperCost.value
+		: getBuildingCost(farm, t);
+}
 
 /** Faded plots for sale around the farm, shown while building */
 const ghostSpots = computed(() =>
@@ -145,18 +298,23 @@ const ghostSpots = computed(() =>
 
 /** Nudge towards build mode when there's something to buy */
 const canAffordUpgrade = computed(
-	() => farm.money >= plotCost.value || farm.money >= sprinklerCost.value,
+	() =>
+		farm.money >= plotCost.value ||
+		BUILD_TOOLS.some(({ tool: t }) => farm.money >= toolCost(t)),
 );
 
 function setMode(next: Mode) {
 	mode.value = next;
 	tool.value = null;
 	movingFrom.value = null;
+	movingHelperId.value = null;
+	selectedHelperId.value = null;
 }
 
 function selectTool(next: Tool) {
 	tool.value = tool.value === next ? null : next;
 	movingFrom.value = null;
+	movingHelperId.value = null;
 }
 
 function isMovingFrom(position: Position): boolean {
@@ -177,23 +335,57 @@ function handleGhostTap(position: Position) {
 	}
 }
 
+function spent(position: Position, cost: number) {
+	showPopup(position, `-${formatNumber(cost)} 🍄`, "info");
+	saveFarm();
+}
+
 function handleBuildTap(position: Position) {
 	const tile = getTile(farm, position);
+	const helperHere = farm.helpers.find(
+		(h) => h.x === position.x && h.y === position.y,
+	);
+	const current = tool.value;
 
-	if (tool.value === "sprinkler") {
-		const cost = sprinklerCost.value;
-		if (placeSprinkler(farm, position)) {
-			playWater();
-			showPopup(position, `-${formatNumber(cost)} 🍄`, "info");
-			saveFarm();
-		} else if (tile?.kind === "plot") {
+	if (current === "sprout" || current === "dew") {
+		const cost = helperCost.value;
+		if (hireHelper(farm, current, position)) {
+			playRandomPop();
+			spent(position, cost);
+		} else if (farm.money < cost && tile) {
 			playLand();
 			showPopup(position, `Need ${formatNumber(cost)} 🍄`, "warn");
 		}
 		return;
 	}
 
-	if (tool.value === "move") {
+	if (current === "sprinkler" || current === "barrel" || current === "path") {
+		const cost = getBuildingCost(farm, current);
+		if (placeBuilding(farm, current, position)) {
+			if (current === "sprinkler") playWater();
+			else playStone();
+			spent(position, cost);
+		} else if (tile?.kind === "plot" && farm.money < cost) {
+			playLand();
+			showPopup(position, `Need ${formatNumber(cost)} 🍄`, "warn");
+		}
+		return;
+	}
+
+	if (current === "move") {
+		if (movingHelperId.value !== null) {
+			if (moveHelper(farm, movingHelperId.value, position)) {
+				playStone();
+				movingHelperId.value = null;
+				saveFarm();
+			}
+			return;
+		}
+		if (helperHere) {
+			movingHelperId.value = helperHere.id;
+			movingFrom.value = null;
+			return;
+		}
 		const from = movingFrom.value;
 		if (from && moveBuilding(farm, from, position)) {
 			playStone();
@@ -206,10 +398,16 @@ function handleBuildTap(position: Position) {
 		return;
 	}
 
-	if (tool.value === "remove" && removeBuilding(farm, position)) {
-		playUndo();
-		showPopup(position, "Removed", "info");
-		saveFarm();
+	if (current === "remove") {
+		if (helperHere && removeHelper(farm, helperHere.id)) {
+			playUndo();
+			showPopup(position, `Bye ${helperName(helperHere)}!`, "info");
+			saveFarm();
+		} else if (removeBuilding(farm, position)) {
+			playUndo();
+			showPopup(position, "Removed", "info");
+			saveFarm();
+		}
 	}
 }
 
@@ -321,17 +519,30 @@ const isBasketFull = computed(() => farm.basket >= farm.basketCapacity);
 /** A gentle nudge for brand new farms, and what each build tool does */
 const hint = computed(() => {
 	if (mode.value === "build") {
-		if (tool.value === "sprinkler")
+		const current = tool.value;
+		if (current === "sprout")
+			return "Tap a plot or path - Sprout walks left and right along her row";
+		if (current === "dew")
+			return "Tap a plot or path - Dew walks up and down her column";
+		if (current === "barrel")
+			return "Tap a plot to build a barrel - helpers can drop off and pick up there";
+		if (current === "path")
+			return "Tap a plot to lay stepping stones - helpers walk them, nothing grows";
+		if (current === "sprinkler")
 			return "Tap a plot to build a sprinkler - it waters the 8 plots around it";
-		if (tool.value === "move") {
-			return movingFrom.value
-				? "Now tap a plot to move it there"
-				: "Tap the log or a sprinkler to pick it up";
+		if (current === "move") {
+			return movingFrom.value || movingHelperId.value !== null
+				? "Now tap where it should go"
+				: "Tap a helper or building to pick it up";
 		}
-		if (tool.value === "remove") return "Tap a sprinkler to take it down";
-		return "Tap a faded plot to buy it, or pick a tool below";
+		if (current === "remove") return "Tap a helper or building to remove it";
+		return "Tap a faded plot to buy it, or pick something to build";
 	}
+	if (selectedHelper.value) return null;
 	if (farm.totalSold > 0) {
+		if (farm.helpers.length === 0 && farm.money >= helperCost.value) {
+			return "You can afford a helper! Tap 🔨 Build";
+		}
 		const isFirstPlot = farm.plotsBought === 0 && farm.money >= plotCost.value;
 		return isFirstPlot ? "You can afford a new plot! Tap 🔨 Build" : null;
 	}
@@ -355,6 +566,12 @@ function formatNumber(n: number): string {
 		unit++;
 	}
 	return `${scaled.toFixed(scaled < 10 ? 1 : 0)}${units[unit]}`;
+}
+
+function formatDuration(ms: number): string {
+	const minutes = Math.floor(ms / 60_000);
+	const hours = Math.floor(minutes / 60);
+	return hours > 0 ? `${hours}h ${minutes % 60}m` : `${minutes}m`;
 }
 </script>
 
@@ -400,8 +617,41 @@ function formatNumber(n: number): string {
             :can-sell="farm.basket > 0"
             :sprinkled="sprinkledKeys.has(t.key)"
             :selected="isMovingFrom(t.position)"
+            :data-pos="t.key"
             @click="handleTap(t.position)"
           />
+
+          <!-- The selected helper's route -->
+          <div
+            v-for="key in routeKeys"
+            :key="`route-${key}`"
+            class="route-dot"
+            :style="tileStyle(parseKey(key))"
+          ></div>
+
+          <FarmHelper
+            v-for="helper in farm.helpers"
+            :key="`helper-${helper.id}`"
+            :helper="helper"
+            :left="helperOffset(helper).left"
+            :top="helperOffset(helper).top"
+            :selected="helper.id === selectedHelperId || helper.id === movingHelperId"
+            :basket-capacity="FARM.HELPER_BASKET"
+            @select="handleHelperClick(helper)"
+          />
+
+          <!-- What the selected helper does at each station she passes -->
+          <button
+            v-for="station in routeStations"
+            :key="`station-${station.key}`"
+            :class="['station-badge', `station-badge--${station.setting}`]"
+            :style="tileStyle(station.position)"
+            :aria-label="`${SETTING_LABELS[station.setting]} - tap to change`"
+            @click.stop="cycleSetting(station.position)"
+          >
+            <span class="station-badge__icon">{{ SETTING_ICONS[station.setting] }}</span>
+            <span class="station-badge__label">{{ SETTING_LABELS[station.setting] }}</span>
+          </button>
 
           <button
             v-for="spot in ghostSpots"
@@ -434,16 +684,56 @@ function formatNumber(n: number): string {
       </Transition>
     </main>
 
+    <!-- The selected helper -->
+    <section v-if="selectedHelper && mode === 'farm'" class="helper-panel">
+      <div class="helper-panel__info">
+        <strong class="helper-panel__name">
+          {{ selectedHelper.type === "sprout" ? "🌱" : "💧" }} {{ helperName(selectedHelper) }}
+        </strong>
+        <span>🧺 {{ selectedHelper.basket }}/{{ FARM.HELPER_BASKET }}</span>
+        <span v-if="helperStats(selectedHelper).perMinute !== null">
+          {{ helperStats(selectedHelper).perMinute }} picked/min
+        </span>
+        <span :class="{ 'helper-panel__warn': helperStats(selectedHelper).waiting >= 30 }">
+          ⏳ {{ helperStats(selectedHelper).waiting }}% waiting
+        </span>
+      </div>
+      <p class="helper-panel__tip">
+        Tap the badges on her stations to choose: drop off, pick up or ignore.
+      </p>
+      <div class="helper-panel__actions">
+        <button class="helper-panel__button" @click="turnSelected">↔ Turn around</button>
+        <button class="helper-panel__button" @click="selectedHelperId = null">Done</button>
+      </div>
+    </section>
+
+    <!-- While you were away -->
+    <Transition name="hint">
+      <div v-if="awaySummary" class="away" @click="awaySummary = null">
+        <div class="away__card" @click.stop>
+          <h2 class="away__title">Welcome back! 🍄</h2>
+          <p class="away__text">
+            While you were away for {{ formatDuration(awaySummary.awayMs) }}, your helpers
+            sold <strong>{{ formatNumber(awaySummary.soldWhileAway) }}</strong> mushrooms for
+            <strong>+{{ formatNumber(awaySummary.earnedWhileAway) }} 🍄</strong>
+          </p>
+          <button class="away__button" @click="awaySummary = null">Lovely!</button>
+        </div>
+      </div>
+    </Transition>
+
     <footer class="farm-tools">
       <div v-if="mode === 'build'" class="tool-row">
         <button
-          :class="['tool', { 'tool--active': tool === 'sprinkler' }]"
-          @click="selectTool('sprinkler')"
+          v-for="item in BUILD_TOOLS"
+          :key="item.tool"
+          :class="['tool', { 'tool--active': tool === item.tool }]"
+          @click="selectTool(item.tool)"
         >
-          <span class="tool__icon">💦</span>
-          <span class="tool__label">Sprinkler</span>
-          <span :class="['tool__price', { 'tool__price--short': farm.money < sprinklerCost }]">
-            {{ formatNumber(sprinklerCost) }} 🍄
+          <span class="tool__icon">{{ item.icon }}</span>
+          <span class="tool__label">{{ item.label }}</span>
+          <span :class="['tool__price', { 'tool__price--short': farm.money < toolCost(item.tool) }]">
+            {{ formatNumber(toolCost(item.tool)) }} 🍄
           </span>
         </button>
         <button :class="['tool', { 'tool--active': tool === 'move' }]" @click="selectTool('move')">
@@ -678,6 +968,19 @@ function formatNumber(n: number): string {
   justify-content: center;
 }
 
+/* Lots of tools: let them scroll sideways on narrow screens */
+.tool-row {
+  justify-content: flex-start;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 -16px;
+  padding: 0 16px;
+}
+
+.tool-row::-webkit-scrollbar {
+  display: none;
+}
+
 .tool,
 .mode {
   border: none;
@@ -694,8 +997,8 @@ function formatNumber(n: number): string {
 }
 
 .tool {
-  flex: 1;
-  max-width: 120px;
+  flex: 0 0 auto;
+  min-width: 78px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -752,6 +1055,151 @@ function formatNumber(n: number): string {
   50% {
     box-shadow: 0 0 0 3px rgba(255, 226, 140, 0.85);
   }
+}
+
+.route-dot {
+  position: absolute;
+  width: 64px;
+  height: 64px;
+  border: 2px dashed rgba(255, 248, 220, 0.9);
+  border-radius: 8px;
+  background: rgba(255, 248, 220, 0.16);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.station-badge {
+  position: absolute;
+  width: 64px;
+  height: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 1px;
+  padding: 2px 0 0;
+  border: 3px solid rgba(255, 236, 160, 0.9);
+  border-radius: 10px;
+  background: rgba(40, 24, 14, 0.25);
+  font: inherit;
+  cursor: pointer;
+  z-index: 6;
+}
+
+.station-badge--ignore {
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.station-badge--pickUp {
+  border-color: rgba(150, 210, 255, 0.95);
+}
+
+.station-badge__icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.station-badge__label {
+  padding: 0 4px;
+  border-radius: 999px;
+  background: rgba(40, 24, 14, 0.75);
+  color: #fff6d6;
+  font-size: 9px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.helper-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 16px;
+  background: rgba(255, 252, 240, 0.95);
+  color: #5a4632;
+  box-shadow: 0 -3px 10px rgba(0, 0, 0, 0.15);
+}
+
+.helper-panel__info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  font-size: 14px;
+}
+
+.helper-panel__name {
+  font-size: 17px;
+}
+
+.helper-panel__warn {
+  color: #b5502f;
+  font-weight: 700;
+}
+
+.helper-panel__tip {
+  margin: 0;
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+.helper-panel__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.helper-panel__button {
+  flex: 1;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 12px;
+  background: #8b6a4e;
+  color: #fff8ee;
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.away {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(30, 20, 12, 0.45);
+  z-index: 20;
+}
+
+.away__card {
+  max-width: 340px;
+  padding: 22px;
+  border-radius: 18px;
+  background: #fffaf0;
+  color: #5a4632;
+  text-align: center;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.away__title {
+  margin: 0 0 8px;
+  font-size: 22px;
+}
+
+.away__text {
+  margin: 0 0 16px;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.away__button {
+  padding: 10px 26px;
+  border: none;
+  border-radius: 999px;
+  background: #d98a5f;
+  color: #fff;
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
 }
 
 .farm-hint {

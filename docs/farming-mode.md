@@ -111,8 +111,9 @@ Example chain:
 2. **Building and sprinklers** ✅ - build mode with faded plots to buy
    around the farm, sprinklers that water the 8 tiles around them,
    moving the log and sprinklers, removing sprinklers.
-3. **Helpers** - Sprout and Dew, baskets, barrels and paths, per-station
-   pick up/drop off settings, route previews and stats.
+3. **Helpers** ✅ - Sprout and Dew, baskets, barrels and paths, per-station
+   pick up/drop off settings, route previews and stats, and a "while you
+   were away" summary.
 4. **Cooking** - campfire and the recipe system, then the stew pot and well.
 5. **More helpers and progression** - Hopper, Skater, Fairy; upgrades,
    golden mushrooms, extra logs, sounds and balancing.

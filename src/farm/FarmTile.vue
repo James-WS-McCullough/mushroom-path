@@ -3,7 +3,7 @@ import { computed } from "vue";
 import GameTile from "../components/GameTile.vue";
 import type { Position } from "../types/game";
 import { TileType } from "../types/game";
-import type { FarmTile } from "./simulation";
+import { FARM, type FarmTile } from "./simulation";
 
 const props = defineProps<{
 	tile: FarmTile;
@@ -106,6 +106,34 @@ const mushroomTile = computed(() => ({
         <div class="droplet"></div>
       </div>
     </template>
+
+    <!-- Barrel: holds mushrooms for helpers to hand along -->
+    <template v-else-if="tile.kind === 'barrel'">
+      <svg class="barrel" viewBox="0 0 64 64" aria-hidden="true">
+        <ellipse class="barrel__shadow" cx="32" cy="55" rx="18" ry="4" />
+        <path class="barrel__body" d="M18 16 Q14 34 18 52 L46 52 Q50 34 46 16 Z" />
+        <path class="barrel__stave" d="M26 17 Q24 34 26 51 M38 17 Q40 34 38 51" />
+        <path class="barrel__hoop" d="M16.6 24 Q32 27 47.4 24 M16.6 44 Q32 47 47.4 44" />
+        <ellipse class="barrel__top" cx="32" cy="16" rx="14" ry="5" />
+        <ellipse class="barrel__inside" cx="32" cy="16.5" rx="11" ry="3.4" />
+        <g v-if="tile.items > 0" class="barrel__mushrooms">
+          <path d="M25 16 Q28 10 31 16 Z" fill="#d9534f" />
+          <path d="M31 16.5 Q34.5 9.5 38 16.5 Z" fill="#e0956a" />
+          <path d="M35 17 Q37.5 12 40 17 Z" fill="#9b6bb0" />
+        </g>
+      </svg>
+      <span :class="['barrel__count', { 'barrel__count--full': tile.items >= FARM.BARREL_CAPACITY }]">
+        {{ tile.items }}/{{ FARM.BARREL_CAPACITY }}
+      </span>
+    </template>
+
+    <!-- Path: stepping stones helpers can walk -->
+    <svg v-else-if="tile.kind === 'path'" class="path" viewBox="0 0 64 64" aria-hidden="true">
+      <ellipse cx="18" cy="20" rx="11" ry="8" />
+      <ellipse cx="44" cy="24" rx="10" ry="7.5" />
+      <ellipse cx="22" cy="45" rx="10" ry="7.5" />
+      <ellipse cx="46" cy="47" rx="11" ry="8" />
+    </svg>
 
     <!-- Sprinkler: keeps the 8 tiles around it watered -->
     <svg v-else-if="tile.kind === 'sprinkler'" class="sprinkler" viewBox="0 0 64 64" aria-hidden="true">
@@ -342,6 +370,80 @@ const mushroomTile = computed(() => ({
     0 0 0 3px #fff2b8,
     0 0 14px rgba(255, 236, 160, 0.9);
   z-index: 2;
+}
+
+/* Barrel */
+.farm-tile--barrel,
+.farm-tile--path {
+  background:
+    radial-gradient(circle at 25% 80%, rgba(120, 180, 100, 0.4) 0%, transparent 30%),
+    linear-gradient(135deg, #7cb668 0%, #5a9a4a 100%);
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.1);
+}
+
+.barrel,
+.path {
+  width: 100%;
+  height: 100%;
+}
+
+.barrel__shadow {
+  fill: rgba(30, 50, 20, 0.3);
+}
+
+.barrel__body {
+  fill: #a9744a;
+  stroke: #6b4429;
+  stroke-width: 1.5;
+}
+
+.barrel__stave {
+  fill: none;
+  stroke: rgba(80, 48, 28, 0.45);
+  stroke-width: 1.2;
+}
+
+.barrel__hoop {
+  fill: none;
+  stroke: #6e6e70;
+  stroke-width: 3;
+}
+
+.barrel__top {
+  fill: #c99a68;
+  stroke: #6b4429;
+  stroke-width: 1.5;
+}
+
+.barrel__inside {
+  fill: #3a2616;
+}
+
+.barrel__count {
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  transform: translateX(-50%);
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(40, 24, 14, 0.7);
+  color: #fff6d6;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 15px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.barrel__count--full {
+  background: rgba(190, 80, 50, 0.85);
+}
+
+/* Path */
+.path ellipse {
+  fill: #b9b2a4;
+  stroke: #8f887b;
+  stroke-width: 1.5;
 }
 
 /* Sprinkler */
