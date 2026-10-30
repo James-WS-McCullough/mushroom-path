@@ -7,7 +7,7 @@
  * many times a second.
  */
 
-import type { Position } from "../types/game";
+import type { Direction, Position } from "../types/game";
 import {
 	DIRECTIONS,
 	getDirectionDelta,
@@ -31,17 +31,19 @@ export const FARM = {
 	HELPER_STEP_MS: 1000,
 	/** Items a helper can carry */
 	HELPER_BASKET: 5,
-	HELPER_BASE_COST: 100,
+	HELPER_BASE_COST: 60,
 	HELPER_COST_GROWTH: 1.4,
 	/** Items a barrel holds */
 	BARREL_CAPACITY: 20,
+	/** A plot bought at least this far from every log turns out to hold a hollow log */
+	LOG_DISCOVERY_DISTANCE: 6,
 } as const;
 
 // =============================================================================
 // ITEMS & RECIPES
 // =============================================================================
 
-export type ItemKind = "mushroom" | "skewer" | "water" | "stew";
+export type ItemKind = "mushroom" | "golden" | "skewer" | "water" | "stew";
 
 /** Counts of each item, e.g. a basket or a barrel */
 export type Inventory = Partial<Record<ItemKind, number>>;
@@ -52,13 +54,20 @@ export const ITEMS: Record<
 	{ name: string; icon: string; value: number }
 > = {
 	mushroom: { name: "Mushroom", icon: "🍄", value: 1 },
+	golden: { name: "Golden mushroom", icon: "🌟", value: 25 },
 	skewer: { name: "Roasted skewer", icon: "🍢", value: 5 },
 	water: { name: "Water bucket", icon: "💧", value: 0 },
 	stew: { name: "Mushroom stew", icon: "🍲", value: 14 },
 };
 
 /** Most valuable first, so helpers grab the good stuff */
-const ITEM_ORDER: ItemKind[] = ["stew", "skewer", "mushroom", "water"];
+const ITEM_ORDER: ItemKind[] = [
+	"golden",
+	"stew",
+	"skewer",
+	"mushroom",
+	"water",
+];
 
 export type MachineKind = "campfire" | "stewpot" | "well";
 
@@ -181,6 +190,8 @@ export const BUILDING_COSTS = {
 	campfire: { base: 60, growth: 1.3 },
 	well: { base: 120, growth: 1.3 },
 	stewpot: { base: 250, growth: 1.35 },
+	/** Extra hollow logs (the first one comes with the farm) */
+	log: { base: 1500, growth: 3 },
 } as const;
 
 export type BuildingKind = keyof typeof BUILDING_COSTS;
@@ -230,7 +241,78 @@ export type FarmTile =
 	| PathTile
 	| MachineTile;
 
-export type HelperType = "sprout" | "dew";
+export type HelperType = "sprout" | "dew" | "hopper" | "skater" | "fairy";
+
+/** How each helper moves, how often, and how her price compares */
+export const HELPER_TYPES: Record<
+	HelperType,
+	{ name: string; stepMs: number; costFactor: number }
+> = {
+	// Walks left and right along her row
+	sprout: { name: "Sprout", stepMs: 1000, costFactor: 1 },
+	// Walks up and down her column
+	dew: { name: "Dew", stepMs: 1000, costFactor: 1 },
+	// Leaps 2 tiles at a time along her row
+	hopper: { name: "Hopper", stepMs: 650, costFactor: 1.5 },
+	// Slides in a line and turns right whenever she's blocked
+	skater: { name: "Skater", stepMs: 600, costFactor: 2 },
+	// Zips between her two fairy rings, tending the patch around each
+	fairy: { name: "Fairy", stepMs: 3000, costFactor: 4 },
+};
+
+export type UpgradeKind =
+	| "basket"
+	| "helperBasket"
+	| "helperSpeed"
+	| "growth"
+	| "golden";
+
+export const UPGRADES: Record<
+	UpgradeKind,
+	{
+		name: string;
+		description: string;
+		baseCost: number;
+		growth: number;
+		max: number;
+	}
+> = {
+	basket: {
+		name: "Bigger basket",
+		description: "Carry 5 more",
+		baseCost: 50,
+		growth: 2,
+		max: 10,
+	},
+	helperBasket: {
+		name: "Helper baskets",
+		description: "Helpers carry 2 more",
+		baseCost: 150,
+		growth: 2,
+		max: 10,
+	},
+	helperSpeed: {
+		name: "Quick feet",
+		description: "Helpers move 15% faster",
+		baseCost: 300,
+		growth: 2.2,
+		max: 5,
+	},
+	growth: {
+		name: "Rich soil",
+		description: "Mushrooms grow 15% faster",
+		baseCost: 200,
+		growth: 2.2,
+		max: 5,
+	},
+	golden: {
+		name: "Golden spores",
+		description: "+2% chance of a golden mushroom (worth 25)",
+		baseCost: 500,
+		growth: 2.5,
+		max: 5,
+	},
+};
 
 /** What a helper does at a station beside her route */
 export type StationSetting = "both" | "dropOff" | "pickUp" | "ignore";
@@ -248,7 +330,12 @@ export interface Helper {
 	/** Her setting for each station, keyed by the station's "x,y" */
 	stations: Record<string, StationSetting>;
 	/** What she did on her last step, for animation */
-	lastMove: "walk" | "jump" | "wait" | "turn" | "none";
+	lastMove: "walk" | "jump" | "wait" | "turn" | "teleport" | "none";
+	/** Skater: which way she's sliding */
+	heading?: Direction;
+	/** Fairy: the two spots she zips between */
+	home?: Position;
+	ring?: Position;
 	stats: {
 		harvested: number;
 		sold: number;
@@ -271,12 +358,16 @@ export interface FarmState {
 	plotsBought: number;
 	helpers: Helper[];
 	nextHelperId: number;
+	/** Levels bought of each upgrade */
+	upgrades: Partial<Record<UpgradeKind, number>>;
+	/** Random seed, so golden mushrooms are repeatable */
+	seed: number;
 }
 
 export type TapResult =
 	| { kind: "planted" }
 	| { kind: "watered" }
-	| { kind: "harvested" }
+	| { kind: "harvested"; item: ItemKind }
 	| { kind: "basketFull" }
 	| { kind: "sold"; count: number; earned: number }
 	| { kind: "transferred"; gave: number; took: number }
@@ -312,7 +403,7 @@ export function isStation(tile: FarmTile | undefined): boolean {
 const START_SIZE = 3;
 
 /** A new farm: a 3x3 patch of plots with the hollow log beside it */
-export function createFarm(): FarmState {
+export function createFarm(seed = Date.now()): FarmState {
 	const tiles: Record<string, FarmTile> = {};
 	for (let y = 0; y < START_SIZE; y++) {
 		for (let x = 0; x < START_SIZE; x++) {
@@ -330,6 +421,8 @@ export function createFarm(): FarmState {
 		plotsBought: 0,
 		helpers: [],
 		nextHelperId: 1,
+		upgrades: {},
+		seed,
 	};
 }
 
@@ -378,18 +471,75 @@ export function canCook(machine: MachineTile): boolean {
 }
 
 // =============================================================================
+// UPGRADES & LUCK
+// =============================================================================
+
+export function getUpgradeLevel(state: FarmState, kind: UpgradeKind): number {
+	return state.upgrades[kind] ?? 0;
+}
+
+export function getUpgradeCost(
+	state: FarmState,
+	kind: UpgradeKind,
+): number | null {
+	const upgrade = UPGRADES[kind];
+	const level = getUpgradeLevel(state, kind);
+	if (level >= upgrade.max) return null;
+	return Math.round(upgrade.baseCost * upgrade.growth ** level);
+}
+
+export function buyUpgrade(state: FarmState, kind: UpgradeKind): boolean {
+	const cost = getUpgradeCost(state, kind);
+	if (cost === null || state.money < cost) return false;
+	state.money -= cost;
+	state.upgrades[kind] = getUpgradeLevel(state, kind) + 1;
+	if (kind === "basket") state.basketCapacity += 5;
+	return true;
+}
+
+export function getHelperBasketCapacity(state: FarmState): number {
+	return FARM.HELPER_BASKET + 2 * getUpgradeLevel(state, "helperBasket");
+}
+
+function getHelperStepMs(state: FarmState, helper: Helper): number {
+	return (
+		HELPER_TYPES[helper.type].stepMs *
+		0.85 ** getUpgradeLevel(state, "helperSpeed")
+	);
+}
+
+export function getGrowMs(state: FarmState): number {
+	return FARM.GROW_MS * 0.85 ** getUpgradeLevel(state, "growth");
+}
+
+/** Next number from the farm's own random sequence (mulberry32) */
+function nextRandom(state: FarmState): number {
+	state.seed = (state.seed + 0x6d2b79f5) | 0;
+	let t = Math.imul(state.seed ^ (state.seed >>> 15), 1 | state.seed);
+	t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+	return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
+/** What a ripe plot gives when picked - now and then a golden mushroom */
+function harvestItem(state: FarmState): ItemKind {
+	const chance = 0.02 * getUpgradeLevel(state, "golden");
+	return chance > 0 && nextRandom(state) < chance ? "golden" : "mushroom";
+}
+
+// =============================================================================
 // TIME
 // =============================================================================
 
 function grow(state: FarmState, ms: number): void {
 	const sprinkled = getSprinkledKeys(state);
+	const growMs = getGrowMs(state);
 	for (const [key, tile] of Object.entries(state.tiles)) {
 		if (tile.kind !== "plot" || tile.growth === null || tile.growth >= 1) {
 			continue;
 		}
 		const isWet = tile.watered || sprinkled.has(key);
 		const speed = isWet ? FARM.WATERED_SPEEDUP : 1;
-		const growth = tile.growth + (ms * speed) / FARM.GROW_MS;
+		const growth = tile.growth + (ms * speed) / growMs;
 		// Snap to ripe so adding up small steps can't leave it a hair short
 		tile.growth = growth >= 1 - 1e-9 ? 1 : growth;
 	}
@@ -429,8 +579,9 @@ export function tick(state: FarmState, ms: number): FarmEvent[] {
 		for (const helper of state.helpers) {
 			helper.stepMs += chunk;
 			helper.stats.activeMs += chunk;
-			while (helper.stepMs >= FARM.HELPER_STEP_MS) {
-				helper.stepMs -= FARM.HELPER_STEP_MS;
+			const stepMs = getHelperStepMs(state, helper);
+			while (helper.stepMs >= stepMs) {
+				helper.stepMs -= stepMs;
 				stepHelper(state, helper, events);
 			}
 		}
@@ -500,22 +651,30 @@ export function tapTile(state: FarmState, pos: Position): TapResult {
 	if (countItems(state.basket) >= state.basketCapacity) {
 		return { kind: "basketFull" };
 	}
-	addItems(state.basket, "mushroom", 1);
+	const item = harvestItem(state);
+	addItems(state.basket, item, 1);
 	tile.growth = null;
 	tile.watered = false;
-	return { kind: "harvested" };
+	return { kind: "harvested", item };
 }
 
 // =============================================================================
 // HELPERS
 // =============================================================================
 
-/** One step along a helper's line */
+/** One step along a walking helper's line (Hopper covers two of these at once) */
 function helperDelta(helper: Helper): Position {
-	return helper.type === "sprout"
-		? { x: helper.dir, y: 0 }
-		: { x: 0, y: helper.dir };
+	return helper.type === "dew"
+		? { x: 0, y: helper.dir }
+		: { x: helper.dir, y: 0 };
 }
+
+const TURN_RIGHT: Record<Direction, Direction> = {
+	up: "right",
+	right: "down",
+	down: "left",
+	left: "up",
+};
 
 /** Helpers can stand on empty or ripe plots, and on paths */
 function canHelperStand(tile: FarmTile | undefined): boolean {
@@ -548,8 +707,40 @@ export function getStationSetting(
 	return getStationSettings(tile)[0] ?? "ignore";
 }
 
-/** Walk, jump, wait or turn, then deal with the stations beside her */
+/** Take one step in her own way, then deal with the stations beside her */
 function stepHelper(
+	state: FarmState,
+	helper: Helper,
+	events: FarmEvent[],
+): void {
+	switch (helper.type) {
+		case "hopper":
+			stepHopper(state, helper, events);
+			break;
+		case "skater":
+			stepSkater(state, helper, events);
+			break;
+		case "fairy":
+			stepFairy(state, helper, events);
+			break;
+		default:
+			stepWalker(state, helper, events);
+	}
+	useStations(state, helper, events);
+}
+
+function waitForRipening(state: FarmState, helper: Helper): void {
+	helper.lastMove = "wait";
+	helper.stats.waitingMs += getHelperStepMs(state, helper);
+}
+
+function turnAround(helper: Helper): void {
+	helper.dir = helper.dir === 1 ? -1 : 1;
+	helper.lastMove = "turn";
+}
+
+/** Sprout and Dew: walk, jump a growing mushroom, wait, or turn back */
+function stepWalker(
 	state: FarmState,
 	helper: Helper,
 	events: FarmEvent[],
@@ -565,17 +756,94 @@ function stepHelper(
 		if (canHelperStand(getTile(state, beyond))) {
 			moveHelperTo(state, helper, beyond, "jump", events);
 		} else {
-			// Wait for the mushroom ahead to ripen
-			helper.lastMove = "wait";
-			helper.stats.waitingMs += FARM.HELPER_STEP_MS;
+			waitForRipening(state, helper);
 		}
 	} else {
 		// A building or the edge of the farm
-		helper.dir = helper.dir === 1 ? -1 : 1;
+		turnAround(helper);
+	}
+}
+
+/** Hopper: leap two tiles along her row, over anything in between */
+function stepHopper(
+	state: FarmState,
+	helper: Helper,
+	events: FarmEvent[],
+): void {
+	const landing = { x: helper.x + 2 * helper.dir, y: helper.y };
+	const landingTile = getTile(state, landing);
+	if (canHelperStand(landingTile)) {
+		moveHelperTo(state, helper, landing, "jump", events);
+	} else if (isGrowing(landingTile)) {
+		waitForRipening(state, helper);
+	} else {
+		turnAround(helper);
+	}
+}
+
+/** Skater: slide on until blocked, then turn right */
+function stepSkater(
+	state: FarmState,
+	helper: Helper,
+	events: FarmEvent[],
+): void {
+	const heading = helper.heading ?? "right";
+	const delta = getDirectionDelta(heading);
+	const next = { x: helper.x + delta.x, y: helper.y + delta.y };
+	if (canHelperStand(getTile(state, next))) {
+		moveHelperTo(state, helper, next, "walk", events);
+	} else {
+		helper.heading = TURN_RIGHT[heading];
 		helper.lastMove = "turn";
 	}
+}
 
-	useStations(state, helper, events);
+/** Fairy: zip to her other ring and tend the 3x3 patch around it */
+function stepFairy(
+	state: FarmState,
+	helper: Helper,
+	events: FarmEvent[],
+): void {
+	const home = helper.home ?? { x: helper.x, y: helper.y };
+	const ring = helper.ring ?? home;
+	const atHome = helper.x === home.x && helper.y === home.y;
+	const target = atHome ? ring : home;
+	helper.x = target.x;
+	helper.y = target.y;
+	helper.lastMove = "teleport";
+
+	for (let dy = -1; dy <= 1; dy++) {
+		for (let dx = -1; dx <= 1; dx++) {
+			const pos = { x: target.x + dx, y: target.y + dy };
+			const tile = getTile(state, pos);
+			if (tile?.kind !== "plot") continue;
+			if (tile.growth === null) {
+				tile.growth = 0;
+			} else if (tile.growth === 1) {
+				pickInto(state, helper, tile, pos, events);
+			}
+		}
+	}
+}
+
+/** Put a ripe mushroom in a helper's basket, if there's room */
+function pickInto(
+	state: FarmState,
+	helper: Helper,
+	tile: PlotTile,
+	pos: Position,
+	events: FarmEvent[],
+): void {
+	if (countItems(helper.basket) >= getHelperBasketCapacity(state)) return;
+	addItems(helper.basket, harvestItem(state), 1);
+	helper.stats.harvested += 1;
+	tile.growth = null;
+	tile.watered = false;
+	events.push({
+		kind: "helperHarvested",
+		helperId: helper.id,
+		position: { ...pos },
+	});
 }
 
 function moveHelperTo(
@@ -597,20 +865,8 @@ function moveHelperTo(
 
 	// Pick a ripe mushroom where she lands
 	const arrived = getTile(state, to);
-	if (
-		arrived?.kind === "plot" &&
-		arrived.growth === 1 &&
-		countItems(helper.basket) < FARM.HELPER_BASKET
-	) {
-		addItems(helper.basket, "mushroom", 1);
-		helper.stats.harvested += 1;
-		arrived.growth = null;
-		arrived.watered = false;
-		events.push({
-			kind: "helperHarvested",
-			helperId: helper.id,
-			position: { ...to },
-		});
+	if (arrived?.kind === "plot" && arrived.growth === 1) {
+		pickInto(state, helper, arrived, to, events);
 	}
 }
 
@@ -627,7 +883,7 @@ function useStations(
 		return { pos, key, tile: state.tiles[key] };
 	}).filter((s) => isStation(s.tile));
 
-	const basketRoom = roomIn(helper.basket, FARM.HELPER_BASKET);
+	const basketRoom = roomIn(helper.basket, getHelperBasketCapacity(state));
 
 	for (const phase of ["pickUp", "dropOff"] as const) {
 		for (const { pos, key, tile } of beside) {
@@ -670,17 +926,50 @@ function useStations(
 }
 
 /**
- * The tiles a helper walks back and forth over, from one end of her line to
- * the other (a building or the farm's edge stops it)
+ * The tiles a helper visits, for previews: a walker's line (a building or
+ * the farm's edge stops it), every other tile for Hopper, the loop a
+ * Skater slides round, or a Fairy's two rings
  */
 export function getHelperRoute(state: FarmState, helper: Helper): Position[] {
+	const here = { x: helper.x, y: helper.y };
+
+	if (helper.type === "fairy") {
+		const home = helper.home ?? here;
+		const ring = helper.ring ?? home;
+		return home.x === ring.x && home.y === ring.y ? [home] : [home, ring];
+	}
+
+	if (helper.type === "skater") {
+		const route = [here];
+		const seen = new Set<string>();
+		let pos = here;
+		let heading = helper.heading ?? "right";
+		// Follow her slides until she's back where she started
+		for (let i = 0; i < 400; i++) {
+			const key = `${pos.x},${pos.y},${heading}`;
+			if (seen.has(key)) break;
+			seen.add(key);
+			const delta = getDirectionDelta(heading);
+			const next = { x: pos.x + delta.x, y: pos.y + delta.y };
+			if (isOnRoute(getTile(state, next))) {
+				pos = next;
+				if (!route.some((p) => p.x === pos.x && p.y === pos.y)) route.push(pos);
+			} else {
+				heading = TURN_RIGHT[heading];
+			}
+		}
+		return route;
+	}
+
 	const delta = helperDelta(helper);
-	const route: Position[] = [{ x: helper.x, y: helper.y }];
+	const stride = helper.type === "hopper" ? 2 : 1;
+	const route: Position[] = [here];
 	for (const sign of [-1, 1]) {
-		let pos = { x: helper.x + delta.x * sign, y: helper.y + delta.y * sign };
+		const step = { x: delta.x * sign * stride, y: delta.y * sign * stride };
+		let pos = { x: helper.x + step.x, y: helper.y + step.y };
 		while (isOnRoute(getTile(state, pos))) {
 			route.push(pos);
-			pos = { x: pos.x + delta.x * sign, y: pos.y + delta.y * sign };
+			pos = { x: pos.x + step.x, y: pos.y + step.y };
 		}
 	}
 	return route;
@@ -717,9 +1006,14 @@ export function cycleStationSetting(
 	return next;
 }
 
-export function getHelperCost(state: FarmState): number {
+export function getHelperCost(
+	state: FarmState,
+	type: HelperType = "sprout",
+): number {
 	return Math.round(
-		FARM.HELPER_BASE_COST * FARM.HELPER_COST_GROWTH ** state.helpers.length,
+		FARM.HELPER_BASE_COST *
+			HELPER_TYPES[type].costFactor *
+			FARM.HELPER_COST_GROWTH ** state.helpers.length,
 	);
 }
 
@@ -729,7 +1023,7 @@ export function hireHelper(
 	type: HelperType,
 	pos: Position,
 ): Helper | null {
-	const cost = getHelperCost(state);
+	const cost = getHelperCost(state, type);
 	if (!isOnRoute(getTile(state, pos)) || helperAt(state, pos)) return null;
 	if (state.money < cost) return null;
 
@@ -746,8 +1040,25 @@ export function hireHelper(
 		lastMove: "none",
 		stats: { harvested: 0, sold: 0, activeMs: 0, waitingMs: 0 },
 	};
+	if (type === "skater") helper.heading = "right";
+	if (type === "fairy") {
+		helper.home = { ...pos };
+		helper.ring = { ...pos };
+	}
 	state.helpers.push(helper);
 	return helper;
+}
+
+/** Choose where a Fairy's second ring goes */
+export function setFairyRing(
+	state: FarmState,
+	helperId: number,
+	pos: Position,
+): boolean {
+	const helper = state.helpers.find((h) => h.id === helperId);
+	if (helper?.type !== "fairy" || !isOnRoute(getTile(state, pos))) return false;
+	helper.ring = { ...pos };
+	return true;
 }
 
 export function moveHelper(
@@ -762,6 +1073,7 @@ export function moveHelper(
 	helper.x = to.x;
 	helper.y = to.y;
 	helper.lastMove = "none";
+	if (helper.type === "fairy") helper.home = { ...to };
 	return true;
 }
 
@@ -771,9 +1083,15 @@ export function removeHelper(state: FarmState, helperId: number): boolean {
 	return state.helpers.length < before;
 }
 
+/** Send a helper the other way (a Skater turns right instead) */
 export function turnHelper(state: FarmState, helperId: number): void {
 	const helper = state.helpers.find((h) => h.id === helperId);
-	if (helper) helper.dir = helper.dir === 1 ? -1 : 1;
+	if (!helper) return;
+	if (helper.type === "skater") {
+		helper.heading = TURN_RIGHT[helper.heading ?? "right"];
+	} else {
+		helper.dir = helper.dir === 1 ? -1 : 1;
+	}
 }
 
 // =============================================================================
@@ -802,25 +1120,46 @@ export function getPlotCost(state: FarmState): number {
 }
 
 export function getBuildingCost(state: FarmState, kind: BuildingKind): number {
-	const owned = Object.values(state.tiles).filter(
-		(t) => t.kind === kind,
-	).length;
+	let owned = Object.values(state.tiles).filter((t) => t.kind === kind).length;
+	// The farm's first log was free
+	if (kind === "log") owned = Math.max(0, owned - 1);
 	const { base, growth } = BUILDING_COSTS[kind];
 	return Math.round(base * growth ** owned);
 }
 
-/** Buy a new plot on an empty spot beside the farm */
-export function buyPlot(state: FarmState, pos: Position): boolean {
+/** Is this spot far from every hollow log on the farm? */
+function isFarFromLogs(state: FarmState, pos: Position): boolean {
+	return Object.entries(state.tiles).every(([key, tile]) => {
+		if (tile.kind !== "log") return true;
+		const log = parseKey(key);
+		const distance = Math.abs(log.x - pos.x) + Math.abs(log.y - pos.y);
+		return distance >= FARM.LOG_DISCOVERY_DISTANCE;
+	});
+}
+
+/**
+ * Buy a new plot on an empty spot beside the farm. Far from every log, it
+ * turns out to hold an old hollow log instead. Returns what was found, or
+ * null if it couldn't be bought.
+ */
+export function buyPlot(
+	state: FarmState,
+	pos: Position,
+): "plot" | "log" | null {
 	const cost = getPlotCost(state);
 	const isSpot = getExpansionSpots(state).some(
 		(spot) => spot.x === pos.x && spot.y === pos.y,
 	);
-	if (!isSpot || state.money < cost) return false;
+	if (!isSpot || state.money < cost) return null;
 
 	state.money -= cost;
 	state.plotsBought += 1;
+	if (isFarFromLogs(state, pos)) {
+		state.tiles[posKey(pos.x, pos.y)] = { kind: "log" };
+		return "log";
+	}
 	state.tiles[posKey(pos.x, pos.y)] = emptyPlot();
-	return true;
+	return "plot";
 }
 
 function newBuilding(kind: BuildingKind): FarmTile {
@@ -945,6 +1284,8 @@ export function deserializeFarm(json: string, now: number): LoadedFarm | null {
 		plotsBought: state.plotsBought ?? 0,
 		helpers,
 		nextHelperId: state.nextHelperId ?? 1,
+		upgrades: state.upgrades ?? {},
+		seed: typeof state.seed === "number" ? state.seed : 1,
 	};
 	const awayMs = Math.min(Math.max(now - save.savedAt, 0), FARM.OFFLINE_CAP_MS);
 	const soldBefore = restored.totalSold;

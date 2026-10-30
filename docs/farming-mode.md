@@ -117,5 +117,14 @@ Example chain:
 4. **Cooking** ✅ - items (mushrooms, skewers, water, stew), the campfire,
    well and stew pot, a "both" station setting (the default at cooking
    stations), and cooking by hand by tapping stations.
-5. **More helpers and progression** - Hopper, Skater, Fairy; upgrades,
-   golden mushrooms, extra logs, sounds and balancing.
+5. **More helpers and progression** ✅ - Hopper (leaps 2 tiles), Skater
+   (slides and turns right when blocked), Fairy (zips between two rings,
+   tending the 3x3 patch around each); upgrades (bigger baskets, helper
+   baskets, quicker helpers, faster growth, golden mushrooms worth 25);
+   extra hollow logs, bought or found in plots far from every log; and a
+   balancing pass (helpers cost 60 and pay for themselves in a few
+   minutes; clever layouts like a Skater loop earn ~50 🍄/min).
+
+Hopper, Skater and Fairy currently borrow Sprout's and Dew's art with a
+badge; the sprite table in `src/farm/FarmHelper.vue` is ready for their
+own art.

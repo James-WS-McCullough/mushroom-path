@@ -6,6 +6,8 @@ import {
 	playRandomDirt,
 	playRandomPop,
 	playStone,
+	playSuccess,
+	playTeleportPoof,
 	playUndo,
 	playWater,
 } from "../composables/useSound";
@@ -16,6 +18,7 @@ import FarmTile from "./FarmTile.vue";
 import {
 	type BuildingKind,
 	buyPlot,
+	buyUpgrade,
 	countItems,
 	createFarm,
 	cycleStationSetting,
@@ -25,6 +28,7 @@ import {
 	type FarmState,
 	getBuildingCost,
 	getExpansionSpots,
+	getHelperBasketCapacity,
 	getHelperCost,
 	getHelperRoute,
 	getPlotCost,
@@ -32,6 +36,9 @@ import {
 	getSprinkledKeys,
 	getStationSetting,
 	getTile,
+	getUpgradeCost,
+	getUpgradeLevel,
+	HELPER_TYPES,
 	type Helper,
 	type HelperType,
 	hireHelper,
@@ -46,10 +53,13 @@ import {
 	removeHelper,
 	type StationSetting,
 	serializeFarm,
+	setFairyRing,
 	type TapResult,
 	tapTile,
 	tick,
 	turnHelper,
+	UPGRADES,
+	type UpgradeKind,
 } from "./simulation";
 
 const emit = defineEmits<{
@@ -223,8 +233,32 @@ function cycleSetting(position: Position) {
 	}
 }
 
+const HELPER_ICONS: Record<HelperType, string> = {
+	sprout: "🌱",
+	dew: "💧",
+	hopper: "🐇",
+	skater: "⛸️",
+	fairy: "🧚",
+};
+
 function helperName(helper: Helper): string {
-	return helper.type === "sprout" ? "Sprout" : "Dew";
+	return HELPER_TYPES[helper.type].name;
+}
+
+/** A Fairy waiting for the player to choose her second ring */
+const placingRingFor = ref<number | null>(null);
+
+function placeRing(position: Position): boolean {
+	if (placingRingFor.value === null) return false;
+	if (setFairyRing(farm, placingRingFor.value, position)) {
+		playTeleportPoof();
+		placingRingFor.value = null;
+		saveFarm();
+	} else {
+		playLand();
+		showPopup(position, "Pick a plot or path", "warn");
+	}
+	return true;
 }
 
 function helperStats(helper: Helper) {
@@ -240,6 +274,7 @@ function helperStats(helper: Helper) {
 }
 
 function handleHelperClick(helper: Helper) {
+	if (placeRing({ x: helper.x, y: helper.y })) return;
 	if (mode.value === "build") {
 		handleBuildTap({ x: helper.x, y: helper.y });
 		return;
@@ -277,6 +312,24 @@ const movingHelperId = ref<number | null>(null);
 
 const plotCost = computed(() => getPlotCost(farm));
 const helperCost = computed(() => getHelperCost(farm));
+const showUpgrades = ref(false);
+
+const UPGRADE_ICONS: Record<UpgradeKind, string> = {
+	basket: "🧺",
+	helperBasket: "👜",
+	helperSpeed: "👟",
+	growth: "🌱",
+	golden: "🌟",
+};
+
+function purchaseUpgrade(kind: UpgradeKind) {
+	if (buyUpgrade(farm, kind)) {
+		playSuccess();
+		saveFarm();
+	} else {
+		playLand();
+	}
+}
 const sprinkledKeys = computed(() => getSprinkledKeys(farm));
 
 const BUILD_TOOLS: {
@@ -286,13 +339,21 @@ const BUILD_TOOLS: {
 }[] = [
 	{ tool: "sprout", icon: "🌱", label: "Sprout" },
 	{ tool: "dew", icon: "💧", label: "Dew" },
+	{ tool: "hopper", icon: "🐇", label: "Hopper" },
+	{ tool: "skater", icon: "⛸️", label: "Skater" },
+	{ tool: "fairy", icon: "🧚", label: "Fairy" },
 	{ tool: "barrel", icon: "🫙", label: "Barrel" },
 	{ tool: "path", icon: "🪨", label: "Path" },
 	{ tool: "sprinkler", icon: "💦", label: "Sprinkler" },
 	{ tool: "campfire", icon: "🔥", label: "Campfire" },
 	{ tool: "well", icon: "🪣", label: "Well" },
 	{ tool: "stewpot", icon: "🍲", label: "Stew pot" },
+	{ tool: "log", icon: "🪵", label: "Hollow log" },
 ];
+
+function isHelperTool(t: Tool): t is HelperType {
+	return t !== null && t in HELPER_TYPES;
+}
 
 /** Item icons with counts, e.g. "🍄4 🍢1" */
 function describeItems(inventory: Inventory): string {
@@ -310,9 +371,7 @@ const canSellBasket = computed(() =>
 );
 
 function toolCost(t: BuildingKind | HelperType): number {
-	return t === "sprout" || t === "dew"
-		? helperCost.value
-		: getBuildingCost(farm, t);
+	return isHelperTool(t) ? getHelperCost(farm, t) : getBuildingCost(farm, t);
 }
 
 /** Faded plots for sale around the farm, shown while building */
@@ -349,7 +408,12 @@ function isMovingFrom(position: Position): boolean {
 
 function handleGhostTap(position: Position) {
 	const cost = plotCost.value;
-	if (buyPlot(farm, position)) {
+	const found = buyPlot(farm, position);
+	if (found === "log") {
+		playSuccess();
+		showPopup(position, "Found a hollow log! 🪵", "good");
+		saveFarm();
+	} else if (found) {
 		playRandomDirt();
 		showPopup(position, `-${formatNumber(cost)} 🍄`, "info");
 		saveFarm();
@@ -371,11 +435,16 @@ function handleBuildTap(position: Position) {
 	);
 	const current = tool.value;
 
-	if (current === "sprout" || current === "dew") {
-		const cost = helperCost.value;
-		if (hireHelper(farm, current, position)) {
+	if (placeRing(position)) return;
+
+	if (isHelperTool(current)) {
+		const cost = getHelperCost(farm, current);
+		const hired = hireHelper(farm, current, position);
+		if (hired) {
 			playRandomPop();
 			spent(position, cost);
+			// A Fairy needs a second ring to zip to
+			if (hired.type === "fairy") placingRingFor.value = hired.id;
 		} else if (farm.money < cost && tile) {
 			playLand();
 			showPopup(position, `Need ${formatNumber(cost)} 🍄`, "warn");
@@ -389,7 +458,8 @@ function handleBuildTap(position: Position) {
 		current === "path" ||
 		current === "campfire" ||
 		current === "well" ||
-		current === "stewpot"
+		current === "stewpot" ||
+		current === "log"
 	) {
 		const cost = getBuildingCost(farm, current);
 		if (placeBuilding(farm, current, position)) {
@@ -512,6 +582,7 @@ function showPopup(position: Position, text: string, tone: Popup["tone"]) {
 }
 
 function handleTap(position: Position) {
+	if (placeRing(position)) return;
 	if (mode.value === "build") {
 		handleBuildTap(position);
 		return;
@@ -526,8 +597,13 @@ function handleTap(position: Position) {
 			showPopup(position, "💧", "info");
 			break;
 		case "harvested":
-			playRandomPop();
-			showPopup(position, "+1 🧺", "good");
+			if (result.item === "golden") {
+				playSuccess();
+				showPopup(position, "Golden! 🌟", "good");
+			} else {
+				playRandomPop();
+				showPopup(position, "+1 🧺", "good");
+			}
 			break;
 		case "basketFull":
 			playLand();
@@ -554,8 +630,19 @@ const isBasketFull = computed(() => basketCount.value >= farm.basketCapacity);
 
 /** A gentle nudge for brand new farms, and what each build tool does */
 const hint = computed(() => {
+	if (placingRingFor.value !== null) {
+		return "Tap a plot or path for the Fairy's second ring - she'll zip between them";
+	}
 	if (mode.value === "build") {
 		const current = tool.value;
+		if (current === "hopper")
+			return "Tap a plot or path - Hopper leaps 2 tiles at a time along her row";
+		if (current === "skater")
+			return "Tap a plot or path - Skater slides along and turns right when she's blocked";
+		if (current === "fairy")
+			return "Tap a plot or path for the Fairy's first ring - she tends the patch around each ring";
+		if (current === "log")
+			return "Tap a plot for another hollow log to sell at (or find one by expanding far away)";
 		if (current === "sprout")
 			return "Tap a plot or path - Sprout walks left and right along her row";
 		if (current === "dew")
@@ -731,10 +818,10 @@ function formatDuration(ms: number): string {
     <section v-if="selectedHelper && mode === 'farm'" class="helper-panel">
       <div class="helper-panel__info">
         <strong class="helper-panel__name">
-          {{ selectedHelper.type === "sprout" ? "🌱" : "💧" }} {{ helperName(selectedHelper) }}
+          {{ HELPER_ICONS[selectedHelper.type] }} {{ helperName(selectedHelper) }}
         </strong>
         <span>
-          🧺 {{ countItems(selectedHelper.basket) }}/{{ FARM.HELPER_BASKET }}
+          🧺 {{ countItems(selectedHelper.basket) }}/{{ getHelperBasketCapacity(farm) }}
           {{ describeItems(selectedHelper.basket) }}
         </span>
         <span v-if="helperStats(selectedHelper).perMinute !== null">
@@ -744,14 +831,55 @@ function formatDuration(ms: number): string {
           ⏳ {{ helperStats(selectedHelper).waiting }}% waiting
         </span>
       </div>
-      <p class="helper-panel__tip">
+      <p v-if="routeStations.length > 0" class="helper-panel__tip">
         Tap the badges on her stations to choose: drop off, pick up or ignore.
       </p>
+      <p v-else class="helper-panel__tip helper-panel__warn">
+        She doesn't pass anywhere to drop off - put the log, a barrel or a campfire beside her route.
+      </p>
       <div class="helper-panel__actions">
-        <button class="helper-panel__button" @click="turnSelected">↔ Turn around</button>
+        <button
+          v-if="selectedHelper.type === 'fairy'"
+          class="helper-panel__button"
+          @click="placingRingFor = selectedHelper.id"
+        >
+          ✨ Move ring
+        </button>
+        <button v-else class="helper-panel__button" @click="turnSelected">
+          {{ selectedHelper.type === "skater" ? "↻ Turn right" : "↔ Turn around" }}
+        </button>
         <button class="helper-panel__button" @click="selectedHelperId = null">Done</button>
       </div>
     </section>
+
+    <!-- Upgrades -->
+    <Transition name="hint">
+      <div v-if="showUpgrades" class="away" @click="showUpgrades = false">
+        <div class="away__card upgrades" @click.stop>
+          <h2 class="away__title">Upgrades ⭐</h2>
+          <ul class="upgrades__list">
+            <li v-for="(upgrade, kind) in UPGRADES" :key="kind" class="upgrade">
+              <span class="upgrade__icon">{{ UPGRADE_ICONS[kind] }}</span>
+              <span class="upgrade__text">
+                <strong>{{ upgrade.name }}</strong>
+                <small>{{ upgrade.description }}</small>
+                <small class="upgrade__level">
+                  Level {{ getUpgradeLevel(farm, kind) }}/{{ upgrade.max }}
+                </small>
+              </span>
+              <button
+                class="upgrade__buy"
+                :disabled="getUpgradeCost(farm, kind) === null || farm.money < (getUpgradeCost(farm, kind) ?? 0)"
+                @click="purchaseUpgrade(kind)"
+              >
+                {{ getUpgradeCost(farm, kind) === null ? "Max" : `${formatNumber(getUpgradeCost(farm, kind) ?? 0)} 🍄` }}
+              </button>
+            </li>
+          </ul>
+          <button class="away__button" @click="showUpgrades = false">Done</button>
+        </div>
+      </div>
+    </Transition>
 
     <!-- While you were away -->
     <Transition name="hint">
@@ -770,6 +898,10 @@ function formatDuration(ms: number): string {
 
     <footer class="farm-tools">
       <div v-if="mode === 'build'" class="tool-row">
+        <button class="tool tool--upgrades" @click="showUpgrades = true">
+          <span class="tool__icon">⭐</span>
+          <span class="tool__label">Upgrades</span>
+        </button>
         <button
           v-for="item in BUILD_TOOLS"
           :key="item.tool"
@@ -1241,6 +1373,67 @@ function formatDuration(ms: number): string {
   margin: 0 0 16px;
   font-size: 15px;
   line-height: 1.5;
+}
+
+.upgrades {
+  width: min(360px, 100%);
+  max-width: none;
+}
+
+.upgrades__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.upgrade {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(139, 106, 78, 0.12);
+}
+
+.upgrade__icon {
+  font-size: 24px;
+}
+
+.upgrade__text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  font-size: 14px;
+}
+
+.upgrade__level {
+  opacity: 0.7;
+}
+
+.upgrade__buy {
+  min-width: 72px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 999px;
+  background: #d98a5f;
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.upgrade__buy:disabled {
+  background: rgba(139, 106, 78, 0.35);
+  cursor: default;
+}
+
+.tool--upgrades {
+  background: rgba(255, 220, 120, 0.22);
 }
 
 .away__button {

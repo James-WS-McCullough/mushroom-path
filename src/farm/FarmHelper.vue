@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { countItems, type Helper, ITEMS, type ItemKind } from "./simulation";
+import {
+	countItems,
+	type Helper,
+	type HelperType,
+	ITEMS,
+	type ItemKind,
+} from "./simulation";
 
 const props = defineProps<{
 	helper: Helper;
@@ -15,18 +21,36 @@ const emit = defineEmits<{
 	select: [];
 }>();
 
-/** Each helper's art: standing, hopping, and waiting for something to ripen */
-const SPRITES = {
-	sprout: {
-		idle: "/art/MushroomGirl.webp",
-		hop: "/art/MushroomGirl-Jump.webp",
-		wait: "/art/MushroomGirl-Stuck.webp",
-	},
-	dew: {
-		idle: "/art/DialogueSprites/BlueGirl-Normal.webp",
-		hop: "/art/DialogueSprites/BlueGirl-Laughing.webp",
-		wait: "/art/DialogueSprites/BlueGirl-Thinking.webp",
-	},
+const SPROUT_ART = {
+	idle: "/art/MushroomGirl.webp",
+	hop: "/art/MushroomGirl-Jump.webp",
+	wait: "/art/MushroomGirl-Stuck.webp",
+};
+
+const DEW_ART = {
+	idle: "/art/DialogueSprites/BlueGirl-Normal.webp",
+	hop: "/art/DialogueSprites/BlueGirl-Laughing.webp",
+	wait: "/art/DialogueSprites/BlueGirl-Thinking.webp",
+};
+
+/**
+ * Each helper's art: standing, hopping, and waiting for something to
+ * ripen. Hopper, Skater and Fairy borrow Sprout's and Dew's art (with a
+ * badge to tell them apart) until they have their own.
+ */
+const SPRITES: Record<HelperType, typeof SPROUT_ART> = {
+	sprout: SPROUT_ART,
+	dew: DEW_ART,
+	hopper: SPROUT_ART,
+	skater: DEW_ART,
+	fairy: SPROUT_ART,
+};
+
+/** Badges for the helpers that share art */
+const BADGES: Partial<Record<HelperType, string>> = {
+	hopper: "🐇",
+	skater: "⛸️",
+	fairy: "🧚",
 };
 
 const sprite = computed(() => {
@@ -47,8 +71,12 @@ const basketLabel = computed(() =>
 		.join(""),
 );
 
-// The sprite faces left; Sprout faces the way she walks, Dew looks along her column
-const facingRight = computed(() => props.helper.dir === 1);
+// The sprite faces left; flip it when she's heading right
+const facingRight = computed(() =>
+	props.helper.type === "skater"
+		? props.helper.heading === "right"
+		: props.helper.dir === 1,
+);
 </script>
 
 <template>
@@ -57,6 +85,7 @@ const facingRight = computed(() => props.helper.dir === 1);
       'helper',
       `helper--${helper.type}`,
       `helper--${helper.lastMove}`,
+      { 'helper--dew-art': SPRITES[helper.type] === DEW_ART },
       { 'helper--selected': selected, 'helper--full': carried >= basketCapacity },
     ]"
     :style="{ transform: `translate(${left}px, ${top}px)` }"
@@ -72,6 +101,7 @@ const facingRight = computed(() => props.helper.dir === 1);
         :class="['helper__sprite', { 'helper__sprite--right': facingRight }]"
       />
     </span>
+    <span v-if="BADGES[helper.type]" class="helper__badge">{{ BADGES[helper.type] }}</span>
     <span v-if="carried > 0" class="helper__basket">{{ basketLabel }}</span>
   </button>
 </template>
@@ -153,13 +183,56 @@ const facingRight = computed(() => props.helper.dir === 1);
 }
 
 /* Dew's art is a taller portrait, so she gets a narrower box */
-.helper--dew .helper__body {
+.helper--dew-art .helper__body {
   width: 52px;
   height: 78px;
 }
 
 .helper__sprite {
   object-position: bottom;
+}
+
+/* The Fairy pops between her rings instead of walking */
+.helper--fairy {
+  transition: none;
+}
+
+.helper--fairy .helper__body {
+  filter: drop-shadow(0 0 6px rgba(255, 240, 170, 0.9));
+}
+
+.helper--teleport .helper__body {
+  animation: helper-poof 0.5s ease-out;
+}
+
+@keyframes helper-poof {
+  0% {
+    transform: translateX(-50%) scale(0.2);
+    opacity: 0;
+  }
+  70% {
+    transform: translateX(-50%) scale(1.1);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(-50%) scale(1);
+  }
+}
+
+.helper__badge {
+  position: absolute;
+  right: -2px;
+  bottom: 2px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 252, 240, 0.95);
+  font-size: 13px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
 }
 
 .helper--selected .helper__shadow {
@@ -194,7 +267,8 @@ const facingRight = computed(() => props.helper.dir === 1);
     transition: none;
   }
   .helper--walk .helper__body,
-  .helper--jump .helper__body {
+  .helper--jump .helper__body,
+  .helper--teleport .helper__body {
     animation: none;
   }
 }

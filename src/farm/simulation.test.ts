@@ -80,7 +80,10 @@ describe("farm simulation", () => {
 		tapTile(farm, PLOT);
 		tick(farm, FARM.GROW_MS);
 
-		expect(tapTile(farm, PLOT)).toEqual({ kind: "harvested" });
+		expect(tapTile(farm, PLOT)).toEqual({
+			kind: "harvested",
+			item: "mushroom",
+		});
 		expect(farm.basket).toEqual({ mushroom: 1 });
 		expect(getTile(farm, PLOT)).toEqual({
 			kind: "plot",
@@ -177,7 +180,7 @@ describe("farm simulation", () => {
 			farm.money = 100;
 			const firstCost = getPlotCost(farm);
 
-			expect(buyPlot(farm, { x: 0, y: -1 })).toBe(true);
+			expect(buyPlot(farm, { x: 0, y: -1 })).toBe("plot");
 			expect(getTile(farm, { x: 0, y: -1 })).toEqual({
 				kind: "plot",
 				growth: null,
@@ -190,11 +193,11 @@ describe("farm simulation", () => {
 		it("won't buy without enough mushrooms, or away from the farm", () => {
 			const farm = createFarm();
 			farm.money = getPlotCost(farm) - 1;
-			expect(buyPlot(farm, { x: 0, y: -1 })).toBe(false);
+			expect(buyPlot(farm, { x: 0, y: -1 })).toBeNull();
 
 			farm.money = 1000;
-			expect(buyPlot(farm, { x: 7, y: 7 })).toBe(false);
-			expect(buyPlot(farm, { x: 1, y: 1 })).toBe(false);
+			expect(buyPlot(farm, { x: 7, y: 7 })).toBeNull();
+			expect(buyPlot(farm, { x: 1, y: 1 })).toBeNull();
 			expect(farm.money).toBe(1000);
 		});
 	});

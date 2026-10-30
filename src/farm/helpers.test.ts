@@ -57,6 +57,8 @@ function makeFarm(rows: string[]): FarmState {
 		plotsBought: 0,
 		helpers: [],
 		nextHelperId: 1,
+		upgrades: {},
+		seed: 1,
 	};
 }
 
