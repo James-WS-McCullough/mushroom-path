@@ -1235,9 +1235,9 @@ function handleClick() {
 /* Bramble tile - a tangle of thorny canes */
 .tile--bramble {
   background:
-    radial-gradient(circle at 35% 40%, rgba(70, 40, 70, 0.5) 0%, transparent 55%),
-    radial-gradient(circle at 70% 70%, rgba(20, 12, 24, 0.45) 0%, transparent 50%),
-    linear-gradient(135deg, #3d2c45 0%, #30223a 55%, #251a2e 100%);
+    radial-gradient(circle at 35% 40%, rgba(70, 50, 72, 0.35) 0%, transparent 55%),
+    radial-gradient(circle at 70% 70%, rgba(24, 16, 28, 0.3) 0%, transparent 50%),
+    linear-gradient(135deg, #3c2f43 0%, #33283a 55%, #2b2232 100%);
   cursor: not-allowed;
   /* Let canes reach across the gap to neighbouring brambles */
   overflow: visible;
@@ -1259,36 +1259,36 @@ function handleClick() {
 }
 
 .bramble__shadow path {
-  stroke: rgba(12, 6, 14, 0.55);
+  stroke: rgba(12, 6, 14, 0.3);
 }
 
 .bramble__shadow .bramble__thorn-shapes {
-  fill: rgba(12, 6, 14, 0.45);
+  fill: rgba(12, 6, 14, 0.25);
   stroke: none;
 }
 
 .bramble__cane--front {
-  stroke: #7c3456;
+  stroke: #604158;
 }
 
 .bramble__cane--back {
-  stroke: #4a2340;
+  stroke: #47324a;
 }
 
 .bramble .bramble__thorns {
-  fill: #d6a9b6;
-  stroke: #8a4d66;
+  fill: #94788a;
+  stroke: #604158;
   stroke-width: 0.4;
   stroke-linejoin: round;
 }
 
 .bramble__highlights path {
-  stroke: rgba(222, 140, 174, 0.45);
+  stroke: rgba(176, 136, 160, 0.25);
 }
 
 .bramble__berries circle {
-  fill: #2a1830;
-  stroke: #4c2f55;
+  fill: #2c2032;
+  stroke: #4a3a50;
   stroke-width: 0.6;
 }
 
