@@ -175,10 +175,11 @@ describe("farm simulation", () => {
 			expect(spots).not.toContain("5,5");
 		});
 
-		it("buys a plot beside the farm, and the next costs the same", () => {
+		it("buys a plot beside the farm, without changing other plots' prices", () => {
 			const farm = createFarm();
 			farm.money = 100;
-			const firstCost = getPlotCost();
+			const firstCost = getPlotCost({ x: 0, y: -1 });
+			expect(firstCost).toBe(FARM.PLOT_COST);
 
 			expect(buyPlot(farm, { x: 0, y: -1 })).toBe("plot");
 			expect(getTile(farm, { x: 0, y: -1 })).toEqual({
@@ -187,12 +188,22 @@ describe("farm simulation", () => {
 				watered: false,
 			});
 			expect(farm.money).toBe(100 - firstCost);
-			expect(getPlotCost()).toBe(firstCost);
+			expect(getPlotCost({ x: 1, y: -1 })).toBe(firstCost);
+		});
+
+		it("charges more for plots further out", () => {
+			const near = getPlotCost({ x: 0, y: -1 });
+			const further = getPlotCost({ x: 0, y: -2 });
+			const far = getPlotCost({ x: 0, y: -6 });
+			expect(further).toBeGreaterThan(near);
+			expect(far).toBeGreaterThan(further);
+			// Rings are square, so corners cost the same as edges
+			expect(getPlotCost({ x: -2, y: -2 })).toBe(further);
 		});
 
 		it("won't buy without enough mushrooms, or away from the farm", () => {
 			const farm = createFarm();
-			farm.money = getPlotCost() - 1;
+			farm.money = getPlotCost({ x: 0, y: -1 }) - 1;
 			expect(buyPlot(farm, { x: 0, y: -1 })).toBeNull();
 
 			farm.money = 1000;

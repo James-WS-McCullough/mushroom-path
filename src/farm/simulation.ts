@@ -24,8 +24,10 @@ export const FARM = {
 	BASKET_CAPACITY: 10,
 	/** Most time away that counts towards offline progress */
 	OFFLINE_CAP_MS: 8 * 60 * 60 * 1000,
-	/** What each extra plot costs */
+	/** What a plot right beside the starting patch costs */
 	PLOT_COST: 10,
+	/** Each ring further out from the starting patch multiplies a plot's price by this */
+	PLOT_DISTANCE_GROWTH: 1.3,
 	/** How long a helper takes to walk one tile */
 	HELPER_STEP_MS: 1000,
 	/** Items a helper can carry */
@@ -1105,8 +1107,29 @@ export function getExpansionSpots(state: FarmState): Position[] {
 	return [...spots.values()];
 }
 
-export function getPlotCost(): number {
-	return FARM.PLOT_COST;
+/** The middle of the starting patch, which plot prices are measured from */
+const FARM_CENTRE = { x: 1, y: 1 };
+
+/** How many rings out from the starting patch a spot is (the first ring around it is 1) */
+function getPlotRing(pos: Position): number {
+	const distance = Math.max(
+		Math.abs(pos.x - FARM_CENTRE.x),
+		Math.abs(pos.y - FARM_CENTRE.y),
+	);
+	return Math.max(1, distance - 1);
+}
+
+/** Plots cost more the further out they are; buying one never changes another's price */
+export function getPlotCost(pos: Position): number {
+	return Math.round(
+		FARM.PLOT_COST * FARM.PLOT_DISTANCE_GROWTH ** (getPlotRing(pos) - 1),
+	);
+}
+
+/** The cheapest plot for sale right now, or null if there's nowhere to expand */
+export function getCheapestPlotCost(state: FarmState): number | null {
+	const costs = getExpansionSpots(state).map(getPlotCost);
+	return costs.length > 0 ? Math.min(...costs) : null;
 }
 
 export function getBuildingCost(kind: BuildingKind): number {
@@ -1132,7 +1155,7 @@ export function buyPlot(
 	state: FarmState,
 	pos: Position,
 ): "plot" | "log" | null {
-	const cost = getPlotCost();
+	const cost = getPlotCost(pos);
 	const isSpot = getExpansionSpots(state).some(
 		(spot) => spot.x === pos.x && spot.y === pos.y,
 	);
