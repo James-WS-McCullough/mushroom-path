@@ -20,7 +20,9 @@ Ripe mushrooms never wilt - they wait patiently to be picked.
 
 - Starts as a 3×3 patch of plots plus the hollow log.
 - Faded "ghost" plots appear next to the farm showing their price; tap to buy.
-  Prices grow exponentially (roughly `10 × 1.15ⁿ`).
+  Plots, buildings and helpers cost the same every time, so more 🍄 means
+  a bigger farm rather than pricier tiles. Only upgrades get dearer per
+  level.
 - Everything on the farm sits on a tile: plots, the log, barrels, sprinklers,
   paths and cooking stations. Non-plot tiles are obstacles for helpers.
 - A general place / move / remove tool lets players rearrange their layout.

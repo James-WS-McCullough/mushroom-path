@@ -310,8 +310,8 @@ const movingFrom = ref<Position | null>(null);
 /** A helper picked up with the move tool */
 const movingHelperId = ref<number | null>(null);
 
-const plotCost = computed(() => getPlotCost(farm));
-const helperCost = computed(() => getHelperCost(farm));
+const plotCost = computed(() => getPlotCost());
+const helperCost = computed(() => getHelperCost());
 const showUpgrades = ref(false);
 
 const UPGRADE_ICONS: Record<UpgradeKind, string> = {
@@ -371,7 +371,7 @@ const canSellBasket = computed(() =>
 );
 
 function toolCost(t: BuildingKind | HelperType): number {
-	return isHelperTool(t) ? getHelperCost(farm, t) : getBuildingCost(farm, t);
+	return isHelperTool(t) ? getHelperCost(t) : getBuildingCost(t);
 }
 
 /** Faded plots for sale around the farm, shown while building */
@@ -438,7 +438,7 @@ function handleBuildTap(position: Position) {
 	if (placeRing(position)) return;
 
 	if (isHelperTool(current)) {
-		const cost = getHelperCost(farm, current);
+		const cost = getHelperCost(current);
 		const hired = hireHelper(farm, current, position);
 		if (hired) {
 			playRandomPop();
@@ -461,7 +461,7 @@ function handleBuildTap(position: Position) {
 		current === "stewpot" ||
 		current === "log"
 	) {
-		const cost = getBuildingCost(farm, current);
+		const cost = getBuildingCost(current);
 		if (placeBuilding(farm, current, position)) {
 			if (current === "sprinkler") playWater();
 			else playStone();

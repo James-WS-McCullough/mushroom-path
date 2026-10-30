@@ -24,15 +24,14 @@ export const FARM = {
 	BASKET_CAPACITY: 10,
 	/** Most time away that counts towards offline progress */
 	OFFLINE_CAP_MS: 8 * 60 * 60 * 1000,
-	/** The first extra plot costs this, and each one after costs more */
-	PLOT_BASE_COST: 10,
-	PLOT_COST_GROWTH: 1.15,
+	/** What each extra plot costs */
+	PLOT_COST: 10,
 	/** How long a helper takes to walk one tile */
 	HELPER_STEP_MS: 1000,
 	/** Items a helper can carry */
 	HELPER_BASKET: 5,
-	HELPER_BASE_COST: 60,
-	HELPER_COST_GROWTH: 1.4,
+	/** What a Sprout or Dew costs; other helpers cost a multiple of this */
+	HELPER_COST: 60,
 	/** Items a barrel holds */
 	BARREL_CAPACITY: 20,
 	/** A plot bought at least this far from every log turns out to hold a hollow log */
@@ -182,16 +181,16 @@ function sell(inventory: Inventory): { count: number; earned: number } {
 // BUILDINGS & STATE
 // =============================================================================
 
-/** What each kind of building costs, and how much more each extra one costs */
+/** What each kind of building costs - the same every time, so more 🍄 means a bigger farm */
 export const BUILDING_COSTS = {
-	sprinkler: { base: 40, growth: 1.3 },
-	barrel: { base: 25, growth: 1.2 },
-	path: { base: 2, growth: 1.02 },
-	campfire: { base: 60, growth: 1.3 },
-	well: { base: 120, growth: 1.3 },
-	stewpot: { base: 250, growth: 1.35 },
+	sprinkler: 40,
+	barrel: 25,
+	path: 2,
+	campfire: 60,
+	well: 120,
+	stewpot: 250,
 	/** Extra hollow logs (the first one comes with the farm) */
-	log: { base: 1500, growth: 3 },
+	log: 1500,
 } as const;
 
 export type BuildingKind = keyof typeof BUILDING_COSTS;
@@ -1006,15 +1005,8 @@ export function cycleStationSetting(
 	return next;
 }
 
-export function getHelperCost(
-	state: FarmState,
-	type: HelperType = "sprout",
-): number {
-	return Math.round(
-		FARM.HELPER_BASE_COST *
-			HELPER_TYPES[type].costFactor *
-			FARM.HELPER_COST_GROWTH ** state.helpers.length,
-	);
+export function getHelperCost(type: HelperType = "sprout"): number {
+	return Math.round(FARM.HELPER_COST * HELPER_TYPES[type].costFactor);
 }
 
 /** Hire a helper and set her down on a plot or path */
@@ -1023,7 +1015,7 @@ export function hireHelper(
 	type: HelperType,
 	pos: Position,
 ): Helper | null {
-	const cost = getHelperCost(state, type);
+	const cost = getHelperCost(type);
 	if (!isOnRoute(getTile(state, pos)) || helperAt(state, pos)) return null;
 	if (state.money < cost) return null;
 
@@ -1113,18 +1105,12 @@ export function getExpansionSpots(state: FarmState): Position[] {
 	return [...spots.values()];
 }
 
-export function getPlotCost(state: FarmState): number {
-	return Math.round(
-		FARM.PLOT_BASE_COST * FARM.PLOT_COST_GROWTH ** state.plotsBought,
-	);
+export function getPlotCost(): number {
+	return FARM.PLOT_COST;
 }
 
-export function getBuildingCost(state: FarmState, kind: BuildingKind): number {
-	let owned = Object.values(state.tiles).filter((t) => t.kind === kind).length;
-	// The farm's first log was free
-	if (kind === "log") owned = Math.max(0, owned - 1);
-	const { base, growth } = BUILDING_COSTS[kind];
-	return Math.round(base * growth ** owned);
+export function getBuildingCost(kind: BuildingKind): number {
+	return BUILDING_COSTS[kind];
 }
 
 /** Is this spot far from every hollow log on the farm? */
@@ -1146,7 +1132,7 @@ export function buyPlot(
 	state: FarmState,
 	pos: Position,
 ): "plot" | "log" | null {
-	const cost = getPlotCost(state);
+	const cost = getPlotCost();
 	const isSpot = getExpansionSpots(state).some(
 		(spot) => spot.x === pos.x && spot.y === pos.y,
 	);
@@ -1181,7 +1167,7 @@ export function placeBuilding(
 	kind: BuildingKind,
 	pos: Position,
 ): boolean {
-	const cost = getBuildingCost(state, kind);
+	const cost = getBuildingCost(kind);
 	if (getTile(state, pos)?.kind !== "plot" || state.money < cost) return false;
 	const building = newBuilding(kind);
 	if (blocksHelpers(building) && helperAt(state, pos)) return false;

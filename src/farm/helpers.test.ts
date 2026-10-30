@@ -274,11 +274,11 @@ describe("helpers", () => {
 	});
 
 	describe("hiring and placing", () => {
-		it("costs more for each helper", () => {
+		it("costs the same for each helper", () => {
 			const farm = makeFarm(["...."]);
-			const first = getHelperCost(farm);
+			const first = getHelperCost();
 			hire(farm, "sprout", 0, 0);
-			expect(getHelperCost(farm)).toBeGreaterThan(first);
+			expect(getHelperCost()).toBe(first);
 		});
 
 		it("can only stand on plots and paths, one per tile", () => {
