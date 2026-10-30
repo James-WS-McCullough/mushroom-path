@@ -11,6 +11,7 @@ const emit = defineEmits<{
 	newGame: [];
 	openMusicPlayer: [];
 	startTutorial: [];
+	startFarming: [];
 }>();
 
 const isLeaving = ref(false);
@@ -117,6 +118,12 @@ function handleNewGame() {
 	setTimeout(() => emit("newGame"), 600);
 }
 
+function handleFarming() {
+	if (isLeaving.value) return;
+	isLeaving.value = true;
+	setTimeout(() => emit("startFarming"), 600);
+}
+
 function handleTutorial() {
 	if (isLeaving.value) return;
 	isLeaving.value = true;
@@ -161,6 +168,9 @@ function handleTutorial() {
         <!-- New Game button (only when there's saved progress) -->
         <button v-if="props.hasSavedGame" class="secondary-button" @click="handleNewGame">
           <span class="secondary-text">New Game</span>
+        </button>
+        <button class="secondary-button" @click="handleFarming">
+          <span class="secondary-text">Farming</span>
         </button>
         <button class="secondary-button" @click="handleTutorial">
           <span class="secondary-text">Tutorial</span>

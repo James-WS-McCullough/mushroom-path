@@ -41,6 +41,7 @@ import {
 	tutorialStuckDialogues,
 } from "./data/tutorialDialogues";
 import { tutorialLevels } from "./data/tutorialLevels";
+import FarmScreen from "./farm/FarmScreen.vue";
 import type { Level, WorldElement } from "./types/game";
 import { WorldElement as WE } from "./types/game";
 
@@ -203,6 +204,15 @@ const currentDialogue = ref<DialogueSceneType | null>(null);
 const hasSeenIntro = localStorage.getItem("mushroom-path-intro-seen");
 const isFading = ref(false);
 const confirmAction = ref<"skip" | "restart" | null>(null);
+
+// Farming mode (separate from the puzzle game)
+const showFarm = ref(false);
+
+function openFarm() {
+	initializeAudio();
+	startBackgroundMusic();
+	showFarm.value = true;
+}
 
 // Tutorial world state
 const showFirstTimeModal = ref(false);
@@ -1653,14 +1663,18 @@ watch(isPlayerStuck, (isStuck) => {
 
   <!-- Start Screen -->
   <StartScreen
-    v-if="!gameStarted && !showMusicPlayer && !currentDialogue"
+    v-if="!gameStarted && !showMusicPlayer && !showFarm && !currentDialogue"
     :has-saved-game="hasSavedProgress()"
     @begin="handleBegin"
     @continue="handleContinue"
     @new-game="handleNewGame"
     @open-music-player="showMusicPlayer = true"
     @start-tutorial="handleStartTutorial"
+    @start-farming="openFarm"
   />
+
+  <!-- Farming mode -->
+  <FarmScreen v-if="showFarm" @exit="showFarm = false" />
 
   <!-- Music Player -->
   <MusicPlayer v-if="showMusicPlayer && !currentDialogue" @close="showMusicPlayer = false" />
