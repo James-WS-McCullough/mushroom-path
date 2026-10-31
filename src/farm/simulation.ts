@@ -36,8 +36,12 @@ export const FARM = {
 	HELPER_COST: 60,
 	/** Items a barrel holds */
 	BARREL_CAPACITY: 20,
-	/** A plot bought at least this far from every log turns out to hold a hollow log */
-	LOG_DISCOVERY_DISTANCE: 6,
+	/** Share of the price you get back when removing a building or helper */
+	SELL_BACK: 0.9,
+	/** Hollow logs only turn up in plots at least this many tiles from every log (diagonals count as one) */
+	LOG_DISCOVERY_DISTANCE: 10,
+	/** The chance a plot that far out holds a hollow log */
+	LOG_DISCOVERY_CHANCE: 0.1,
 } as const;
 
 // =============================================================================
@@ -1071,10 +1075,22 @@ export function moveHelper(
 	return true;
 }
 
-export function removeHelper(state: FarmState, helperId: number): boolean {
-	const before = state.helpers.length;
+/** What you get back for removing something that cost this much */
+function sellBackValue(cost: number): number {
+	return Math.floor(cost * FARM.SELL_BACK);
+}
+
+/** Send a helper home, getting most of her price back. Returns the refund, or null if she wasn't found */
+export function removeHelper(
+	state: FarmState,
+	helperId: number,
+): number | null {
+	const helper = state.helpers.find((h) => h.id === helperId);
+	if (!helper) return null;
 	state.helpers = state.helpers.filter((h) => h.id !== helperId);
-	return state.helpers.length < before;
+	const refund = sellBackValue(getHelperCost(helper.type));
+	state.money += refund;
+	return refund;
 }
 
 /** Send a helper the other way (a Skater turns right instead) */
@@ -1141,14 +1157,14 @@ function isFarFromLogs(state: FarmState, pos: Position): boolean {
 	return Object.entries(state.tiles).every(([key, tile]) => {
 		if (tile.kind !== "log") return true;
 		const log = parseKey(key);
-		const distance = Math.abs(log.x - pos.x) + Math.abs(log.y - pos.y);
+		const distance = Math.max(Math.abs(log.x - pos.x), Math.abs(log.y - pos.y));
 		return distance >= FARM.LOG_DISCOVERY_DISTANCE;
 	});
 }
 
 /**
  * Buy a new plot on an empty spot beside the farm. Far from every log, it
- * turns out to hold an old hollow log instead. Returns what was found, or
+ * sometimes turns out to hold an old hollow log instead. Returns what was found, or
  * null if it couldn't be bought.
  */
 export function buyPlot(
@@ -1163,7 +1179,10 @@ export function buyPlot(
 
 	state.money -= cost;
 	state.plotsBought += 1;
-	if (isFarFromLogs(state, pos)) {
+	if (
+		isFarFromLogs(state, pos) &&
+		nextRandom(state) < FARM.LOG_DISCOVERY_CHANCE
+	) {
 		state.tiles[posKey(pos.x, pos.y)] = { kind: "log" };
 		return "log";
 	}
@@ -1217,11 +1236,23 @@ export function moveBuilding(
 }
 
 /** Take down a building (the hollow log stays), leaving an empty plot */
-export function removeBuilding(state: FarmState, pos: Position): boolean {
+/**
+ * Remove a building, leaving an empty plot and getting most of its price
+ * back. Logs give nothing back, and the last log can't be removed.
+ * Returns the refund, or null if it couldn't be removed.
+ */
+export function removeBuilding(state: FarmState, pos: Position): number | null {
 	const tile = getTile(state, pos);
-	if (!tile || tile.kind === "plot" || tile.kind === "log") return false;
+	if (!tile || tile.kind === "plot") return null;
+	if (tile.kind === "log") {
+		const logs = Object.values(state.tiles).filter((t) => t.kind === "log");
+		if (logs.length <= 1) return null;
+	}
 	state.tiles[posKey(pos.x, pos.y)] = emptyPlot();
-	return true;
+	const refund =
+		tile.kind === "log" ? 0 : sellBackValue(getBuildingCost(tile.kind));
+	state.money += refund;
+	return refund;
 }
 
 // =============================================================================

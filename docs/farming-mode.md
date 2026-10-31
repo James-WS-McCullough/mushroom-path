@@ -27,6 +27,8 @@ Ripe mushrooms never wilt - they wait patiently to be picked.
 - Everything on the farm sits on a tile: plots, the log, barrels, sprinklers,
   paths and cooking stations. Non-plot tiles are obstacles for helpers.
 - A general place / move / remove tool lets players rearrange their layout.
+  Removing a building or helper sells it back for 90% of its price; extra
+  logs can be removed for nothing back, but there's always at least one.
 
 ## Water
 
@@ -38,8 +40,9 @@ Ripe mushrooms never wilt - they wait patiently to be picked.
 ## The hollow log
 
 - The one place mushrooms (and cooked goods) are sold.
-- One log per farm for now. Extra logs may later be discovered in far-flung
-  plots or bought at a high price.
+- Extra logs can be bought (1500 🍄), or found by luck: a plot bought at
+  least 10 tiles from every log (diagonals count as one) has a 10% chance
+  of holding one.
 - Movable, so it becomes the heart the supply chain flows towards.
 
 ## Helpers

@@ -238,15 +238,38 @@ describe("upgrades", () => {
 });
 
 describe("hollow logs", () => {
-	it("turn up in plots bought far from every log", () => {
-		const farm = createFarm(1);
-		farm.money = 1e9;
-		// Walk a line of plots out to the left of the farm
-		const results: string[] = [];
-		for (let x = -1; x >= -4; x--)
-			results.push(String(buyPlot(farm, { x, y: 1 })));
-		expect(results).toEqual(["plot", "plot", "log", "plot"]);
-		expect(getTile(farm, { x: -3, y: 1 })).toEqual({ kind: "log" });
+	/** Buy a line of plots out to the left of the farm, returning what each held */
+	function buyLeftward(seed: number, count: number) {
+		const farm = createFarm(seed);
+		farm.money = 1e12;
+		const found: number[] = [];
+		for (let x = -1; x >= -count; x--)
+			if (buyPlot(farm, { x, y: 1 }) === "log") found.push(x);
+		return { farm, found };
+	}
+
+	it("never turn up within 10 tiles of another log", () => {
+		for (let seed = 1; seed <= 20; seed++) {
+			const { found } = buyLeftward(seed, 60);
+			// The farm's own log is at x=3
+			for (const [i, x] of found.entries())
+				expect(
+					(i === 0 ? 3 : (found[i - 1] as number)) - x,
+				).toBeGreaterThanOrEqual(FARM.LOG_DISCOVERY_DISTANCE);
+		}
+	});
+
+	it("are a rare, repeatable find out there", () => {
+		const seeds = Array.from({ length: 40 }, (_, i) => i + 1);
+		const counts = seeds.map((seed) => buyLeftward(seed, 30).found.length);
+		const total = counts.reduce((a, b) => a + b, 0);
+		// 30 plots out, only ~24 far enough: about one log each on average
+		expect(total / seeds.length).toBeGreaterThan(0.5);
+		expect(total / seeds.length).toBeLessThan(2.5);
+		expect(buyLeftward(7, 30).found).toEqual(buyLeftward(7, 30).found);
+		const { farm, found } = buyLeftward(7, 30);
+		for (const x of found)
+			expect(getTile(farm, { x, y: 1 })).toEqual({ kind: "log" });
 	});
 
 	it("can be built, always for the same price", () => {
