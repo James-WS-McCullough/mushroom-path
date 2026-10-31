@@ -289,14 +289,29 @@ describe("farm simulation", () => {
 			expect(moveBuilding(farm, LOG, PLOT)).toBe(false);
 		});
 
-		it("removes a sprinkler but never the log", () => {
+		it("sells a sprinkler back for 90%, but never removes the only log", () => {
 			const farm = createFarm();
 			farm.money = 1000;
 			placeBuilding(farm, "sprinkler", PLOT);
-			expect(removeBuilding(farm, PLOT)).toBe(true);
+			const before = farm.money;
+			expect(removeBuilding(farm, PLOT)).toBe(
+				Math.floor(getBuildingCost("sprinkler") * 0.9),
+			);
+			expect(farm.money).toBe(
+				before + Math.floor(getBuildingCost("sprinkler") * 0.9),
+			);
 			expect(getTile(farm, PLOT)?.kind).toBe("plot");
-			expect(removeBuilding(farm, LOG)).toBe(false);
-			expect(removeBuilding(farm, { x: 1, y: 1 })).toBe(false);
+			expect(removeBuilding(farm, LOG)).toBeNull();
+			expect(removeBuilding(farm, { x: 1, y: 1 })).toBeNull();
+		});
+
+		it("removes an extra log for nothing back", () => {
+			const farm = createFarm();
+			farm.tiles["0,0"] = { kind: "log" };
+			expect(removeBuilding(farm, PLOT)).toBe(0);
+			expect(farm.money).toBe(0);
+			expect(getTile(farm, PLOT)?.kind).toBe("plot");
+			expect(removeBuilding(farm, LOG)).toBeNull();
 		});
 	});
 });

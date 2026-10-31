@@ -300,12 +300,15 @@ describe("helpers", () => {
 			expect(moveBuilding(farm, { x: 1, y: 0 }, { x: 0, y: 0 })).toBe(false);
 		});
 
-		it("can be sent home", () => {
+		it("can be sent home for 90% of her price back", () => {
 			const farm = makeFarm(["..."]);
 			const sprout = hire(farm, "sprout", 1, 0);
-			expect(removeHelper(farm, sprout.id)).toBe(true);
+			const before = farm.money;
+			const refund = Math.floor(getHelperCost("sprout") * 0.9);
+			expect(removeHelper(farm, sprout.id)).toBe(refund);
+			expect(farm.money).toBe(before + refund);
 			expect(farm.helpers).toHaveLength(0);
-			expect(removeHelper(farm, sprout.id)).toBe(false);
+			expect(removeHelper(farm, sprout.id)).toBeNull();
 		});
 
 		it("turns around when asked", () => {

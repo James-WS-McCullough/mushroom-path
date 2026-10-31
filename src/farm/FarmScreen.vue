@@ -501,14 +501,29 @@ function handleBuildTap(position: Position) {
 	}
 
 	if (current === "remove") {
-		if (helperHere && removeHelper(farm, helperHere.id)) {
+		const helperRefund = helperHere ? removeHelper(farm, helperHere.id) : null;
+		if (helperHere && helperRefund !== null) {
 			playUndo();
-			showPopup(position, `Bye ${helperName(helperHere)}!`, "info");
+			showPopup(
+				position,
+				`Bye ${helperName(helperHere)}! +${formatNumber(helperRefund)} 🍄`,
+				"info",
+			);
 			saveFarm();
-		} else if (removeBuilding(farm, position)) {
+			return;
+		}
+		const refund = removeBuilding(farm, position);
+		if (refund !== null) {
 			playUndo();
-			showPopup(position, "Removed", "info");
+			showPopup(
+				position,
+				refund > 0 ? `+${formatNumber(refund)} 🍄` : "Removed",
+				"info",
+			);
 			saveFarm();
+		} else if (tile?.kind === "log") {
+			playLand();
+			showPopup(position, "You need at least one log!", "warn");
 		}
 	}
 }
@@ -665,7 +680,8 @@ const hint = computed(() => {
 				? "Now tap where it should go"
 				: "Tap a helper or building to pick it up";
 		}
-		if (current === "remove") return "Tap a helper or building to remove it";
+		if (current === "remove")
+			return "Tap a helper or building to sell it back for 90% (logs give nothing back)";
 		return "Tap a faded plot to buy it, or pick something to build";
 	}
 	if (selectedHelper.value) return null;

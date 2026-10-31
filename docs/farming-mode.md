@@ -27,6 +27,8 @@ Ripe mushrooms never wilt - they wait patiently to be picked.
 - Everything on the farm sits on a tile: plots, the log, barrels, sprinklers,
   paths and cooking stations. Non-plot tiles are obstacles for helpers.
 - A general place / move / remove tool lets players rearrange their layout.
+  Removing a building or helper sells it back for 90% of its price; extra
+  logs can be removed for nothing back, but there's always at least one.
 
 ## Water
 
