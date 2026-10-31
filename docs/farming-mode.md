@@ -41,7 +41,7 @@ Ripe mushrooms never wilt - they wait patiently to be picked.
 
 - The one place mushrooms (and cooked goods) are sold.
 - Extra logs can be bought (1500 🍄), or found by luck: a plot bought at
-  least 10 tiles from every log (diagonals count as one) has a 10% chance
+  least 10 tiles from every log (diagonals count as one) has a 3% chance
   of holding one.
 - Movable, so it becomes the heart the supply chain flows towards.
 

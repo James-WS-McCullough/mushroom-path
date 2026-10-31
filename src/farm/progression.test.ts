@@ -260,12 +260,13 @@ describe("hollow logs", () => {
 	});
 
 	it("are a rare, repeatable find out there", () => {
-		const seeds = Array.from({ length: 40 }, (_, i) => i + 1);
+		const seeds = Array.from({ length: 100 }, (_, i) => i + 1);
 		const counts = seeds.map((seed) => buyLeftward(seed, 30).found.length);
 		const total = counts.reduce((a, b) => a + b, 0);
-		// 30 plots out, only ~24 far enough: about one log each on average
-		expect(total / seeds.length).toBeGreaterThan(0.5);
-		expect(total / seeds.length).toBeLessThan(2.5);
+		// 30 plots out, only ~24 far enough: most lines find none at all
+		expect(total / seeds.length).toBeGreaterThan(0.3);
+		expect(total / seeds.length).toBeLessThan(1.2);
+		expect(counts.filter((count) => count === 0).length).toBeGreaterThan(30);
 		expect(buyLeftward(7, 30).found).toEqual(buyLeftward(7, 30).found);
 		const { farm, found } = buyLeftward(7, 30);
 		for (const x of found)
