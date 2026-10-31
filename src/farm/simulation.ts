@@ -36,8 +36,10 @@ export const FARM = {
 	HELPER_COST: 60,
 	/** Items a barrel holds */
 	BARREL_CAPACITY: 20,
-	/** A plot bought at least this far from every log turns out to hold a hollow log */
-	LOG_DISCOVERY_DISTANCE: 6,
+	/** Hollow logs only turn up in plots at least this many tiles from every log (diagonals count as one) */
+	LOG_DISCOVERY_DISTANCE: 10,
+	/** The chance a plot that far out holds a hollow log */
+	LOG_DISCOVERY_CHANCE: 0.1,
 } as const;
 
 // =============================================================================
@@ -1141,14 +1143,14 @@ function isFarFromLogs(state: FarmState, pos: Position): boolean {
 	return Object.entries(state.tiles).every(([key, tile]) => {
 		if (tile.kind !== "log") return true;
 		const log = parseKey(key);
-		const distance = Math.abs(log.x - pos.x) + Math.abs(log.y - pos.y);
+		const distance = Math.max(Math.abs(log.x - pos.x), Math.abs(log.y - pos.y));
 		return distance >= FARM.LOG_DISCOVERY_DISTANCE;
 	});
 }
 
 /**
  * Buy a new plot on an empty spot beside the farm. Far from every log, it
- * turns out to hold an old hollow log instead. Returns what was found, or
+ * sometimes turns out to hold an old hollow log instead. Returns what was found, or
  * null if it couldn't be bought.
  */
 export function buyPlot(
@@ -1163,7 +1165,10 @@ export function buyPlot(
 
 	state.money -= cost;
 	state.plotsBought += 1;
-	if (isFarFromLogs(state, pos)) {
+	if (
+		isFarFromLogs(state, pos) &&
+		nextRandom(state) < FARM.LOG_DISCOVERY_CHANCE
+	) {
 		state.tiles[posKey(pos.x, pos.y)] = { kind: "log" };
 		return "log";
 	}
