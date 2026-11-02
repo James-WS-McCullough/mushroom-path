@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import GameTile from "../components/GameTile.vue";
-import type { Position } from "../types/game";
+import type { Direction, Position } from "../types/game";
 import { TileType } from "../types/game";
 import {
 	canCook,
@@ -24,6 +24,8 @@ const props = defineProps<{
 	sprinkled?: boolean;
 	/** Highlighted by the build tools (e.g. picked up to move) */
 	selected?: boolean;
+	/** Tube: the sides other tubes roll into this one from */
+	inlets?: Direction[];
 }>();
 
 const isWet = computed(
@@ -71,6 +73,85 @@ const cookProgress = computed(() =>
 // Progress ring around growing plots
 const RING_RADIUS = 7;
 const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
+
+// Tubes: items roll in from an edge (or drop into the funnel in the middle) and out the flow side
+const CENTRE = { x: 32, y: 32 };
+/** Just past the tile's edge, so tubes meet across the gap between tiles */
+const TUBE_EDGES: Record<Direction, { x: number; y: number }> = {
+	up: { x: 32, y: -2 },
+	down: { x: 32, y: 66 },
+	left: { x: -2, y: 32 },
+	right: { x: 66, y: 32 },
+};
+const FLOW_ANGLES: Record<Direction, number> = {
+	right: 0,
+	down: 90,
+	left: 180,
+	up: -90,
+};
+
+const tube = computed(() => (props.tile.kind === "tube" ? props.tile : null));
+const isIntake = computed(() => (props.inlets ?? []).length === 0);
+
+const tubePath = computed(() => {
+	if (!tube.value) return "";
+	const out = TUBE_EDGES[tube.value.flow];
+	const ins = (props.inlets ?? []).map(
+		(side) => `M${TUBE_EDGES[side].x} ${TUBE_EDGES[side].y} L32 32`,
+	);
+	return [...ins, `M32 32 L${out.x} ${out.y}`].join(" ");
+});
+
+function lerp(
+	a: { x: number; y: number },
+	b: { x: number; y: number },
+	t: number,
+) {
+	return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+}
+
+/** Where each rolling item is, and how far it's turned */
+const rollingItems = computed(() => {
+	const current = tube.value;
+	if (!current) return [];
+	const out = TUBE_EDGES[current.flow];
+	// Rolling left or up turns the other way
+	const spin = current.flow === "left" || current.flow === "up" ? -1 : 1;
+	let waiting = 0;
+	return current.items.flatMap((item, index) => {
+		let point: { x: number; y: number };
+		if (item.progress < 0) {
+			// Piled up in the funnel; only the top few show
+			if (waiting >= 3) return [];
+			point = {
+				x: CENTRE.x + (waiting - 1) * 6,
+				y: CENTRE.y - 2 - waiting * 3,
+			};
+			waiting += 1;
+		} else if (item.from) {
+			const start = TUBE_EDGES[item.from];
+			point =
+				item.progress < 0.5
+					? lerp(start, CENTRE, item.progress * 2)
+					: lerp(CENTRE, out, (item.progress - 0.5) * 2);
+		} else {
+			point = lerp(CENTRE, out, item.progress);
+		}
+		return [
+			{
+				id: index,
+				icon: ITEMS[item.kind].icon,
+				left: `${(point.x / 64) * 100}%`,
+				top: `${(point.y / 64) * 100}%`,
+				turn: Math.max(0, item.progress) * 540 * spin,
+			},
+		];
+	});
+});
+
+const waitingCount = computed(
+	() => tube.value?.items.filter((item) => item.progress < 0).length ?? 0,
+);
 
 const mushroomTile = computed(() => ({
 	type: TileType.MUSHROOM,
@@ -156,6 +237,29 @@ const mushroomTile = computed(() => ({
       >
         {{ countItems(tile.items) }}/{{ FARM.BARREL_CAPACITY }}
       </span>
+    </template>
+
+    <!-- Tube: a wooden slide items roll down, into a barrel at the end -->
+    <template v-else-if="tube">
+      <svg class="tube" viewBox="0 0 64 64" aria-hidden="true">
+        <path class="tube__shadow" :d="tubePath" />
+        <path class="tube__wood" :d="tubePath" />
+        <path class="tube__groove" :d="tubePath" />
+        <g :transform="`rotate(${FLOW_ANGLES[tube.flow]} 32 32)`">
+          <path class="tube__arrow" d="M46 28 L51 32 L46 36" />
+        </g>
+        <g v-if="isIntake">
+          <circle class="tube__funnel" cx="32" cy="32" r="16" />
+          <circle class="tube__mouth" cx="32" cy="32" r="10.5" />
+        </g>
+      </svg>
+      <span
+        v-for="item in rollingItems"
+        :key="item.id"
+        class="tube__item"
+        :style="{ left: item.left, top: item.top, transform: `translate(-50%, -50%) rotate(${item.turn}deg)` }"
+      >{{ item.icon }}</span>
+      <span v-if="waitingCount > 3" class="tube__waiting">{{ waitingCount }}</span>
     </template>
 
     <!-- Cooking stations and the well -->
@@ -459,7 +563,8 @@ const mushroomTile = computed(() => ({
 
 /* Barrel */
 .farm-tile--barrel,
-.farm-tile--path {
+.farm-tile--path,
+.farm-tile--tube {
   background:
     radial-gradient(circle at 25% 80%, rgba(120, 180, 100, 0.4) 0%, transparent 30%),
     linear-gradient(135deg, #7cb668 0%, #5a9a4a 100%);
@@ -678,6 +783,72 @@ const mushroomTile = computed(() => ({
   font-size: 10px;
   line-height: 15px;
   white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Tube */
+.tube {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
+.tube__shadow {
+  stroke: rgba(30, 50, 20, 0.3);
+  stroke-width: 30;
+  transform: translateY(3px);
+}
+
+.tube__wood {
+  stroke: #a9744a;
+  stroke-width: 28;
+}
+
+.tube__groove {
+  stroke: #7a4e2f;
+  stroke-width: 15;
+}
+
+.tube__arrow {
+  stroke: rgba(255, 236, 200, 0.55);
+  stroke-width: 2.5;
+}
+
+.tube__funnel {
+  fill: #c99a68;
+  stroke: #6b4429;
+  stroke-width: 2;
+}
+
+.tube__mouth {
+  fill: #3a2616;
+}
+
+.tube__item {
+  position: absolute;
+  z-index: 3;
+  font-size: 17px;
+  line-height: 1;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35));
+}
+
+.tube__waiting {
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: rgba(40, 24, 14, 0.7);
+  color: #fff6d6;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 14px;
   pointer-events: none;
 }
 

@@ -11,6 +11,7 @@ import type { Direction, Position } from "../types/game";
 import {
 	DIRECTIONS,
 	getDirectionDelta,
+	getOppositeDirection,
 	parseKey,
 	posKey,
 } from "../utils/positionUtils";
@@ -42,6 +43,14 @@ export const FARM = {
 	LOG_DISCOVERY_DISTANCE: 10,
 	/** The chance a plot that far out holds a hollow log */
 	LOG_DISCOVERY_CHANCE: 0.03,
+	/** How long an item takes to roll across one tube tile */
+	TUBE_MS_PER_TILE: 600,
+	/** The gap between items rolling down a tube, in tiles */
+	TUBE_SPACING: 0.34,
+	/** Items a tube's open end holds, waiting to roll in */
+	TUBE_FUNNEL: 6,
+	/** Tubes roll in steps this small so items don't skip tiles */
+	TUBE_STEP_MS: 100,
 } as const;
 
 // =============================================================================
@@ -195,6 +204,7 @@ export const BUILDING_COSTS = {
 	campfire: 60,
 	well: 120,
 	stewpot: 250,
+	tube: 15,
 	/** Extra hollow logs (the first one comes with the farm) */
 	log: 1500,
 } as const;
@@ -238,8 +248,26 @@ export interface MachineTile {
 	progress: number;
 }
 
+/** An item rolling down a tube. `progress` runs 0 → 1 across the tile; below 0 it's waiting in the funnel */
+export interface RollingItem {
+	kind: ItemKind;
+	progress: number;
+	/** The side it rolled in from (none if it was dropped in the funnel) */
+	from?: Direction;
+}
+
+/** A wooden slide that rolls items along, joining up with more tubes and ending in a barrel */
+export interface TubeTile {
+	kind: "tube";
+	/** Which way items roll out */
+	flow: Direction;
+	/** Front (furthest along) first */
+	items: RollingItem[];
+}
+
 export type FarmTile =
 	| PlotTile
+	| TubeTile
 	| LogTile
 	| SprinklerTile
 	| BarrelTile
@@ -396,9 +424,17 @@ export function isMachine(tile: FarmTile | undefined): tile is MachineTile {
 	);
 }
 
-/** Stations are where helpers drop off or pick up items */
+/** Stations are where helpers drop off or pick up items (a tube's open end counts too) */
 export function isStation(tile: FarmTile | undefined): boolean {
 	return tile?.kind === "log" || tile?.kind === "barrel" || isMachine(tile);
+}
+
+export function isStationAt(state: FarmState, key: string): boolean {
+	const tile = state.tiles[key];
+	return (
+		isStation(tile) ||
+		(tile?.kind === "tube" && isTubeIntake(state, parseKey(key)))
+	);
 }
 
 // =============================================================================
@@ -473,6 +509,152 @@ export function canCook(machine: MachineTile): boolean {
 	return Object.entries(recipe.inputs).every(
 		([kind, needed]) => (machine.input[kind as ItemKind] ?? 0) >= (needed ?? 0),
 	);
+}
+
+// =============================================================================
+// TUBES
+// =============================================================================
+
+function stepFrom(pos: Position, direction: Direction): Position {
+	const delta = getDirectionDelta(direction);
+	return { x: pos.x + delta.x, y: pos.y + delta.y };
+}
+
+/** The sides other tubes roll into this one from */
+export function getTubeInlets(state: FarmState, pos: Position): Direction[] {
+	return DIRECTIONS.filter((direction) => {
+		const neighbour = getTile(state, stepFrom(pos, direction));
+		return (
+			neighbour?.kind === "tube" &&
+			neighbour.flow === getOppositeDirection(direction)
+		);
+	});
+}
+
+/** A tube nothing rolls into is an open end: items are dropped in there */
+export function isTubeIntake(state: FarmState, pos: Position): boolean {
+	return (
+		getTile(state, pos)?.kind === "tube" &&
+		getTubeInlets(state, pos).length === 0
+	);
+}
+
+/** Would rolling from `start` along the tubes come back round to `pos`? */
+function leadsBack(state: FarmState, start: Position, pos: Position): boolean {
+	let at = start;
+	for (let i = 0; i <= Object.keys(state.tiles).length; i++) {
+		if (at.x === pos.x && at.y === pos.y) return true;
+		const tile = getTile(state, at);
+		if (tile?.kind !== "tube") return false;
+		at = stepFrom(at, tile.flow);
+	}
+	return true;
+}
+
+/**
+ * Which way a tube at `pos` should roll: into a barrel beside it if there
+ * is one, otherwise onto the open end of a tube beside it (extending that
+ * line), otherwise into any tube - never round in a loop. Null if there's
+ * nothing to join.
+ */
+function pickTubeFlow(state: FarmState, pos: Position): Direction | null {
+	const options = DIRECTIONS.map((direction) => {
+		const at = stepFrom(pos, direction);
+		return { direction, at, tile: getTile(state, at) };
+	});
+	const barrel = options.find((o) => o.tile?.kind === "barrel");
+	if (barrel) return barrel.direction;
+	const tubes = options.filter(
+		(o) => o.tile?.kind === "tube" && !leadsBack(state, o.at, pos),
+	);
+	// An open end: nothing else rolls into it (ignoring this tile itself)
+	const openEnd = tubes.find((o) =>
+		getTubeInlets(state, o.at).every(
+			(side) => side === getOppositeDirection(o.direction),
+		),
+	);
+	return (openEnd ?? tubes[0])?.direction ?? null;
+}
+
+/** Point any tube that has lost what it rolled into at something new */
+function reconnectTubes(state: FarmState): void {
+	for (const [key, tile] of Object.entries(state.tiles)) {
+		if (tile.kind !== "tube") continue;
+		const pos = parseKey(key);
+		const target = stepFrom(pos, tile.flow);
+		const targetTile = getTile(state, target);
+		const joined =
+			targetTile?.kind === "barrel" ||
+			(targetTile?.kind === "tube" && !leadsBack(state, target, pos));
+		if (joined) continue;
+		const flow = pickTubeFlow(state, pos);
+		if (flow) tile.flow = flow;
+	}
+}
+
+/** Drop items into a tube's funnel; returns how many went in */
+function loadTube(tube: TubeTile, from: Inventory): number {
+	const loading: Inventory = {};
+	const moved = transfer(
+		from,
+		loading,
+		roomIn(loading, FARM.TUBE_FUNNEL - tube.items.length),
+	);
+	for (const kind of ITEM_ORDER) {
+		for (let i = 0; i < (loading[kind] ?? 0); i++) {
+			const last = tube.items[tube.items.length - 1];
+			tube.items.push({
+				kind,
+				progress: Math.min(0, last ? last.progress - FARM.TUBE_SPACING : 0),
+			});
+		}
+	}
+	return moved;
+}
+
+/** Is there space at the start of this tube for another item to roll in? */
+function canRollInto(tube: TubeTile): boolean {
+	const last = tube.items[tube.items.length - 1];
+	return !last || last.progress >= FARM.TUBE_SPACING;
+}
+
+/** Roll items along every tube, handing them on to the next tube or barrel */
+function rollTubes(state: FarmState, ms: number): void {
+	const tubes = Object.entries(state.tiles).filter(
+		(entry): entry is [string, TubeTile] => entry[1].kind === "tube",
+	);
+	if (tubes.length === 0) return;
+	for (let done = 0; done < ms; done += FARM.TUBE_STEP_MS) {
+		const advance =
+			Math.min(FARM.TUBE_STEP_MS, ms - done) / FARM.TUBE_MS_PER_TILE;
+		for (const [key, tube] of tubes) {
+			// Each item stops short of the one ahead; the front one at the end
+			let limit = 1;
+			for (const item of tube.items) {
+				const progress = Math.min(item.progress + advance, limit);
+				// Snap to the end so adding up small steps can't leave it a hair short
+				item.progress = progress >= 1 - 1e-9 ? 1 : progress;
+				limit = item.progress - FARM.TUBE_SPACING;
+			}
+			const front = tube.items[0];
+			if (!front || front.progress < 1) continue;
+			const next = getTile(state, stepFrom(parseKey(key), tube.flow));
+			if (
+				next?.kind === "barrel" &&
+				countItems(next.items) < FARM.BARREL_CAPACITY
+			) {
+				tube.items.shift();
+				addItems(next.items, front.kind, 1);
+			} else if (next?.kind === "tube" && canRollInto(next)) {
+				tube.items.shift();
+				next.items.push({
+					kind: front.kind,
+					progress: 0,
+					from: getOppositeDirection(tube.flow),
+				});
+			}
+		}
+	}
 }
 
 // =============================================================================
@@ -581,6 +763,7 @@ export function tick(state: FarmState, ms: number): FarmEvent[] {
 		const chunk = Math.min(remaining, FARM.HELPER_STEP_MS);
 		grow(state, chunk);
 		cook(state, chunk);
+		rollTubes(state, chunk);
 		for (const helper of state.helpers) {
 			helper.stepMs += chunk;
 			helper.stats.activeMs += chunk;
@@ -626,6 +809,15 @@ export function tapTile(state: FarmState, pos: Position): TapResult {
 		const took = gave > 0 ? 0 : transfer(tile.items, state.basket, basketRoom);
 		return gave + took > 0
 			? { kind: "transferred", gave, took }
+			: { kind: "nothing" };
+	}
+
+	if (tile.kind === "tube") {
+		// Tip the basket into a tube's open end
+		if (!isTubeIntake(state, pos)) return { kind: "nothing" };
+		const gave = loadTube(tile, state.basket);
+		return gave > 0
+			? { kind: "transferred", gave, took: 0 }
 			: { kind: "nothing" };
 	}
 
@@ -694,7 +886,7 @@ function isOnRoute(tile: FarmTile | undefined): boolean {
 
 /** The settings a station can be given, in the order tapping cycles them */
 export function getStationSettings(tile: FarmTile): StationSetting[] {
-	if (tile.kind === "log") return ["dropOff", "ignore"];
+	if (tile.kind === "log" || tile.kind === "tube") return ["dropOff", "ignore"];
 	if (tile.kind === "barrel") return ["dropOff", "pickUp", "ignore"];
 	if (tile.kind === "well") return ["pickUp", "ignore"];
 	return ["both", "dropOff", "pickUp", "ignore"];
@@ -886,7 +1078,7 @@ function useStations(
 		const pos = { x: helper.x + delta.x, y: helper.y + delta.y };
 		const key = posKey(pos.x, pos.y);
 		return { pos, key, tile: state.tiles[key] };
-	}).filter((s) => isStation(s.tile));
+	}).filter((s) => isStationAt(state, s.key));
 
 	const basketRoom = roomIn(helper.basket, getHelperBasketCapacity(state));
 
@@ -912,6 +1104,8 @@ function useStations(
 				);
 			} else if (isMachine(tile)) {
 				transfer(helper.basket, tile.input, machineRoom(tile));
+			} else if (tile.kind === "tube") {
+				loadTube(tile, helper.basket);
 			} else if (tile.kind === "log") {
 				const { count, earned } = sell(helper.basket);
 				if (count > 0) {
@@ -987,7 +1181,7 @@ export function getRouteStations(state: FarmState, helper: Helper): string[] {
 		for (const direction of DIRECTIONS) {
 			const delta = getDirectionDelta(direction);
 			const key = posKey(pos.x + delta.x, pos.y + delta.y);
-			if (isStation(state.tiles[key])) stations.add(key);
+			if (isStationAt(state, key)) stations.add(key);
 		}
 	}
 	return [...stations];
@@ -1002,7 +1196,7 @@ export function cycleStationSetting(
 	const helper = state.helpers.find((h) => h.id === helperId);
 	const key = posKey(stationPos.x, stationPos.y);
 	const tile = state.tiles[key];
-	if (!helper || !tile || !isStation(tile)) return null;
+	if (!helper || !tile || !isStationAt(state, key)) return null;
 
 	const order = getStationSettings(tile);
 	const current = getStationSetting(helper, key, tile);
@@ -1192,6 +1386,7 @@ export function buyPlot(
 
 function newBuilding(kind: BuildingKind): FarmTile {
 	if (kind === "barrel") return { kind, items: {} };
+	if (kind === "tube") return { kind, flow: "down", items: [] };
 	if (kind === "campfire" || kind === "stewpot" || kind === "well") {
 		return { kind, input: {}, output: {}, progress: 0 };
 	}
@@ -1214,9 +1409,24 @@ export function placeBuilding(
 	const building = newBuilding(kind);
 	if (blocksHelpers(building) && helperAt(state, pos)) return false;
 
+	if (building.kind === "tube") {
+		// Tubes have to join a barrel or another tube
+		const flow = pickTubeFlow(state, pos);
+		if (!flow) return false;
+		building.flow = flow;
+	}
+
 	state.money -= cost;
 	state.tiles[posKey(pos.x, pos.y)] = building;
+	reconnectTubes(state);
 	return true;
+}
+
+/** Could a tube go here - is there a barrel or tube beside it to join? */
+export function canPlaceTube(state: FarmState, pos: Position): boolean {
+	return (
+		getTile(state, pos)?.kind === "plot" && pickTubeFlow(state, pos) !== null
+	);
 }
 
 /** Move a building onto a plot; the spot it left becomes an empty plot */
@@ -1230,8 +1440,22 @@ export function moveBuilding(
 	if (getTile(state, to)?.kind !== "plot") return false;
 	if (blocksHelpers(building) && helperAt(state, to)) return false;
 
-	state.tiles[posKey(to.x, to.y)] = building;
-	state.tiles[posKey(from.x, from.y)] = emptyPlot();
+	const fromKey = posKey(from.x, from.y);
+	const toKey = posKey(to.x, to.y);
+	const replaced = state.tiles[toKey];
+	state.tiles[toKey] = building;
+	state.tiles[fromKey] = emptyPlot();
+	if (building.kind === "tube") {
+		const flow = pickTubeFlow(state, to);
+		if (!flow) {
+			// Nothing to join there - put it back
+			state.tiles[fromKey] = building;
+			if (replaced) state.tiles[toKey] = replaced;
+			return false;
+		}
+		building.flow = flow;
+	}
+	reconnectTubes(state);
 	return true;
 }
 
@@ -1249,6 +1473,7 @@ export function removeBuilding(state: FarmState, pos: Position): number | null {
 		if (logs.length <= 1) return null;
 	}
 	state.tiles[posKey(pos.x, pos.y)] = emptyPlot();
+	reconnectTubes(state);
 	const refund =
 		tile.kind === "log" ? 0 : sellBackValue(getBuildingCost(tile.kind));
 	state.money += refund;
@@ -1311,6 +1536,7 @@ export function deserializeFarm(json: string, now: number): LoadedFarm | null {
 
 	for (const tile of Object.values(state.tiles)) {
 		if (tile.kind === "barrel") tile.items = toInventory(tile.items);
+		if (tile.kind === "tube" && !Array.isArray(tile.items)) tile.items = [];
 	}
 	const helpers = Array.isArray(state.helpers) ? state.helpers : [];
 	for (const helper of helpers) helper.basket = toInventory(helper.basket);

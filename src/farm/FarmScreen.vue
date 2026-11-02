@@ -19,6 +19,7 @@ import {
 	type BuildingKind,
 	buyPlot,
 	buyUpgrade,
+	canPlaceTube,
 	countItems,
 	createFarm,
 	cycleStationSetting,
@@ -37,6 +38,7 @@ import {
 	getSprinkledKeys,
 	getStationSetting,
 	getTile,
+	getTubeInlets,
 	getUpgradeCost,
 	getUpgradeLevel,
 	HELPER_TYPES,
@@ -344,6 +346,7 @@ const BUILD_TOOLS: {
 	{ tool: "skater", icon: "⛸️", label: "Skater" },
 	{ tool: "fairy", icon: "🧚", label: "Fairy" },
 	{ tool: "barrel", icon: "🫙", label: "Barrel" },
+	{ tool: "tube", icon: "🛝", label: "Tube" },
 	{ tool: "path", icon: "🪨", label: "Path" },
 	{ tool: "sprinkler", icon: "💦", label: "Sprinkler" },
 	{ tool: "campfire", icon: "🔥", label: "Campfire" },
@@ -374,6 +377,13 @@ const canSellBasket = computed(() =>
 function toolCost(t: BuildingKind | HelperType): number {
 	return isHelperTool(t) ? getHelperCost(t) : getBuildingCost(t);
 }
+
+/** Plots a tube could join up from, shown while the tube tool is picked */
+const tubeSpots = computed(() =>
+	tool.value === "tube"
+		? tiles.value.filter((t) => canPlaceTube(farm, t.position))
+		: [],
+);
 
 /** Faded plots for sale around the farm, shown while building */
 const ghostSpots = computed(() =>
@@ -456,6 +466,7 @@ function handleBuildTap(position: Position) {
 	if (
 		current === "sprinkler" ||
 		current === "barrel" ||
+		current === "tube" ||
 		current === "path" ||
 		current === "campfire" ||
 		current === "well" ||
@@ -470,6 +481,9 @@ function handleBuildTap(position: Position) {
 		} else if (tile?.kind === "plot" && farm.money < cost) {
 			playLand();
 			showPopup(position, `Need ${formatNumber(cost)} 🍄`, "warn");
+		} else if (current === "tube" && tile?.kind === "plot") {
+			playLand();
+			showPopup(position, "Join it to a barrel or tube", "warn");
 		}
 		return;
 	}
@@ -665,6 +679,8 @@ const hint = computed(() => {
 			return "Tap a plot or path - Dew walks up and down her column";
 		if (current === "barrel")
 			return "Tap a plot to build a barrel - helpers can drop off and pick up there";
+		if (current === "tube")
+			return "Tap a plot beside a barrel or tube - drop items in the open end and they roll down into the barrel";
 		if (current === "path")
 			return "Tap a plot to lay stepping stones - helpers walk them, nothing grows";
 		if (current === "sprinkler")
@@ -766,9 +782,18 @@ function formatDuration(ms: number): string {
             :can-sell="canSellBasket"
             :sprinkled="sprinkledKeys.has(t.key)"
             :selected="isMovingFrom(t.position)"
+            :inlets="t.tile.kind === 'tube' ? getTubeInlets(farm, t.position) : undefined"
             :data-pos="t.key"
             @click="handleTap(t.position)"
           />
+
+          <!-- Where a tube can go -->
+          <div
+            v-for="spot in tubeSpots"
+            :key="`tube-spot-${spot.key}`"
+            class="tube-spot"
+            :style="tileStyle(spot.position)"
+          ></div>
 
           <!-- The selected helper's route -->
           <div
@@ -1267,6 +1292,18 @@ function formatDuration(ms: number): string {
   border: 2px dashed rgba(255, 248, 220, 0.9);
   border-radius: 8px;
   background: rgba(255, 248, 220, 0.16);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.tube-spot {
+  position: absolute;
+  width: 64px;
+  height: 64px;
+  border: 3px dashed #ffd98a;
+  border-radius: 8px;
+  background: rgba(255, 217, 138, 0.28);
+  box-shadow: 0 0 8px rgba(255, 217, 138, 0.6);
   pointer-events: none;
   z-index: 1;
 }
