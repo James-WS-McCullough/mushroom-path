@@ -65,6 +65,7 @@ import {
 	UPGRADES,
 	type UpgradeKind,
 } from "./simulation";
+import { usePanZoom } from "./usePanZoom";
 
 const emit = defineEmits<{
 	exit: [];
@@ -574,24 +575,22 @@ const bounds = computed(() => {
 	};
 });
 
-// Scale the board to fill the field (bigger on roomy screens, smaller as the farm grows)
+// The board fills the field (bigger on roomy screens, smaller as the farm
+// grows); that's the most zoomed out, and players can zoom in and pan
 const FRAME_PADDING = 12;
-const MAX_SCALE = 1.6;
 const fieldRef = ref<HTMLElement | null>(null);
 const fieldSize = ref({ width: 0, height: 0 });
 let resizeObserver: ResizeObserver | null = null;
 
-const boardScale = computed(() => {
-	const { width, height } = fieldSize.value;
-	if (!width || !height) return 1;
-	const frameWidth = bounds.value.width + FRAME_PADDING * 2;
-	const frameHeight = bounds.value.height + FRAME_PADDING * 2;
+const view = usePanZoom({
+	viewport: fieldSize,
+	content: () => ({
+		width: bounds.value.width + FRAME_PADDING * 2,
+		height: bounds.value.height + FRAME_PADDING * 2,
+	}),
 	// Leave room for the hint below the board
-	return Math.min(
-		MAX_SCALE,
-		(width - 32) / frameWidth,
-		(height - 120) / frameHeight,
-	);
+	bottomInset: 72,
+	fitMax: 1.6,
 });
 
 function tileStyle(position: Position) {
@@ -772,15 +771,18 @@ function formatDuration(ms: number): string {
       </div>
     </header>
 
-    <main ref="fieldRef" class="farm-field">
+    <main
+      ref="fieldRef"
+      class="farm-field"
+      v-on="view.handlers"
+      @click.capture="view.onClickCapture"
+    >
       <div
-        class="farm-frame-slot"
+        :class="['farm-frame', { 'farm-frame--easing': view.animate.value }]"
         :style="{
-          width: `${(bounds.width + FRAME_PADDING * 2) * boardScale}px`,
-          height: `${(bounds.height + FRAME_PADDING * 2) * boardScale}px`,
+          transform: `translate(${view.offset.value.x}px, ${view.offset.value.y}px) scale(${view.scale.value})`,
         }"
       >
-      <div class="farm-frame" :style="{ transform: `scale(${boardScale})` }">
         <div
           class="farm-board"
           :style="{ width: `${bounds.width}px`, height: `${bounds.height}px` }"
@@ -865,6 +867,32 @@ function formatDuration(ms: number): string {
           </TransitionGroup>
         </div>
       </div>
+
+      <div class="zoom-controls" @pointerdown.stop>
+        <button
+          class="zoom-button"
+          aria-label="Zoom in"
+          :disabled="!view.canZoomIn.value"
+          @click="view.zoomIn"
+        >
+          +
+        </button>
+        <button
+          class="zoom-button"
+          aria-label="Zoom out"
+          :disabled="!view.isZoomed.value"
+          @click="view.zoomOut"
+        >
+          −
+        </button>
+        <button
+          v-if="view.isZoomed.value"
+          class="zoom-button"
+          aria-label="Show the whole farm"
+          @click="view.resetZoom"
+        >
+          ⤢
+        </button>
       </div>
 
       <Transition name="hint">
@@ -1080,21 +1108,18 @@ function formatDuration(ms: number): string {
 }
 
 .farm-field {
+  position: relative;
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 24px;
-  padding: 16px;
-  overflow: auto;
-}
-
-.farm-frame-slot {
-  flex-shrink: 0;
+  min-height: 0;
+  overflow: hidden;
+  /* Pinches and drags move the board, not the page */
+  touch-action: none;
 }
 
 .farm-frame {
+  position: absolute;
+  left: 0;
+  top: 0;
   width: fit-content;
   padding: 12px;
   transform-origin: top left;
@@ -1517,7 +1542,48 @@ function formatDuration(ms: number): string {
   cursor: pointer;
 }
 
+.farm-frame--easing {
+  transition: transform 0.25s ease;
+}
+
+.zoom-controls {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.zoom-button {
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 252, 240, 0.9);
+  color: #5a4632;
+  font: inherit;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.zoom-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .farm-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  z-index: 20;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  transform: translateX(-50%);
   margin: 0;
   padding: 10px 18px;
   border-radius: 999px;
