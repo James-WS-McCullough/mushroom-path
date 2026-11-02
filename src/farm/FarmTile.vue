@@ -26,6 +26,8 @@ const props = defineProps<{
 	selected?: boolean;
 	/** Tube: the sides other tubes roll into this one from */
 	inlets?: Direction[];
+	/** Tube: the barrel or log it rolls straight into, if any */
+	outlet?: "barrel" | "log";
 }>();
 
 const isWet = computed(
@@ -93,35 +95,97 @@ const FLOW_ANGLES: Record<Direction, number> = {
 const tube = computed(() => (props.tile.kind === "tube" ? props.tile : null));
 const isIntake = computed(() => (props.inlets ?? []).length === 0);
 
+type Point = { x: number; y: number };
+
+/** Tile size plus the gap between tiles, to reach into the next tile */
+const CELL = 67;
+
+/**
+ * Where the slide ends inside the barrel or log it rolls into (in that
+ * tile's own coordinates), by which way it's rolling. It tucks in behind
+ * them, so items disappear into the barrel's top or the log's hole
+ */
+const OUTLET_POINTS: Record<"barrel" | "log", Record<Direction, Point>> = {
+	barrel: {
+		down: { x: 32, y: 13 },
+		right: { x: 19, y: 15 },
+		left: { x: 45, y: 15 },
+		up: { x: 32, y: 56 },
+	},
+	log: {
+		right: { x: 14, y: 35 },
+		down: { x: 34, y: 20 },
+		left: { x: 57, y: 33 },
+		up: { x: 34, y: 52 },
+	},
+};
+
+/** The slide's way out: centre, the tile's edge, then over onto a barrel or log */
+const exitPoints = computed((): Point[] => {
+	const current = tube.value;
+	if (!current) return [];
+	const edge = TUBE_EDGES[current.flow];
+	if (!props.outlet) return [CENTRE, edge];
+	const delta = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[
+		current.flow
+	];
+	const inside = OUTLET_POINTS[props.outlet][current.flow];
+	const end = {
+		x: (delta[0] ?? 0) * CELL + inside.x,
+		y: (delta[1] ?? 0) * CELL + inside.y,
+	};
+	return [CENTRE, edge, end];
+});
+
 const tubePath = computed(() => {
 	if (!tube.value) return "";
-	const out = TUBE_EDGES[tube.value.flow];
 	const ins = (props.inlets ?? []).map(
 		(side) => `M${TUBE_EDGES[side].x} ${TUBE_EDGES[side].y} L32 32`,
 	);
-	return [...ins, `M32 32 L${out.x} ${out.y}`].join(" ");
+	const [centre, edge] = exitPoints.value;
+	return [...ins, `M${centre?.x} ${centre?.y} L${edge?.x} ${edge?.y}`].join(
+		" ",
+	);
 });
 
-function lerp(
-	a: { x: number; y: number },
-	b: { x: number; y: number },
-	t: number,
-) {
-	return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+/** The narrower lip that reaches in behind a barrel or log */
+const lipPath = computed(() => {
+	const [, edge, end] = exitPoints.value;
+	return edge && end ? `M${edge.x} ${edge.y} L${end.x} ${end.y}` : "";
+});
+
+/** The point a fraction `t` of the way along a line of points */
+function along(points: Point[], t: number): Point {
+	const lengths = points
+		.slice(1)
+		.map((p, i) =>
+			Math.hypot(p.x - (points[i]?.x ?? 0), p.y - (points[i]?.y ?? 0)),
+		);
+	let remaining =
+		Math.max(0, Math.min(1, t)) * lengths.reduce((a, b) => a + b, 0);
+	for (const [i, length] of lengths.entries()) {
+		const a = points[i] as Point;
+		const b = points[i + 1] as Point;
+		if (remaining <= length || i === lengths.length - 1) {
+			const f = length > 0 ? Math.min(1, remaining / length) : 1;
+			return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+		}
+		remaining -= length;
+	}
+	return points[0] ?? CENTRE;
 }
 
 /** Where each rolling item is, and how far it's turned */
 const rollingItems = computed(() => {
 	const current = tube.value;
 	if (!current) return [];
-	const out = TUBE_EDGES[current.flow];
 	// Rolling left or up turns the other way
 	const spin = current.flow === "left" || current.flow === "up" ? -1 : 1;
 	let waiting = 0;
 	return current.items.flatMap((item, index) => {
-		let point: { x: number; y: number };
+		let point: Point;
 		if (item.progress < 0) {
-			// Piled up in the funnel; only the top few show
+			// Waiting their turn in the middle; only the top few show
 			if (waiting >= 3) return [];
 			point = {
 				x: CENTRE.x + (waiting - 1) * 6,
@@ -129,13 +193,13 @@ const rollingItems = computed(() => {
 			};
 			waiting += 1;
 		} else if (item.from) {
-			const start = TUBE_EDGES[item.from];
+			// In from the edge to the middle, then on out
 			point =
 				item.progress < 0.5
-					? lerp(start, CENTRE, item.progress * 2)
-					: lerp(CENTRE, out, (item.progress - 0.5) * 2);
+					? along([TUBE_EDGES[item.from], CENTRE], item.progress * 2)
+					: along(exitPoints.value, (item.progress - 0.5) * 2);
 		} else {
-			point = lerp(CENTRE, out, item.progress);
+			point = along(exitPoints.value, item.progress);
 		}
 		return [
 			{
@@ -245,6 +309,10 @@ const mushroomTile = computed(() => ({
         <path class="tube__shadow" :d="tubePath" />
         <path class="tube__wood" :d="tubePath" />
         <path class="tube__groove" :d="tubePath" />
+        <template v-if="lipPath">
+          <path class="tube__lip" :d="lipPath" />
+          <path class="tube__lip-groove" :d="lipPath" />
+        </template>
         <g :transform="`rotate(${FLOW_ANGLES[tube.flow]} 32 32)`">
           <path class="tube__arrow" d="M46 28 L51 32 L46 36" />
         </g>
@@ -611,6 +679,7 @@ const mushroomTile = computed(() => ({
 
 .barrel__count {
   position: absolute;
+  z-index: 4;
   left: 50%;
   bottom: 2px;
   transform: translateX(-50%);
@@ -786,7 +855,11 @@ const mushroomTile = computed(() => ({
   pointer-events: none;
 }
 
-/* Tube */
+/* Tube - above its neighbours' ground so the slide can reach in behind a barrel or log */
+.farm-tile--tube {
+  z-index: 2;
+}
+
 .tube {
   position: absolute;
   inset: 0;
@@ -812,6 +885,17 @@ const mushroomTile = computed(() => ({
 .tube__groove {
   stroke: #7a4e2f;
   stroke-width: 15;
+}
+
+.tube__lip {
+  stroke: #a9744a;
+  stroke-width: 18;
+  filter: drop-shadow(0 2px 1.5px rgba(30, 20, 10, 0.4));
+}
+
+.tube__lip-groove {
+  stroke: #7a4e2f;
+  stroke-width: 9;
 }
 
 .tube__arrow {
@@ -939,6 +1023,13 @@ const mushroomTile = computed(() => ({
   overflow: visible;
 }
 
+/* Barrels and logs sit in front of the tubes that slide in behind them */
+.barrel,
+.log {
+  position: relative;
+  z-index: 3;
+}
+
 .log__shadow {
   fill: rgba(30, 50, 20, 0.3);
 }
@@ -973,7 +1064,7 @@ const mushroomTile = computed(() => ({
 }
 
 .log__moss {
-  fill: #6fae4f;
+  fill: #4a6e36;
 }
 
 .farm-tile--can-sell .log {

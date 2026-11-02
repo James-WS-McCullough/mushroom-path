@@ -88,16 +88,18 @@ All stations share one item and recipe system:
 | 🪵 Hollow log | anything sellable | 🍄 currency |
 | 🛢️ Barrel | anything (~20) | the same items - hand-off between helpers |
 | 🪨 Path | - | grows nothing; helpers on paths never harvest (conveyor lanes) |
-| 🛝 Tube | anything, at its open end (6 at a time) | rolls items along into the barrel at the other end |
+| 🛝 Tube | anything, anywhere along it (6 at a time per tube) | rolls items along into the barrel or log at the end (the log sells them) |
 | 🔥 Campfire | 3 mushrooms | 1 roasted skewer (sells for 5) every 5s |
 | 🍲 Stew pot | 4 mushrooms + 1 water bucket | mushroom stew (sells for 14) every 8s |
 | 🪣 Well | - | a water bucket every 4s (can't be sold) |
 
-Tubes are wooden slides. Each one has to join a barrel or another tube
-beside it, so a line of them always ends in a barrel. Items dropped in a
-line's open end (the funnel) roll down at about 0.6s a tile, spaced
-apart, and back up if the barrel's full. Moving or removing a barrel or
-tube reconnects any tubes that lost their way, and tubes never loop.
+Tubes are wooden slides. Each one has to join a barrel, a log or another
+tube beside it, so a line of them always ends in a barrel or log, tucking
+in behind it. Items can be dropped onto any tube in a line (by tapping, or
+by helpers walking past); they roll down at about 0.6s a tile, spaced
+apart, and back up if the barrel's full. A line into the log sells items
+as they drop in, and won't take water. Moving or removing a barrel, log
+or tube reconnects any tubes that lost their way, and tubes never loop.
 
 Example chain:
 

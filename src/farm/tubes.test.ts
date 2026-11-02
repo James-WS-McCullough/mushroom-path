@@ -164,29 +164,66 @@ describe("tubes", () => {
 			expect(tubeAt(farm, 1, 0).items[0]?.progress).toBe(1);
 		});
 
-		it("only takes so much in its funnel, and only at the open end", () => {
+		it("only takes so much at once", () => {
 			const farm = tubeLine(2);
 			farm.basket = { mushroom: 10 };
 			tapTile(farm, { x: 2, y: 0 });
 			expect(farm.basket).toEqual({ mushroom: 10 - FARM.TUBE_FUNNEL });
-			expect(tapTile(farm, { x: 1, y: 0 })).toEqual({ kind: "nothing" });
+		});
+
+		it("takes items anywhere along the line, merging them in", () => {
+			const farm = tubeLine(3);
+			farm.basket = { mushroom: 2 };
+			tapTile(farm, { x: 3, y: 0 });
+			farm.basket = { skewer: 2 };
+			expect(tapTile(farm, { x: 2, y: 0 })).toEqual({
+				kind: "transferred",
+				gave: 2,
+				took: 0,
+			});
+			tick(farm, 20_000);
+			expect(getTile(farm, { x: 0, y: 0 })).toMatchObject({
+				items: { mushroom: 2, skewer: 2 },
+			});
+		});
+
+		it("sells into the log, item by item", () => {
+			const farm = makeFarm(["L.."]);
+			placeBuilding(farm, "tube", { x: 1, y: 0 });
+			placeBuilding(farm, "tube", { x: 2, y: 0 });
+			expect(tubeAt(farm, 1, 0).flow).toBe("left");
+			const money = farm.money;
+			farm.basket = { mushroom: 2, skewer: 1 };
+			tapTile(farm, { x: 2, y: 0 });
+			const events = tick(farm, 20_000);
+			expect(farm.money).toBe(money + 2 + 5);
+			expect(farm.totalSold).toBe(3);
+			expect(events.filter((e) => e.kind === "tubeSold")).toHaveLength(3);
+		});
+
+		it("won't take water down a line into the log", () => {
+			const farm = makeFarm(["L."]);
+			placeBuilding(farm, "tube", { x: 1, y: 0 });
+			farm.basket = { water: 1, mushroom: 1 };
+			tapTile(farm, { x: 1, y: 0 });
+			expect(farm.basket).toEqual({ water: 1 });
 		});
 	});
 
 	describe("helpers", () => {
-		it("drop off into a tube's open end by default", () => {
-			// Sprout walks the bottom row, under the tube's open end
+		it("drop off anywhere along a tube by default", () => {
+			// Sprout walks the bottom row, under the tubes
 			const farm = makeFarm(["B..", "PPP"]);
 			placeBuilding(farm, "tube", { x: 1, y: 0 });
 			placeBuilding(farm, "tube", { x: 2, y: 0 });
-			const sprout = hireHelper(farm, "sprout", { x: 1, y: 1 });
+			const sprout = hireHelper(farm, "sprout", { x: 2, y: 1 });
 			if (!sprout) throw new Error("couldn't hire");
+			sprout.dir = -1;
 			sprout.basket = { mushroom: 3 };
-			// The tube's open end is a station; the tube by the barrel isn't
 			expect(getRouteStations(farm, sprout)).toContain(posKey(2, 0));
-			expect(getRouteStations(farm, sprout)).not.toContain(posKey(1, 0));
+			expect(getRouteStations(farm, sprout)).toContain(posKey(1, 0));
 
-			tick(farm, 1000); // steps under the open end and drops off
+			tick(farm, 1000); // steps under the middle of the line and drops off
 			expect(sprout.basket).toEqual({});
 			tick(farm, 10_000);
 			expect(barrelCount(farm, 0, 0)).toBe(3);

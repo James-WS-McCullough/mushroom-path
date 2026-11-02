@@ -12,7 +12,7 @@ import {
 	playWater,
 } from "../composables/useSound";
 import type { Position } from "../types/game";
-import { parseKey, posKey } from "../utils/positionUtils";
+import { getDirectionDelta, parseKey, posKey } from "../utils/positionUtils";
 import FarmHelper from "./FarmHelper.vue";
 import FarmTile from "./FarmTile.vue";
 import {
@@ -58,6 +58,7 @@ import {
 	serializeFarm,
 	setFairyRing,
 	type TapResult,
+	type TubeTile,
 	tapTile,
 	tick,
 	turnHelper,
@@ -129,7 +130,7 @@ function frame(now: number) {
 }
 
 function showHelperEvent(event: FarmEvent) {
-	if (event.kind === "helperSold") {
+	if (event.kind === "helperSold" || event.kind === "tubeSold") {
 		playAcorn(0.15);
 		showPopup(event.position, `+${formatNumber(event.earned)} 🍄`, "good");
 	} else {
@@ -378,6 +379,18 @@ function toolCost(t: BuildingKind | HelperType): number {
 	return isHelperTool(t) ? getHelperCost(t) : getBuildingCost(t);
 }
 
+/** What a tube rolls straight into, so its slide can reach over onto it */
+function tubeOutlet(tube: TubeTile, position: Position) {
+	const delta = getDirectionDelta(tube.flow);
+	const next = getTile(farm, {
+		x: position.x + delta.x,
+		y: position.y + delta.y,
+	});
+	return next?.kind === "barrel" || next?.kind === "log"
+		? next.kind
+		: undefined;
+}
+
 /** Plots a tube could join up from, shown while the tube tool is picked */
 const tubeSpots = computed(() =>
 	tool.value === "tube"
@@ -483,7 +496,7 @@ function handleBuildTap(position: Position) {
 			showPopup(position, `Need ${formatNumber(cost)} 🍄`, "warn");
 		} else if (current === "tube" && tile?.kind === "plot") {
 			playLand();
-			showPopup(position, "Join it to a barrel or tube", "warn");
+			showPopup(position, "Join it to a barrel, log or tube", "warn");
 		}
 		return;
 	}
@@ -680,7 +693,7 @@ const hint = computed(() => {
 		if (current === "barrel")
 			return "Tap a plot to build a barrel - helpers can drop off and pick up there";
 		if (current === "tube")
-			return "Tap a plot beside a barrel or tube - drop items in the open end and they roll down into the barrel";
+			return "Tap a plot beside a barrel, log or tube - items dropped anywhere on it roll down into the barrel or log";
 		if (current === "path")
 			return "Tap a plot to lay stepping stones - helpers walk them, nothing grows";
 		if (current === "sprinkler")
@@ -783,6 +796,7 @@ function formatDuration(ms: number): string {
             :sprinkled="sprinkledKeys.has(t.key)"
             :selected="isMovingFrom(t.position)"
             :inlets="t.tile.kind === 'tube' ? getTubeInlets(farm, t.position) : undefined"
+            :outlet="t.tile.kind === 'tube' ? tubeOutlet(t.tile, t.position) : undefined"
             :data-pos="t.key"
             @click="handleTap(t.position)"
           />
