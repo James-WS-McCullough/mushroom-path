@@ -98,7 +98,9 @@ tube beside it, so a line of them always ends in a barrel or log, tucking
 in behind it. Items can be dropped onto any tube in a line (by tapping, or
 by helpers walking past); they roll down at about 0.6s a tile, spaced
 apart, and back up if the barrel's full. A line into the log sells items
-as they drop in, and won't take water. Moving or removing a barrel, log
+as they drop in, and won't take water. Where lines meet, the junction lets
+items in by turns (including items dropped straight onto it), so when
+it backs up every lane drains evenly. Moving or removing a barrel, log
 or tube reconnects any tubes that lost their way, and tubes never loop.
 
 Example chain:

@@ -261,9 +261,14 @@ export interface TubeTile {
 	kind: "tube";
 	/** Which way items roll out */
 	flow: Direction;
-	/** Front (furthest along) first */
+	/** Front (furthest along) first; items waiting to roll on (progress < 0) last */
 	items: RollingItem[];
+	/** Which lane last got a turn to roll in, so a junction takes turns */
+	lastTurn?: TubeLane;
 }
+
+/** Where items roll into a tube from: another tube on one side, or dropped straight on */
+export type TubeLane = Direction | "dropped";
 
 export type FarmTile =
 	| PlotTile
@@ -630,43 +635,96 @@ function loadTube(state: FarmState, pos: Position, from: Inventory): number {
 	);
 	for (const kind of ITEM_ORDER) {
 		for (let i = 0; i < (loading[kind] ?? 0); i++) {
+			// Straight in on an empty tube, otherwise wait a turn
 			const last = tube.items[tube.items.length - 1];
 			tube.items.push({
 				kind,
-				progress: Math.min(0, last ? last.progress - FARM.TUBE_SPACING : 0),
+				progress: last
+					? Math.min(WAITING, last.progress - FARM.TUBE_SPACING)
+					: 0,
 			});
 		}
 	}
 	return moved;
 }
 
+/** Items dropped on a tube wait here, just short of rolling, until it's their turn */
+const WAITING = -1e-6;
+
+/** The order a junction's lanes take turns in */
+const LANE_ORDER: TubeLane[] = [...DIRECTIONS, "dropped"];
+
 /** Is there space at the start of this tube for another item to roll in? */
 function canRollInto(tube: TubeTile): boolean {
-	const last = tube.items[tube.items.length - 1];
+	const rolling = tube.items.filter((item) => item.progress >= 0);
+	const last = rolling[rolling.length - 1];
 	return !last || last.progress >= FARM.TUBE_SPACING;
 }
 
-/** Roll items along every tube, handing them on to the next tube, a barrel or the log */
+/**
+ * Where an item starts rolling in a tube: right behind the last one rolling
+ * (as if it slipped in the moment there was room), or at the start
+ */
+function startProgress(tube: TubeTile): number {
+	const rolling = tube.items.filter((item) => item.progress >= 0);
+	const last = rolling[rolling.length - 1];
+	return last ? Math.max(0, last.progress - FARM.TUBE_SPACING) : 0;
+}
+
+/** Start an item rolling at the beginning of a tube, ahead of any still waiting */
+function startRolling(tube: TubeTile, item: RollingItem): void {
+	const waitingFrom = tube.items.findIndex((i) => i.progress < 0);
+	tube.items.splice(
+		waitingFrom === -1 ? tube.items.length : waitingFrom,
+		0,
+		item,
+	);
+}
+
+/** The next lane to let in after `last`, going round in turn */
+function nextLane(
+	ready: TubeLane[],
+	last: TubeLane | undefined,
+): TubeLane | undefined {
+	const after = last === undefined ? -1 : LANE_ORDER.indexOf(last);
+	const ordered = [...ready].sort(
+		(a, b) => LANE_ORDER.indexOf(a) - LANE_ORDER.indexOf(b),
+	);
+	return ordered.find((lane) => LANE_ORDER.indexOf(lane) > after) ?? ordered[0];
+}
+
+/**
+ * Roll items along every tube, handing them on to the next tube, a barrel
+ * or the log. Where lanes meet, the tube lets them in by turns, so a
+ * backed-up junction drains every lane evenly.
+ */
 function rollTubes(state: FarmState, ms: number, events: FarmEvent[]): void {
-	const tubes = Object.entries(state.tiles).filter(
-		(entry): entry is [string, TubeTile] => entry[1].kind === "tube",
+	const tubes = Object.entries(state.tiles).flatMap(([key, tile]) =>
+		tile.kind === "tube" ? [{ pos: parseKey(key), tube: tile }] : [],
 	);
 	if (tubes.length === 0) return;
 	for (let done = 0; done < ms; done += FARM.TUBE_STEP_MS) {
 		const advance =
 			Math.min(FARM.TUBE_STEP_MS, ms - done) / FARM.TUBE_MS_PER_TILE;
-		for (const [key, tube] of tubes) {
-			// Each item stops short of the one ahead; the front one at the end
+
+		// Roll along: each item stops short of the one ahead, the front one
+		// at the end, and dropped items just short of starting
+		for (const { tube } of tubes) {
 			let limit = 1;
 			for (const item of tube.items) {
-				const progress = Math.min(item.progress + advance, limit);
+				const cap = item.progress < 0 ? Math.min(limit, WAITING) : limit;
+				const progress = Math.min(item.progress + advance, cap);
 				// Snap to the end so adding up small steps can't leave it a hair short
 				item.progress = progress >= 1 - 1e-9 ? 1 : progress;
 				limit = item.progress - FARM.TUBE_SPACING;
 			}
+		}
+
+		// Drop off the end into a barrel or log
+		for (const { pos, tube } of tubes) {
 			const front = tube.items[0];
 			if (!front || front.progress < 1) continue;
-			const nextPos = stepFrom(parseKey(key), tube.flow);
+			const nextPos = stepFrom(pos, tube.flow);
 			const next = getTile(state, nextPos);
 			if (next?.kind === "log") {
 				// Sold as it drops in (anything unsellable is lost in the log)
@@ -683,14 +741,36 @@ function rollTubes(state: FarmState, ms: number, events: FarmEvent[]): void {
 			) {
 				tube.items.shift();
 				addItems(next.items, front.kind, 1);
-			} else if (next?.kind === "tube" && canRollInto(next)) {
-				tube.items.shift();
-				next.items.push({
-					kind: front.kind,
-					progress: 0,
-					from: getOppositeDirection(tube.flow),
-				});
 			}
+		}
+
+		// Let the next item in to each tube with room, taking turns between lanes
+		for (const { pos, tube } of tubes) {
+			if (!canRollInto(tube)) continue;
+			const feeders = new Map<TubeLane, TubeTile>();
+			for (const side of getTubeInlets(state, pos)) {
+				const feeder = getTile(state, stepFrom(pos, side));
+				if (feeder?.kind === "tube" && (feeder.items[0]?.progress ?? 0) >= 1)
+					feeders.set(side, feeder);
+			}
+			const dropped = tube.items.find((item) => item.progress < 0);
+			const ready: TubeLane[] = [...feeders.keys()];
+			if (dropped && dropped.progress >= WAITING) ready.push("dropped");
+
+			const lane = nextLane(ready, tube.lastTurn);
+			if (lane === undefined) continue;
+			tube.lastTurn = lane;
+			if (lane === "dropped") {
+				if (dropped) dropped.progress = startProgress(tube);
+				continue;
+			}
+			const item = feeders.get(lane)?.items.shift();
+			if (item)
+				startRolling(tube, {
+					kind: item.kind,
+					progress: startProgress(tube),
+					from: lane,
+				});
 		}
 	}
 }

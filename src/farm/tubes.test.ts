@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { posKey } from "../utils/positionUtils";
 import {
 	canPlaceTube,
+	countItems,
 	deserializeFarm,
 	FARM,
 	type FarmState,
@@ -207,6 +208,107 @@ describe("tubes", () => {
 			farm.basket = { water: 1, mushroom: 1 };
 			tapTile(farm, { x: 1, y: 0 });
 			expect(farm.basket).toEqual({ water: 1 });
+		});
+	});
+
+	describe("junctions", () => {
+		/**
+		 * Three lanes meet at a junction above a barrel: mushrooms from the
+		 * left, skewers from above and stew from the right, all backed up
+		 * behind a full barrel
+		 */
+		function backedUpJunction(): FarmState {
+			const farm = makeFarm(["...", "...", ".B."]);
+			const lane = (
+				kind: "mushroom" | "skewer" | "stew",
+				flow: "right" | "down" | "left",
+			): TubeTile => ({
+				kind: "tube",
+				flow,
+				items: [0, 1, 2].map((i) => ({ kind, progress: -1e-6 - i * 0.34 })),
+			});
+			farm.tiles[posKey(1, 1)] = { kind: "tube", flow: "down", items: [] };
+			farm.tiles[posKey(0, 1)] = lane("mushroom", "right");
+			farm.tiles[posKey(1, 0)] = lane("skewer", "down");
+			farm.tiles[posKey(2, 1)] = lane("stew", "left");
+			const barrel = getTile(farm, { x: 1, y: 2 });
+			if (barrel?.kind === "barrel")
+				barrel.items = { golden: FARM.BARREL_CAPACITY };
+			tick(farm, 10_000);
+			return farm;
+		}
+
+		function emptyBarrel(farm: FarmState) {
+			const barrel = getTile(farm, { x: 1, y: 2 });
+			if (barrel?.kind === "barrel") barrel.items = {};
+			return () => (barrel?.kind === "barrel" ? barrel.items : {});
+		}
+
+		function tickUntil(farm: FarmState, done: () => boolean) {
+			for (let i = 0; i < 1000 && !done(); i++) tick(farm, 50);
+		}
+
+		it("drain every backed-up lane in turn", () => {
+			const farm = backedUpJunction();
+			// Everything's stuck behind the full barrel
+			const stuck = [
+				[0, 1],
+				[1, 0],
+				[2, 1],
+				[1, 1],
+			].reduce(
+				(total, [x, y]) => total + tubeAt(farm, x ?? 0, y ?? 0).items.length,
+				0,
+			);
+			expect(stuck).toBe(9);
+
+			const contents = emptyBarrel(farm);
+			tickUntil(farm, () => countItems(contents()) >= 3);
+			expect(contents()).toEqual({ mushroom: 1, skewer: 1, stew: 1 });
+			tickUntil(farm, () => countItems(contents()) >= 6);
+			expect(contents()).toEqual({ mushroom: 2, skewer: 2, stew: 2 });
+			tickUntil(farm, () => countItems(contents()) >= 9);
+			expect(contents()).toEqual({ mushroom: 3, skewer: 3, stew: 3 });
+		});
+
+		it("give items dropped on the junction a turn too", () => {
+			// A lane of mushrooms rolls in from the left; skewers are dropped on the junction
+			const farm = makeFarm(["..", ".B"]);
+			farm.tiles[posKey(1, 0)] = { kind: "tube", flow: "down", items: [] };
+			farm.tiles[posKey(0, 0)] = {
+				kind: "tube",
+				flow: "right",
+				items: [1, 0.66, 0.32, -1e-6].map((progress) => ({
+					kind: "mushroom",
+					progress,
+				})),
+			};
+			farm.basket = { skewer: 4 };
+			tapTile(farm, { x: 1, y: 0 });
+
+			// Note what lands in the barrel, in order
+			const barrel = getTile(farm, { x: 1, y: 1 });
+			const arrived: string[] = [];
+			let seen: Record<string, number> = {};
+			for (let i = 0; i < 400 && arrived.length < 8; i++) {
+				tick(farm, 50);
+				const items = barrel?.kind === "barrel" ? barrel.items : {};
+				for (const [kind, count] of Object.entries(items)) {
+					for (let n = seen[kind] ?? 0; n < (count ?? 0); n++)
+						arrived.push(kind);
+				}
+				seen = { ...items };
+			}
+			expect(arrived).toEqual([
+				"skewer",
+				"mushroom",
+				"skewer",
+				"mushroom",
+				"skewer",
+				"mushroom",
+				"skewer",
+				"mushroom",
+			]);
 		});
 	});
 
