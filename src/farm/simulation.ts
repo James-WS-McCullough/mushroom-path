@@ -41,7 +41,7 @@ export const FARM = {
 	/** Hollow logs only turn up in plots at least this many tiles from every log (diagonals count as one) */
 	LOG_DISCOVERY_DISTANCE: 10,
 	/** The chance a plot that far out holds a hollow log */
-	LOG_DISCOVERY_CHANCE: 0.1,
+	LOG_DISCOVERY_CHANCE: 0.03,
 } as const;
 
 // =============================================================================
